@@ -66,6 +66,8 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: engine/pnpm-lock.yaml
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Typecheck
