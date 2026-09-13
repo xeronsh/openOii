@@ -27,7 +27,6 @@ from app.schemas.project import (
     GenerateRequest,
     ProviderResolution,
     RecoveryControlRead,
-    ResumeRequest,
 )
 from app.services.engine_client import (
     EngineUnavailableError,
@@ -46,7 +45,7 @@ from app.services.text_factory import create_text_service
 from app.services.video_factory import create_video_service
 from app.ws.manager import ConnectionManager
 
-router = APIRouter(prefix="/projects")
+router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # ReviewAgent 的 start_agent → 引擎可从该阶段起跑
@@ -149,16 +148,17 @@ async def _latest_run_for_project(
     return res.scalars().first()
 
 
-@router.get("/{project_id}/generation-state", response_model=RecoveryControlRead | None)
-async def get_generation_state(
+@router.get("/projects/{project_id}/runs/current", response_model=RecoveryControlRead | None)
+async def get_current_run(
     project_id: int,
     session: AsyncSession = SessionDep,
     settings: Settings = SettingsDep,
 ) -> RecoveryControlRead | None:
-    """页面加载时的运行态水合入口。
+    """当前运行态（页面水合的入口）。
 
-    与 /generate 的 409 分支返回同一份 RecoveryControlRead，
+    与创建 run 时的 409 分支返回同一份 RecoveryControlRead，
     让前端不必先撞一次冲突才能发现可恢复的运行。
+    无活跃/可恢复 run 时返回 null。
     """
     await get_or_404(session, Project, project_id)
 
@@ -185,9 +185,11 @@ async def get_generation_state(
 
 
 @router.post(
-    "/{project_id}/generate", response_model=AgentRunRead, status_code=status.HTTP_201_CREATED
+    "/projects/{project_id}/runs",
+    response_model=AgentRunRead,
+    status_code=status.HTTP_201_CREATED,
 )
-async def generate_project(
+async def start_run(
     project_id: int,
     payload: GenerateRequest,
     session: AsyncSession = SessionDep,
@@ -267,21 +269,20 @@ async def generate_project(
     return AgentRunRead.model_validate(run)
 
 
-@router.post("/{project_id}/resume", response_model=AgentRunRead)
-async def resume_project_run(
-    project_id: int,
-    payload: ResumeRequest,
+@router.post("/runs/{run_id}/resume", response_model=AgentRunRead)
+async def resume_run(
+    run_id: int,
     session: AsyncSession = SessionDep,
     settings: Settings = SettingsDep,
     ws: ConnectionManager = WsManagerDep,
 ):
-    await get_or_404(session, Project, project_id)
+    """从上次完成的阶段继续这个 run。
 
-    run = await get_or_404(session, AgentRun, payload.run_id)
-    if run.project_id != project_id:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    run_id = payload.run_id
+    按 run id 寻址：旧接口是 POST /projects/{id}/resume + body.run_id，
+    但取消/恢复都靠「找该项目最新活跃 run」，同项目存在多个 run 时目标不确定。
+    """
+    run = await get_or_404(session, AgentRun, run_id)
+    project_id = run.project_id
 
     await _dispatch_to_engine(
         settings=settings,
@@ -297,68 +298,54 @@ async def resume_project_run(
 
 
 @router.post(
-    "/{project_id}/cancel",
+    "/runs/{run_id}/cancel",
     response_model=CancelRunResponse,
     status_code=status.HTTP_200_OK,
 )
-async def cancel_project_run(
-    project_id: int,
+async def cancel_run(
+    run_id: int,
     session: AsyncSession = SessionDep,
     settings: Settings = SettingsDep,
     ws: ConnectionManager = WsManagerDep,
 ):
-    """取消项目的当前运行任务"""
-    await get_or_404(session, Project, project_id)
+    """取消指定的 run（只影响这一个）。"""
+    run = await get_or_404(session, AgentRun, run_id)
+    project_id = run.project_id
 
-    # 两处都要取消：引擎里的编排 run，以及 Python 内的局部长任务（单体重绘/合成
-    # 仍走本地 agent，见 characters/shots/projects 的 regenerate 路由）。
-    task_cancelled = task_manager.cancel(project_id)
-    active = await _latest_run_for_project(session, project_id, ("queued", "running"))
-    if active is not None and active.id is not None:
-        await engine_cancel_run(settings.engine_url, active.id)
+    # 执行体有两处：引擎里的编排 run，或 Python 进程内的局部 run（单体重绘/合成
+    # 仍走本地 agent，见 characters/shots 的 regenerate 路由）。两边都发一次取消，
+    # 没有对应执行体时是无副作用的空操作。
+    task_cancelled = task_manager.cancel(run_id)
+    await engine_cancel_run(settings.engine_url, run_id)
 
-    # 更新数据库状态
-    project_id_col = cast(InstrumentedAttribute[int], cast(object, AgentRun.project_id))
-    status_col = cast(InstrumentedAttribute[str], cast(object, AgentRun.status))
-    res = await session.execute(
-        select(AgentRun)
-        .where(project_id_col == project_id)
-        .where(status_col.in_(("queued", "running")))
-    )
-    runs = res.scalars().all()
+    if run.status in ("queued", "running"):
+        run.status = "cancelled"
+        session.add(run)
+        await session.commit()
+    else:
+        await session.refresh(run)
 
-    if not runs and not task_cancelled:
+    cancelled = 1 if (task_cancelled or run.status == "cancelled") else 0
+    if cancelled == 0:
         return CancelRunResponse(status="no_active_run")
 
-    cancelled_count = 0
-    for run in runs:
-        run.status = "cancelled"
-        cancelled_count += 1
-
-    await session.commit()
-
-    # 通知前端任务已取消
     await ws.send_event(
         project_id,
         {
             "type": "run_cancelled",
             "data": {
                 "project_id": project_id,
-                "cancelled_count": cancelled_count,
-                "run_ids": [r.id for r in runs],
+                "cancelled_count": cancelled,
+                "run_ids": [run_id],
             },
         },
     )
 
-    return CancelRunResponse(
-        status="cancelled",
-        cancelled=cancelled_count,
-        run_ids=[r.id for r in runs if r.id is not None],
-    )
+    return CancelRunResponse(status="cancelled", cancelled=cancelled, run_ids=[run_id])
 
 
 @router.post(
-    "/{project_id}/feedback",
+    "/projects/{project_id}/runs/feedback",
     response_model=FeedbackAcceptedResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )

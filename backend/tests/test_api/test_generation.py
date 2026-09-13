@@ -6,7 +6,7 @@ from sqlmodel import select
 
 from app.api.deps import get_app_settings, get_db_session, get_ws_manager
 from app.agents.review_rules import ReviewAgent
-from app.api.v1.routes import generation as generation_routes
+from app.api.v1.routes import runs as generation_routes
 from app.main import create_app
 from app.models.agent_run import AgentRun
 from app.schemas.project import ProjectProviderEntry
@@ -113,7 +113,7 @@ def _video_only_invalid_provider_resolution() -> generation_routes.ProviderResol
 
 @pytest.mark.asyncio
 async def test_generate_project_not_found(async_client):
-    res = await async_client.post("/api/v1/projects/99999/generate", json={})
+    res = await async_client.post("/api/v1/projects/99999/runs", json={})
     assert res.status_code == 404
 
 
@@ -215,7 +215,7 @@ async def test_generate_project_success(async_client, test_session, monkeypatch)
     )
 
     project = await create_project(test_session)
-    res = await async_client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await async_client.post(f"/api/v1/projects/{project.id}/runs", json={})
     assert res.status_code == 201
     data = res.json()
     run = await test_session.get(AgentRun, data["id"])
@@ -240,7 +240,7 @@ async def test_generate_project_returns_provider_precheck_failed_without_creatin
     project = await create_project(test_session)
     before = (await test_session.execute(select(AgentRun))).scalars().all()
 
-    res = await async_client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await async_client.post(f"/api/v1/projects/{project.id}/runs", json={})
 
     assert res.status_code == 422
     data = res.json()
@@ -266,7 +266,7 @@ async def test_generate_project_allows_start_when_only_video_provider_is_invalid
 
     project = await create_project(test_session)
 
-    res = await async_client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await async_client.post(f"/api/v1/projects/{project.id}/runs", json={})
 
     assert res.status_code == 201
     data = res.json()
@@ -334,15 +334,18 @@ async def test_generate_project_does_not_require_admin_token(
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
+        res = await client.post(f"/api/v1/projects/{project.id}/runs", json={})
 
     assert res.status_code == 201
 
 
 @pytest.mark.asyncio
-async def test_cancel_project_run_no_active(async_client, test_session):
+async def test_cancel_run_already_terminal_is_noop(async_client, test_session):
+    """按 run id 取消：已终结的 run 返回 no_active_run（不报错）。"""
     project = await create_project(test_session)
-    res = await async_client.post(f"/api/v1/projects/{project.id}/cancel")
+    run = await create_run(test_session, project_id=project.id, status="succeeded")
+
+    res = await async_client.post(f"/api/v1/runs/{run.id}/cancel")
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "no_active_run"
@@ -353,7 +356,7 @@ async def test_cancel_project_run_updates(async_client, test_session):
     project = await create_project(test_session)
     run = await create_run(test_session, project_id=project.id, status="running")
 
-    res = await async_client.post(f"/api/v1/projects/{project.id}/cancel")
+    res = await async_client.post(f"/api/v1/runs/{run.id}/cancel")
     assert res.status_code == 200
     await test_session.refresh(run)
     assert run.status == "cancelled"
@@ -379,7 +382,7 @@ async def test_feedback_project_success(async_client, test_session, monkeypatch)
 
     project = await create_project(test_session)
     res = await async_client.post(
-        f"/api/v1/projects/{project.id}/feedback",
+        f"/api/v1/projects/{project.id}/runs/feedback",
         json={"content": "Please adjust tone"},
     )
     assert res.status_code == 202
@@ -408,7 +411,7 @@ async def test_feedback_project_returns_409_for_active_conflict(async_client, te
     await create_run(test_session, project_id=project.id, status="running")
 
     res = await async_client.post(
-        f"/api/v1/projects/{project.id}/feedback",
+        f"/api/v1/projects/{project.id}/runs/feedback",
         json={"content": "Please adjust tone"},
     )
 
@@ -463,24 +466,17 @@ async def test_review_agent_routes_shot_feedback_to_render(test_session, test_se
 
 
 @pytest.mark.asyncio
-async def test_resume_run_mismatched_project_id(async_client, test_session):
-    """Resume a run that belongs to a different project → 404."""
-    project = await create_project(test_session)
-    other_project = await create_project(test_session)
-    run = await create_run(test_session, project_id=other_project.id, status="failed")
-
-    res = await async_client.post(
-        f"/api/v1/projects/{project.id}/resume",
-        json={"run_id": run.id},
-    )
+async def test_resume_unknown_run_returns_404(async_client, test_session):
+    """按 run id 寻址后，「run 属于别的项目」不再是一个概念：只有存在与否。"""
+    res = await async_client.post("/api/v1/runs/424242/resume")
     assert res.status_code == 404
-    assert "Run not found" in res.json()["error"]["message"]
+    assert "not found" in res.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
 async def test_generation_state_none_when_no_runs(async_client, test_session):
     project = await create_project(test_session)
-    res = await async_client.get(f"/api/v1/projects/{project.id}/generation-state")
+    res = await async_client.get(f"/api/v1/projects/{project.id}/runs/current")
     assert res.status_code == 200
     assert res.json() is None
 
@@ -490,7 +486,7 @@ async def test_generation_state_recoverable_for_failed_run(async_client, test_se
     project = await create_project(test_session)
     run = await create_run(test_session, project_id=project.id, status="failed")
 
-    res = await async_client.get(f"/api/v1/projects/{project.id}/generation-state")
+    res = await async_client.get(f"/api/v1/projects/{project.id}/runs/current")
     assert res.status_code == 200
     data = res.json()
     assert data is not None
@@ -505,7 +501,7 @@ async def test_generation_state_recoverable_for_stale_running_run(async_client, 
     project = await create_project(test_session)
     await create_run(test_session, project_id=project.id, status="running")
 
-    res = await async_client.get(f"/api/v1/projects/{project.id}/generation-state")
+    res = await async_client.get(f"/api/v1/projects/{project.id}/runs/current")
     assert res.status_code == 200
     data = res.json()
     assert data is not None
@@ -514,5 +510,5 @@ async def test_generation_state_recoverable_for_stale_running_run(async_client, 
 
 @pytest.mark.asyncio
 async def test_generation_state_project_not_found(async_client):
-    res = await async_client.get("/api/v1/projects/999999/generation-state")
+    res = await async_client.get("/api/v1/projects/999999/runs/current")
     assert res.status_code == 404

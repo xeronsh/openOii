@@ -5,7 +5,7 @@ from app.api.v1.routes.characters import router as characters_router
 from app.api.v1.routes.config import router as config_router
 from app.api.v1.routes.consistency import router as consistency_router
 from app.api.v1.routes.export import router as export_router
-from app.api.v1.routes.generation import router as generation_router
+from app.api.v1.routes.runs import router as runs_router
 from app.api.v1.routes.projects import router as projects_router
 from app.api.v1.routes.shots import router as shots_router
 from app.api.v1.routes.skills import router as skills_router
@@ -16,7 +16,7 @@ from app.api.v1.routes.versions import router as versions_router
 
 api_router = APIRouter()
 api_router.include_router(projects_router, prefix="/projects", tags=["projects"])
-api_router.include_router(generation_router, tags=["generation"])
+api_router.include_router(runs_router, tags=["runs"])
 api_router.include_router(config_router, prefix="/config", tags=["config"])
 api_router.include_router(characters_router, prefix="/characters", tags=["characters"])
 api_router.include_router(shots_router, prefix="/shots", tags=["shots"])

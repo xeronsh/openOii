@@ -14,7 +14,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_app_settings, get_db_session, get_ws_manager, require_run_id
-from app.api.v1.routes import generation as generation_routes
+from app.api.v1.routes import runs as generation_routes
 from app.main import create_app
 from app.models.agent_run import AgentRun
 from app.schemas.project import ProjectProviderEntry
@@ -143,7 +143,7 @@ async def test_generate_dispatches_full_run_to_engine(closure_client):
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
 
-    res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await client.post(f"/api/v1/projects/{project.id}/runs", json={})
     assert res.status_code == 201
 
     assert len(engine.start) == 1
@@ -164,7 +164,7 @@ async def test_generate_returns_503_when_engine_unavailable(closure_client):
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
 
-    res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await client.post(f"/api/v1/projects/{project.id}/runs", json={})
     assert res.status_code == 503
 
 
@@ -176,7 +176,7 @@ async def test_generate_returns_409_for_active_conflict(closure_client):
         project = await create_project(session)
         await create_run(session, project_id=project.id, status="running")
 
-    res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await client.post(f"/api/v1/projects/{project.id}/runs", json={})
     assert res.status_code == 409
     body = res.json()
     assert "run" in body or "state" in body or "kind" in body
@@ -190,7 +190,7 @@ async def test_generate_returns_409_for_recoverable_conflict(closure_client):
         project = await create_project(session)
         await create_run(session, project_id=project.id, status="failed")
 
-    res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await client.post(f"/api/v1/projects/{project.id}/runs", json={})
     assert res.status_code == 409
 
 
@@ -202,7 +202,7 @@ async def test_generate_returns_409_for_recoverable_conflict(closure_client):
 @pytest.mark.asyncio
 async def test_resume_returns_404_when_project_missing(closure_client):
     client, _ctx, _engine = closure_client
-    res = await client.post("/api/v1/projects/99999/resume", json={"run_id": 1})
+    res = await client.post("/api/v1/runs/99999/runs/{run_id}/resume", json={"run_id": 1})
     assert res.status_code == 404
 
 
@@ -211,11 +211,9 @@ async def test_resume_returns_404_when_run_missing(closure_client):
     client, ctx, _engine = closure_client
 
     async with ctx["session_maker"]() as session:
-        project = await create_project(session)
+        await create_project(session)
 
-    res = await client.post(
-        f"/api/v1/projects/{project.id}/resume", json={"run_id": 99999}
-    )
+    res = await client.post("/api/v1/runs/99999/resume")
     assert res.status_code == 404
 
 
@@ -233,7 +231,7 @@ async def test_resume_always_dispatches_to_engine(closure_client):
         project = await create_project(session)
         run = await create_run(session, project_id=project.id, status="running")
 
-    res = await client.post(f"/api/v1/projects/{project.id}/resume", json={"run_id": run.id})
+    res = await client.post(f"/api/v1/runs/{run.id}/resume", json={"run_id": run.id})
     assert res.status_code == 200
     assert res.json()["id"] == run.id
     assert len(engine.resume) == 1
@@ -248,7 +246,7 @@ async def test_resume_dispatches_to_engine(closure_client):
         project = await create_project(session)
         run = await create_run(session, project_id=project.id, status="paused")
 
-    res = await client.post(f"/api/v1/projects/{project.id}/resume", json={"run_id": run.id})
+    res = await client.post(f"/api/v1/runs/{run.id}/resume", json={"run_id": run.id})
     assert res.status_code == 200
     assert len(engine.resume) == 1
     assert engine.resume[0]["run_id"] == run.id
@@ -263,7 +261,7 @@ async def test_resume_returns_503_when_engine_unavailable(closure_client):
         project = await create_project(session)
         run = await create_run(session, project_id=project.id, status="paused")
 
-    res = await client.post(f"/api/v1/projects/{project.id}/resume", json={"run_id": run.id})
+    res = await client.post(f"/api/v1/runs/{run.id}/resume", json={"run_id": run.id})
     assert res.status_code == 503
 
 
@@ -275,7 +273,7 @@ async def test_resume_returns_503_when_engine_unavailable(closure_client):
 @pytest.mark.asyncio
 async def test_cancel_returns_404_when_project_missing(closure_client):
     client, _ctx, _engine = closure_client
-    res = await client.post("/api/v1/projects/99999/cancel")
+    res = await client.post("/api/v1/runs/99999/runs/{run_id}/cancel")
     assert res.status_code == 404
 
 
@@ -285,21 +283,33 @@ async def test_cancel_marks_runs_emits_ws_and_notifies_engine(closure_client):
 
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
-        await create_run(session, project_id=project.id, status="running")
-        await create_run(session, project_id=project.id, status="queued")
+        target = await create_run(session, project_id=project.id, status="running")
+        other = await create_run(session, project_id=project.id, status="queued")
 
-    res = await client.post(f"/api/v1/projects/{project.id}/cancel")
+    # 按 run id 取消：只影响目标 run，同项目的另一个 run 不受牵连
+    res = await client.post(f"/api/v1/runs/{target.id}/cancel")
     assert res.status_code == 200
     body = res.json()
     assert body["status"] == "cancelled"
-    assert body["cancelled"] == 2
+    assert body["cancelled"] == 1
+    assert body["run_ids"] == [target.id]
 
-    assert len(engine.cancel) == 1
-    assert ctx["ws"].events
+    assert [c["run_id"] for c in engine.cancel] == [target.id]
+    ctx["ws"].events.clear()
+
+    async with ctx["session_maker"]() as session:
+        from app.models.agent_run import AgentRun
+
+        assert (await session.get(AgentRun, target.id)).status == "cancelled"
+        assert (await session.get(AgentRun, other.id)).status == "queued"
+
+    ctx["ws"].events.clear()
+    res = await client.post(f"/api/v1/runs/{other.id}/cancel")
+    assert res.json()["run_ids"] == [other.id]
     last_project_id, last_event = ctx["ws"].events[-1]
     assert last_project_id == project.id
     assert last_event["type"] == "run_cancelled"
-    assert last_event["data"]["cancelled_count"] == 2
+    assert last_event["data"]["cancelled_count"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +320,7 @@ async def test_cancel_marks_runs_emits_ws_and_notifies_engine(closure_client):
 @pytest.mark.asyncio
 async def test_feedback_returns_404_when_project_missing(closure_client):
     client, _ctx, _engine = closure_client
-    res = await client.post("/api/v1/projects/99999/feedback", json={"content": "fix tone"})
+    res = await client.post("/api/v1/projects/99999/runs/runs/feedback", json={"content": "fix tone"})
     assert res.status_code == 404
 
 
@@ -327,7 +337,7 @@ async def test_feedback_routes_through_review_then_dispatches(closure_client, mo
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
 
-    res = await client.post(f"/api/v1/projects/{project.id}/feedback", json={"content": "fix tone"})
+    res = await client.post(f"/api/v1/projects/{project.id}/runs/feedback", json={"content": "fix tone"})
     assert res.status_code == 202
     body = res.json()
     assert body["status"] == "accepted"
@@ -354,7 +364,7 @@ async def test_feedback_returns_503_when_engine_unavailable(closure_client, monk
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
 
-    res = await client.post(f"/api/v1/projects/{project.id}/feedback", json={"content": "fix tone"})
+    res = await client.post(f"/api/v1/projects/{project.id}/runs/feedback", json={"content": "fix tone"})
     assert res.status_code == 503
 
 
@@ -366,7 +376,7 @@ async def test_feedback_returns_409_when_run_active(closure_client):
         project = await create_project(session)
         await create_run(session, project_id=project.id, status="running")
 
-    res = await client.post(f"/api/v1/projects/{project.id}/feedback", json={"content": "fix tone"})
+    res = await client.post(f"/api/v1/projects/{project.id}/runs/feedback", json={"content": "fix tone"})
     assert res.status_code == 409
 
 

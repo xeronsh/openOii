@@ -116,17 +116,19 @@ async def create_local_run(
 
     from app.api.deps import require_run_id
 
+    run_id = require_run_id(run)
     task = asyncio.create_task(
         run_agent_plan(
             project_id=spec.project_id,
-            run_id=require_run_id(run),
+            run_id=run_id,
             agent_plan=spec.agent_plan,
             settings=settings,
             ws=ws,
             target_ids=spec.target_ids,
         )
     )
-    task_manager.register(spec.project_id, task)
+    # 按 run_id 登记：同项目下的多个局部 run 可以并行（锁粒度是具体资源）。
+    task_manager.register(run_id, spec.project_id, task)
     return LocalRunResult(run=run)
 
 

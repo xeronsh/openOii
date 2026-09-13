@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.api.v1.routes import generation as generation_routes
+from app.api.v1.routes import runs as generation_routes
 from app.schemas.project import (
     AgentRunRead,
     ProjectProviderEntry,
@@ -94,7 +94,7 @@ async def test_generate_project_rejects_second_active_full_run(
 
     monkeypatch.setattr(generation_routes, "build_recovery_control_surface", _fake_recovery_control)
 
-    res = await async_client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await async_client.post(f"/api/v1/projects/{project.id}/runs", json={})
 
     assert res.status_code == 409
     data = res.json()
@@ -129,7 +129,7 @@ async def test_generate_project_conflict_is_explicit_about_resume_or_cancel(
 
     monkeypatch.setattr(generation_routes, "build_recovery_control_surface", _fake_recovery_control)
 
-    res = await async_client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await async_client.post(f"/api/v1/projects/{project.id}/runs", json={})
 
     assert res.status_code == 409
     data = res.json()
@@ -163,9 +163,7 @@ async def test_resume_project_run_dispatches_live_run_to_engine(
     monkeypatch.setattr(generation_routes, "ensure_engine_running", _fake_ensure)
     monkeypatch.setattr(generation_routes, "engine_resume_run", _fake_resume)
 
-    res = await async_client.post(
-        f"/api/v1/projects/{project.id}/resume", json={"run_id": active_run.id}
-    )
+    res = await async_client.post(f"/api/v1/runs/{active_run.id}/resume")
 
     assert res.status_code == 200
     data = res.json()
@@ -195,9 +193,7 @@ async def test_resume_project_run_starts_resume_task_for_recoverable_run(
     monkeypatch.setattr(generation_routes, "ensure_engine_running", _fake_ensure)
     monkeypatch.setattr(generation_routes, "engine_resume_run", _fake_resume)
 
-    res = await async_client.post(
-        f"/api/v1/projects/{project.id}/resume", json={"run_id": resumable_run.id}
-    )
+    res = await async_client.post(f"/api/v1/runs/{resumable_run.id}/resume")
 
     assert res.status_code == 200
     data = res.json()

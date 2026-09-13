@@ -10,7 +10,7 @@
 ## 关键入口
 - 后端 FastAPI 入口：`backend/app/main.py`。
 - API 聚合：`backend/app/api/v1/router.py`，默认前缀 `/api/v1`。
-- 生成链路 HTTP 入口：`backend/app/api/v1/routes/generation.py`（`/{project_id}/generate|resume|cancel|feedback`）。
+- 生成链路 HTTP 入口：`backend/app/api/v1/routes/runs.py`。run 是一等资源：`POST /projects/{id}/runs` 创建、`GET /projects/{id}/runs/current` 水合、`POST /runs/{run_id}/resume|cancel` 按 run 寻址、`POST /projects/{id}/runs/feedback` 反馈。
 - 真正的编排/持久化逻辑在 `backend/app/orchestration/`；API 层主要负责建 run、起后台任务、回传控制面。
 - WebSocket 入口：`/ws/projects/{project_id}`。
 - 前端入口：`frontend/app/main.tsx`；路由在 `frontend/app/App.tsx`。

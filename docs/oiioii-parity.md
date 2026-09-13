@@ -32,7 +32,7 @@
 
 - 编排只在 pi 引擎：`engine/src/pipeline/runner.ts` 的 17 阶段状态机
 - HITL：闸门写 `agentrun.awaiting_payload`，确认经 `agentrun.confirm_requested` 列
-- 断点续跑：每阶段完成写 `engine_checkpoints`，`/resume` 从下一阶段继续
+- 断点续跑：每阶段完成写 `engine_checkpoints`，`POST /runs/{id}/resume` 从下一阶段继续
 - Skills（仅 3 个常用简单流）：`story-anime` / `character-design` / `quick-short`  
   - 每 skill：`directives` + `story_template` + `pipeline_hints` + 入口 stage/agent  
   - 注入 outline/plan system prompt；创建 时回填默认 style/镜头数/模式  

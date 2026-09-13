@@ -131,7 +131,7 @@ def _no_real_engine(monkeypatch):
     路由现在总是经 loopback HTTP 派发；默认把它们换成 no-op stub，
     需要验证派发契约的测试可在自己的 fixture 里覆盖。
     """
-    from app.api.v1.routes import generation as generation_routes
+    from app.api.v1.routes import runs as generation_routes
 
     async def _ensure(base_url, database_url, static_dir):
         return None

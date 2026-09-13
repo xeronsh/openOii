@@ -33,7 +33,7 @@ import {
 } from "~/features/comic-workflow/state/deriveWorkbenchStatus";
 import { MobileWorkbenchPreview } from "~/features/comic-workflow/mobile/MobileWorkbenchPreview";
 import { useIsMobileWorkbench } from "~/features/comic-workflow/mobile/useIsMobileWorkbench";
-import { projectsApi, exportApi, getStaticUrl } from "~/services/api";
+import { projectsApi, runsApi, exportApi, getStaticUrl } from "~/services/api";
 import { useEditorStore, useShallow } from "~/stores/editorStore";
 import type {
 	ProjectProviderSettings,
@@ -216,7 +216,7 @@ export function ProjectPage() {
 	// 运行态水合：不必先撞一次 409 才能发现可恢复的运行
 	const { data: hydratedGenerationState } = useQuery({
 		queryKey: ["generation-state", projectId],
-		queryFn: () => projectsApi.generationState(projectId),
+		queryFn: () => projectsApi.currentRun(projectId),
 		enabled: projectId > 0,
 		retry: 1,
 		refetchOnWindowFocus: false,
@@ -363,7 +363,7 @@ export function ProjectPage() {
 			skillId?: string | null;
 		}) =>
 			projectsApi
-				.generate(projectId, {
+				.startRun(projectId, {
 					auto_mode: useEditorStore.getState().runMode === "yolo",
 					skill_id: skillId || undefined,
 				})
@@ -503,7 +503,14 @@ export function ProjectPage() {
 	});
 
 	const cancelMutation = useMutation({
-		mutationFn: () => projectsApi.cancel(projectId),
+		mutationFn: () => {
+			const runId =
+				storeCurrentRunId ?? storeRecoveryControl?.active_run.id ?? null;
+			if (runId === null) {
+				throw new Error("没有可取消的运行");
+			}
+			return runsApi.cancel(runId);
+		},
 		onSuccess: (result) => {
 			if (result?.status === "cancelled") {
 				setLastRunStatus("cancelled");
@@ -527,7 +534,7 @@ export function ProjectPage() {
 			if (!control) {
 				throw new Error("没有可恢复的运行");
 			}
-			return projectsApi.resume(projectId, control.active_run.id);
+			return runsApi.resume(control.active_run.id);
 		},
 		onSuccess: (run) => {
 			const control = storeRecoveryControl;

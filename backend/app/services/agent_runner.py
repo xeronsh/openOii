@@ -152,4 +152,4 @@ async def run_agent_plan(
             project_id, {"type": "run_failed", "data": {"run_id": run_id, "error": str(e)}}
         )
     finally:
-        task_manager.remove(project_id)
+        task_manager.remove(run_id)

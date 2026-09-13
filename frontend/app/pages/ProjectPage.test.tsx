@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectPage } from './ProjectPage';
-import { projectsApi } from '~/services/api';
+import { projectsApi, runsApi } from '~/services/api';
 import type { AgentRun, Project, RecoveryControlRead } from '~/types';
 import { ApiError } from '~/types/errors';
 import { toast } from '~/utils/toast';
@@ -329,8 +329,11 @@ vi.mock('~/services/api', () => ({
     getCharacters: vi.fn(),
     getShots: vi.fn(),
     getMessages: vi.fn(),
-    generate: vi.fn(),
+    startRun: vi.fn(),
+    currentRun: vi.fn(),
     feedback: vi.fn(),
+  },
+  runsApi: {
     cancel: vi.fn(),
     resume: vi.fn(),
   },
@@ -464,13 +467,13 @@ describe('ProjectPage live hydration', () => {
     storeState.projectStory = null;
     storeState.blockingClips = null;
     vi.mocked(projectsApi.update).mockResolvedValue(projectData as never);
-    vi.mocked(projectsApi.generate).mockResolvedValue({
+    vi.mocked(projectsApi.startRun).mockResolvedValue({
 		id: 77,
 		provider_snapshot: providerSnapshotSample,
 	} as never);
     vi.mocked(projectsApi.feedback).mockResolvedValue({ id: 88 } as never);
-    vi.mocked(projectsApi.cancel).mockResolvedValue(undefined as never);
-    vi.mocked(projectsApi.resume).mockResolvedValue({
+    vi.mocked(runsApi.cancel).mockResolvedValue(undefined as never);
+    vi.mocked(runsApi.resume).mockResolvedValue({
       id: 55,
       project_id: 9,
       status: 'processing',
@@ -884,7 +887,7 @@ describe('ProjectPage live hydration', () => {
     render(<ProjectPage />);
 
     await waitFor(() => {
-      expect(projectsApi.generate).toHaveBeenCalledWith(9, { auto_mode: false });
+      expect(projectsApi.startRun).toHaveBeenCalledWith(9, { auto_mode: false });
     });
     expect(setSearchParams).toHaveBeenCalledWith({}, { replace: true });
   });
@@ -1060,7 +1063,7 @@ describe('ProjectPage live hydration', () => {
     await user.click(screen.getByRole('button', { name: '恢复运行' }));
 
     await waitFor(() => {
-      expect(projectsApi.resume).toHaveBeenCalledWith(9, 17);
+      expect(runsApi.resume).toHaveBeenCalledWith(17);
     });
     expect(storeState.setGenerating).toHaveBeenCalledWith(true);
     expect(storeState.setCurrentRunId).toHaveBeenCalledWith(55);
@@ -1109,7 +1112,7 @@ describe('ProjectPage live hydration', () => {
     await user.click(screen.getByRole('button', { name: '取消' }));
 
     await waitFor(() => {
-      expect(projectsApi.cancel).toHaveBeenCalledWith(9);
+      expect(runsApi.cancel).toHaveBeenCalledWith(18);
     });
     expect(storeState.resetRunState).toHaveBeenCalled();
     expect(storeState.addMessage).toHaveBeenCalledWith(
@@ -1141,7 +1144,7 @@ describe('ProjectPage live hydration', () => {
     render(<ProjectPage />);
 
     await waitFor(() => {
-      expect(projectsApi.generate).toHaveBeenCalled();
+      expect(projectsApi.startRun).toHaveBeenCalled();
     });
   });
 
@@ -1166,7 +1169,7 @@ describe('ProjectPage live hydration', () => {
     render(<ProjectPage />);
 
     await waitFor(() => {
-      expect(projectsApi.generate).toHaveBeenCalled();
+      expect(projectsApi.startRun).toHaveBeenCalled();
     });
   });
 
@@ -1180,7 +1183,7 @@ describe('ProjectPage live hydration', () => {
     await user.click(screen.getByRole('button', { name: '开始生成' }));
 
     await waitFor(() => {
-      expect(projectsApi.generate).toHaveBeenCalledWith(9, { auto_mode: false });
+      expect(projectsApi.startRun).toHaveBeenCalledWith(9, { auto_mode: false });
     });
     expect(storeState.clearMessages).toHaveBeenCalled();
     expect(storeState.setCurrentStage).toHaveBeenCalledWith('plan');
@@ -1208,13 +1211,13 @@ describe('ProjectPage live hydration', () => {
   it('ignores a late generate success after the user has already cancelled the run', async () => {
     const user = userEvent.setup();
     let resolveGenerate!: (value: AgentRun) => void;
-    vi.mocked(projectsApi.generate).mockImplementationOnce(
+    vi.mocked(projectsApi.startRun).mockImplementationOnce(
       () =>
         new Promise<AgentRun>((resolve) => {
           resolveGenerate = resolve;
         })
     );
-    vi.mocked(projectsApi.cancel).mockResolvedValueOnce({ status: 'cancelled', cancelled: 1 } as never);
+    vi.mocked(runsApi.cancel).mockResolvedValueOnce({ status: 'cancelled', cancelled: 1 } as never);
     storeState.isGenerating = false;
     storeState.currentRunId = null;
 
@@ -1243,7 +1246,7 @@ describe('ProjectPage live hydration', () => {
     });
 
     await waitFor(() => {
-      expect(projectsApi.cancel).toHaveBeenCalledWith(9);
+      expect(runsApi.cancel).toHaveBeenCalledWith(321);
     });
 
     expect(storeState.setGenerating).not.toHaveBeenCalledWith(true);
@@ -1261,12 +1264,12 @@ describe('ProjectPage live hydration', () => {
 
     await user.click(screen.getByRole('button', { name: '停止生成' }));
 
-    expect(projectsApi.cancel).not.toHaveBeenCalled();
+    expect(runsApi.cancel).not.toHaveBeenCalled();
   });
 
   it('shows an error toast when generate fails with a non-409 error', async () => {
     const user = userEvent.setup();
-    vi.mocked(projectsApi.generate).mockRejectedValueOnce(new Error('服务器炸了'));
+    vi.mocked(projectsApi.startRun).mockRejectedValueOnce(new Error('服务器炸了'));
     storeState.isGenerating = false;
 
     render(<ProjectPage />);
@@ -1315,7 +1318,7 @@ describe('ProjectPage live hydration', () => {
       },
     };
 
-    vi.mocked(projectsApi.generate).mockRejectedValueOnce(
+    vi.mocked(projectsApi.startRun).mockRejectedValueOnce(
       new ApiError({
         code: 'conflict',
         message: '409 conflict',
@@ -1342,7 +1345,7 @@ describe('ProjectPage live hydration', () => {
 
   it('shows a warning toast when generate 409 does not include recovery control', async () => {
     const user = userEvent.setup();
-    vi.mocked(projectsApi.generate).mockRejectedValueOnce(
+    vi.mocked(projectsApi.startRun).mockRejectedValueOnce(
       new ApiError({
         code: 'conflict',
         message: '409 conflict',
@@ -1405,7 +1408,7 @@ describe('ProjectPage live hydration', () => {
 
   it('resets state on cancel even when cancel request fails', async () => {
     const user = userEvent.setup();
-    vi.mocked(projectsApi.cancel).mockRejectedValueOnce(new Error('cancel failed'));
+    vi.mocked(runsApi.cancel).mockRejectedValueOnce(new Error('cancel failed'));
     storeState.recoveryControl = {
       state: 'active',
       detail: '当前运行仍可取消。',
@@ -1441,7 +1444,7 @@ describe('ProjectPage live hydration', () => {
     await user.click(screen.getByRole('button', { name: '取消' }));
 
     await waitFor(() => {
-      expect(projectsApi.cancel).toHaveBeenCalledWith(9);
+      expect(runsApi.cancel).toHaveBeenCalledWith(18);
     });
     expect(storeState.resetRunState).toHaveBeenCalled();
     expect(storeState.addMessage).toHaveBeenCalledWith(
@@ -1484,7 +1487,7 @@ describe('ProjectPage live hydration', () => {
       },
     };
 
-    vi.mocked(projectsApi.resume).mockRejectedValueOnce(
+    vi.mocked(runsApi.resume).mockRejectedValueOnce(
       new ApiError({
         code: 'resume_fail',
         message: '无法恢复',
