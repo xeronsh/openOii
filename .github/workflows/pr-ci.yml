@@ -13,6 +13,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  contracts:
+    name: Contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Workflow contract drift
+        run: python scripts/generate_workflow_contract.py --check
+
   backend:
     name: Backend
     runs-on: ubuntu-latest
@@ -89,7 +100,7 @@ jobs:
   docker:
     name: Docker build smoke
     runs-on: ubuntu-latest
-    needs: [backend, engine, frontend]
+    needs: [contracts, backend, engine, frontend]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
