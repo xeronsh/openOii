@@ -80,7 +80,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
     const outcome = await runner.run({ projectId, runId, autoMode: true, userFeedback: "" });
     clearInterval(confirmer);
 
-    expect(outcome.status).toBe("completed");
+    expect(outcome.status, outcome.error ?? "pipeline failed without an error message").toBe("completed");
 
     const project = shared.getProject(projectId);
     expect(project?.status).toBe("ready");
@@ -154,8 +154,8 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
     }, 100);
     try {
       const outcome = await running;
-      expect(sawAwaiting).toBe(true);
-      expect(outcome.status).toBe("completed");
+      expect(sawAwaiting, outcome.error ?? "pipeline exited before the first approval gate").toBe(true);
+      expect(outcome.status, outcome.error ?? "pipeline failed without an error message").toBe("completed");
     } finally {
       clearInterval(confirmer);
       edb.close();
