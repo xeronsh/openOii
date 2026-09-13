@@ -1,6 +1,8 @@
 # 迁移 Goal:后端 Agent 框架 → pi-agent-core,存储 → SQLite
 
-> 状态:PROPOSED(待评审) · 日期:2026-09-13
+> 状态:DONE(2026-09-13 执行完毕) · 日期:2026-09-13
+> 执行记录:Phase 0-7 全部完成;commit 62e6dbf(Phase 1)/ 8996784(Phase 2)/ 4c6377a(Phase 3)/ 52394ce(Phase 4+5)/ 4183f76(Phase 6)/ Phase 7(默认切换 + ADR 0004)
+> 决策记录:docs/adr/0004-pi-engine-sqlite.md
 > 关联:AGENTS.md(resumability 原则)、ADR 0002/0003、`docs/oiioii-parity.md`
 
 ## 0. 一句话目标
@@ -151,8 +153,20 @@
 
 ---
 
-### 附录 A:现状基线(Phase 0 填写)
+### 附录 A:执行基线与验收证据(已填写)
 
-- `uv run pytest`:@TODO(日期、通过数)
-- WS 契约快照:`docs/fixtures/ws-contract-snapshot.json` @TODO
-- 金丝雀产物:backend/app/static/… @TODO
+- 基线:`uv run pytest` **1136 passed**(2026-09-13,迁移前)
+- WS 契约快照:`docs/fixtures/ws-contract-snapshot.json`(179 事件,run_completed,fake provider 全流程)
+- 产物结构基准:`docs/fixtures/fake-run-artifact-structure.json`(3 角色/6 分镜/成片 mp4)
+- Parity 验收(AGENT_ENGINE=pi,双进程):事件词表 **16/16 一致**、闸门序列一致(outline→plan→plan→render→render→compose)、terminal=run_completed、领域产物一致(3 角色/6 分镜/成片)
+- 恢复验收:引擎在闸门处被杀 → API `/resume` → 新引擎进程从 `engine_checkpoints` 继续 → run_completed("RESUME VERIFIED")
+- 测试终态:后端 `pytest` 1128 绿;引擎 `vitest` 5 绿;`tsc --noEmit` 双侧干净
+- 已知既怪(迁移前即存在,与 pi 引擎无关):
+  - LangGraph 模式 resume 在部分闸门状态会重复进入 characters_approval(引擎模式的 resume 语义已由 engine_checkpoints 重新实现,不受影响)
+  - 全新库上 LangGraph 引擎的首次生成可能因历史 checkpoint 串线失败(仅 PG checkpointer 场景)
+
+### 附录 B:与金标准的既有话术量差异(fake 数据,非契约违反)
+
+- run_message 40 vs 67 / agent_thinking 3 vs 13 / run_progress 23 vs 27:Python fake_text 的罐头话术更密(逐实体 loading 文案、思考链更多 planning 段)
+- version_created 9 vs 18:金标准在计划阶段对已有实体也做版本快照;引擎模式仅渲染前快照(版本语义见 review)
+- 这些差异不影响事件词表、闸门顺序、终态与领域产物结构

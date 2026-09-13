@@ -38,7 +38,12 @@ def engine_db_path(database_url: str) -> str | None:
     database = make_url(database_url).database
     if not database or database == ":memory:":
         return None
-    return database
+    # 引擎进程的 CWD 是 engine/，相对路径必须先在 Python 侧固定为绝对路径，
+    # 否则两边会各创建各的库。
+    path = Path(database)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return str(path.resolve())
 
 
 async def ensure_engine_running(base_url: str, database_url: str, static_dir: Path) -> None:

@@ -2,7 +2,9 @@
 
 ## 先看这个
 - openOii 是“故事想法 → 漫剧成片”的长链路生成应用；改动生成、恢复、进度推送时，优先保 resumability 和现有执行流。
-- 这是双包仓库，没有根级统一脚本：后端在 `backend/` 用 `uv`，前端在 `frontend/` 用 `pnpm`。
+- 这是三包仓库，没有根级统一脚本：后端在 `backend/` 用 `uv`，前端在 `frontend/` 用 `pnpm`，生成引擎 sidecar 在 `engine/` 用 `pnpm`（pi-agent-core，TypeScript）。
+- 默认编排引擎是 pi sidecar（`AGENT_ENGINE=pi`）：首次触发生成时由后端自动拉起（loopback 18766），共享同一个 SQLite 文件；本地开发零容器。`AGENT_ENGINE=langgraph` 是回滚开关（见 docs/adr/0004）。
+- 默认数据库是 SQLite（`sqlite+aiosqlite:///./data/openoii.db`，WAL）；docker-compose 部署传 PostgreSQL 的 `DATABASE_URL`。Redis 已移除（confirm 信号走 `agentrun.confirm_requested` 列）。
 - 当前 GitHub Actions 只有镜像构建/推送：`.github/workflows/docker-publish.yml`。本地要自己跑测试/构建，CI 不会替你兜底。
 
 ## 关键入口
@@ -23,6 +25,15 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 18765
 uv run pytest
 uv run pytest tests/test_api/test_generation.py -q
 uv run ruff check app tests
+```
+
+### 引擎（pi sidecar，通常由后端自动拉起，手动调试用）
+```bash
+cd engine
+pnpm install
+pnpm test            # vitest
+pnpm exec tsc --noEmit
+ENGINE_DB_PATH=../backend/data/openoii.db pnpm dev   # loopback 18766
 ```
 
 ### 前端
@@ -59,7 +70,9 @@ docker-compose down
 - `backend/app/config.py` 里测试与运行时的配置读取路径不同：测试里直接 `Settings()` 不会自动读仓库 `.env`，运行时走 `get_settings()` 才会加载 `.env`。
 - `backend/app/db/session.py:init_db()` 启动时会 `create_all()`、初始化配置、把遗留 `queued/running` run 标成 `cancelled`，并调用 `ensure_postgres_checkpointer_setup()`。改模型/持久化时要同时考虑启动初始化和 Alembic。
 - Alembic 版本文件在 `backend/alembic/versions/`，但 `backend/alembic.ini` 默认指向本地 SQLite；跑迁移前先确认 `DATABASE_URL`/环境变量覆盖正确。
-- 生成/恢复/取消流程同时依赖数据库状态、Redis confirm 信号和进程内 `task_manager`；不要把当前实现当成天然多实例安全。
+- 生成/恢复/取消流程依赖数据库状态、`agentrun.confirm_requested` 信号列和（langgraph 模式下的）进程内 `task_manager`；不是多实例安全。pi 模式下引擎是独立进程，通过 `agentrun` 列与 `engine_run_events` 表和 Python 侧通信——两边必须指向同一个 SQLite 文件。
+- `backend/aiosqlite/` 是刻意的本地 shim（遮蔽 site-packages 的 aiosqlite）：SQLAlchemy 与 langgraph-checkpoint-sqlite 都依赖它的协议；原始 sqlite 调用经 asyncio.to_thread 下放，别改回事件循环内同步执行（busy 等待会自死锁）。
+- `configitem` 表里的运行时配置会覆盖 `.env`；种子逻辑以进程 env 优先（config_service.ensure_initialized）。若后端连了意料之外的库，先查这张表。
 - Docker 场景下，若图像/视频服务跑在宿主机，`backend/.env` 里不能继续用 `localhost`；按 README 改成 `host.docker.internal` 或宿主机 IP。
 - 静态媒体输出在 `backend/app/static`，Compose 也把这个目录挂出来；改导出/拼接逻辑时不要忽略它。
 - `backend/Dockerfile` 会执行 `uv sync --frozen --no-dev --extra agents`；改后端依赖后记得更新 `uv.lock`，并注意运行时会带上 `agents` 可选依赖。

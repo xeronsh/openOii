@@ -1,1 +1,5 @@
 coverage.xml
+data/
+*.db
+*.db-wal
+*.db-shm

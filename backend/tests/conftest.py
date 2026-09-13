@@ -43,6 +43,7 @@ def _cleanup_global_sandbox_db():
 def test_settings() -> Settings:
     return Settings(
         database_url="sqlite+aiosqlite:///:memory:",
+        agent_engine="langgraph",
         text_provider="anthropic",
         image_provider="openai",
         video_provider="openai",

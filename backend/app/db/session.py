@@ -24,6 +24,16 @@ def _build_engine() -> AsyncEngine:
     settings = get_settings()
     engine = create_async_engine(settings.database_url, echo=settings.db_echo, pool_pre_ping=True)
     if settings.database_url.startswith("sqlite"):
+        from sqlalchemy.engine import make_url as _make_url
+
+        _db_file = _make_url(settings.database_url).database
+        if _db_file and _db_file != ":memory:":
+            from pathlib import Path as _Path
+
+            _db_path = _Path(_db_file)
+            if not _db_path.is_absolute():
+                _db_path = _Path.cwd() / _db_path
+            _db_path.parent.mkdir(parents=True, exist_ok=True)
         from sqlalchemy import event
 
         @event.listens_for(engine.sync_engine, "connect")

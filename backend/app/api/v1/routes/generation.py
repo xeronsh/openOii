@@ -211,7 +211,7 @@ async def generate_project(
         finally:
             task_manager.remove(project_id)
 
-    if settings.agent_engine == "pi":
+    if settings.agent_engine == "pi" and settings.database_url.startswith("sqlite"):
         from app.main import STATIC_DIR
 
         try:
@@ -272,7 +272,7 @@ async def resume_project_run(
         finally:
             task_manager.remove(project_id)
 
-    if settings.agent_engine == "pi":
+    if settings.agent_engine == "pi" and settings.database_url.startswith("sqlite"):
         from app.main import STATIC_DIR
 
         try:
@@ -302,7 +302,7 @@ async def cancel_project_run(
 
     # 先取消实际的后台任务
     task_cancelled = task_manager.cancel(project_id)
-    if settings.agent_engine == "pi":
+    if settings.agent_engine == "pi" and settings.database_url.startswith("sqlite"):
         active = await _latest_run_for_project(session, project_id, ("queued", "running"))
         if active is not None:
             await engine_cancel_run(settings.engine_url, active.id)

@@ -16,10 +16,10 @@ class Settings(BaseSettings):
     environment: str = Field(default="dev", description="dev|staging|prod")
     log_level: str = Field(default="INFO", description="Uvicorn log level")
 
-    # 生成编排引擎：langgraph（进程内，现状）或 pi（engine sidecar，pi-core 迁移）
+    # 生成编排引擎：pi（engine sidecar，零容器默认）或 langgraph（回滚开关）
     agent_engine: str = Field(
-        default="langgraph",
-        description="langgraph | pi",
+        default="pi",
+        description="pi | langgraph",
     )
     engine_url: str = Field(
         default="http://127.0.0.1:18766",
@@ -33,9 +33,9 @@ class Settings(BaseSettings):
         description="Admin token for configuration updates (sent via X-Admin-Token header)",
     )
 
-    # 数据库（默认使用 PostgreSQL）
+    # 数据库（默认 SQLite 零容器；docker-compose 部署用 PostgreSQL）
     database_url: str = Field(
-        default="postgresql+asyncpg://openoii:openoii_dev@localhost:5432/openoii"
+        default="sqlite+aiosqlite:///./data/openoii.db"
     )
     db_echo: bool = False
 
