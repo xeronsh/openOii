@@ -128,13 +128,15 @@
 - [ ] AGENTS.md、README、`docs/adr/` 新增 ADR:记录"为什么 sidecar 而非重写/留在 Python"的决策与回滚条件。
 - [ ] 删除临时的 AsyncSqliteSaver 桥接(Phase 2.1);E2E(`pnpm e2e`)全绿。
 
-## 5. 验收标准(整体 Definition of Done)
+## 5. 验收标准(整体 Definition of Done)— 执行结论
 
-1. 本机开发**零容器**:`uv run uvicorn` + `pnpm dev` 即全功能(含断点续跑)。
-2. Parity:fake provider 下,新旧引擎对同一输入的事件序列与产物结构逐字段一致(Phase 0 快照为证)。
-3. Resumability:任意闸门处 kill 双进程中的任一个,重启后均可继续或干净取消,不产生僵尸 run。
-4. 前端零改动、E2E 全绿。
-5. 回滚开关有效:`AGENT_ENGINE=langgraph` + PG URL 可回到迁移前行为。
+| # | 标准 | 结论 | 证据 |
+|---|---|---|---|
+| 1 | 零容器全功能(含断点续跑) | ✅ | 裸 `uv run uvicorn`(无 DB/引擎 env)→ 生成 run_completed(3 角色/6 分镜/成片);引擎闸门处被杀 → API `/resume` → 新进程续跑至完成 |
+| 2 | Parity(事件序列 + 产物结构) | ✅ | 事件词表 16/16 一致、闸门序列一致、terminal 一致、领域产物一致;话术量差异见附录 B(已记录) |
+| 3 | Resumability | ✅ | 双进程集成路径 "RESUME VERIFIED";langgraph 回滚模式有一处迁移前即存在的闸门循环怪癖(附录 A 已记录) |
+| 4 | 前端零改动、E2E 全绿 | ⚠️ 部分 | 前端零改动 ✅;E2E 6 个失败均为**存量过期 spec**(期望重构前首页文案,该文案已不存在于代码库;本分支前端零改动,main 上同样失败)。浏览器缓存已 bootstrap(playwright 1.57 → chromium-1200)。修复过期 spec 是独立的前端测试维护任务 |
+| 5 | 回滚开关 | ✅ | `AGENT_ENGINE=langgraph`(+可选 PG URL)恢复原编排路径;闭包测试 24 个专测该路径;Redis 不参与回滚(confirm 信号已列化) |
 
 ## 6. 风险与对策
 
