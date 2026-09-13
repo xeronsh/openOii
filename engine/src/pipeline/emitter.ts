@@ -1,7 +1,10 @@
 /**
  * Contract event emitter: every pipeline event is recorded into
- * engine_run_events with the WS-contract payload shape (app/schemas/ws.py).
- * The Python side tails these rows and pushes them to WebSocket clients.
+ * engine_run_events with the WS-contract payload shape.
+ *
+ * Event publication is fenced by the run execution lease. A stale executor may
+ * finish an external provider request, but after losing its lease it cannot
+ * append authoritative events or mutate domain projections.
  */
 import { progressForStage } from "../contract.js";
 import type { EngineDatabase } from "../db.js";
@@ -28,6 +31,7 @@ export class PipelineEmitter {
   ) {}
 
   emit(type: string, data: Record<string, unknown>): void {
+    this.shared.assertExecutionFence();
     this.db.appendEvent(this.runId, this.projectId, type, data);
   }
 
@@ -121,8 +125,18 @@ export class PipelineEmitter {
     this.emit("shot_updated", { shot: row });
   }
 
-  versionCreated(entityType: "character" | "shot", entityId: number, version: number, trigger: string): void {
-    this.emit("version_created", { entity_type: entityType, entity_id: entityId, version, trigger });
+  versionCreated(
+    entityType: "character" | "shot",
+    entityId: number,
+    version: number,
+    trigger: string,
+  ): void {
+    this.emit("version_created", {
+      entity_type: entityType,
+      entity_id: entityId,
+      version,
+      trigger,
+    });
   }
 
   critiqueResult(data: {
