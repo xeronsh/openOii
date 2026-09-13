@@ -36,6 +36,32 @@ export interface LlmResponse {
   model: string;
 }
 
+/** Parse the tolerated provider wrappers, but never manufacture an empty object. */
+export function parseJsonObjectText(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  const candidates: string[] = [trimmed];
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed);
+  if (fenced?.[1]) candidates.push(fenced[1].trim());
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1));
+
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Try the next bounded candidate.
+    }
+  }
+  throw new Error("LLM output is not a valid JSON object");
+}
+
 export class TextLlmService {
   constructor(
     private readonly db: EngineDatabase,
@@ -67,8 +93,7 @@ export class TextLlmService {
         return JSON.stringify({
           ...input,
           skill: this.runContext.skill ?? input.skill ?? null,
-          universe_context:
-            this.runContext.universe_context ?? input.universe_context ?? null,
+          universe_context: this.runContext.universe_context ?? input.universe_context ?? null,
           style_template: this.runContext.style_template ?? input.style_template ?? null,
           run_context: {
             workflow_version: this.runContext.workflow_version ?? null,
@@ -81,8 +106,7 @@ export class TextLlmService {
         });
       }
     } catch {
-      // Some future tool may send plain text. Preserve it and add a clearly
-      // delimited immutable context block instead of silently dropping context.
+      // Plain-text requests still receive the immutable context in a delimited block.
     }
     return `${prompt}\n\n<run_context>${JSON.stringify(this.runContext)}</run_context>`;
   }
@@ -139,7 +163,7 @@ export class TextLlmService {
     };
   }
 
-  async generate(req: LlmRequest): Promise<LlmResponse> {
+  private async generateOnce(req: LlmRequest): Promise<LlmResponse> {
     const resolved = this.resolveProvider();
     const prompt = this.promptWithRunContext(req.prompt);
     if (resolved.key === "fake") {
@@ -180,5 +204,35 @@ export class TextLlmService {
           .join("")
       : String(message.content ?? "");
     return { text, provider: resolved.key, model: resolved.model };
+  }
+
+  /**
+   * Workflow LLM calls are structured-output calls. One bounded repair is
+   * allowed for provider formatting mistakes; a second invalid response fails
+   * the stage explicitly instead of flowing downstream as `{}`.
+   */
+  async generate(req: LlmRequest): Promise<LlmResponse> {
+    const first = await this.generateOnce(req);
+    try {
+      parseJsonObjectText(first.text);
+      return first;
+    } catch (firstError) {
+      const repair = await this.generateOnce({
+        system:
+          "Repair the supplied model output into one valid JSON object. Preserve the original data and meaning. Return JSON only, with no markdown or explanation.",
+        prompt: JSON.stringify({ invalid_output: first.text }),
+        maxTokens: req.maxTokens ?? 4096,
+      });
+      try {
+        const parsed = parseJsonObjectText(repair.text);
+        return { ...repair, text: JSON.stringify(parsed) };
+      } catch (repairError) {
+        const firstMessage = firstError instanceof Error ? firstError.message : String(firstError);
+        const repairMessage = repairError instanceof Error ? repairError.message : String(repairError);
+        throw new Error(
+          `structured LLM output invalid after one repair (${firstMessage}; ${repairMessage})`,
+        );
+      }
+    }
   }
 }
