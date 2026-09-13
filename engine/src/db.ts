@@ -1,10 +1,9 @@
 /**
  * Engine-side SQLite access (better-sqlite3).
  *
- * Shares the app's SQLite file with the Python backend (WAL). The engine owns
- * two tables: run_events (WS-bridge source of truth) and checkpoints (gate
- * snapshots). Schema-compatible domain tables (projects/agentrun/...) are
- * read/written by the pipeline layer.
+ * The shared database schema is owned exclusively by backend Alembic. The
+ * engine configures SQLite connection pragmas and validates the runtime tables,
+ * but never CREATEs or ALTERs schema at startup.
  */
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
@@ -19,6 +18,8 @@ export interface RunEventRow {
   created_at: string;
 }
 
+const REQUIRED_RUNTIME_TABLES = ["engine_run_events", "engine_checkpoints"] as const;
+
 export class EngineDatabase {
   readonly db: Database.Database;
 
@@ -30,28 +31,22 @@ export class EngineDatabase {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("busy_timeout = 5000");
-    this.migrate();
+    this.assertSchema();
   }
 
-  private migrate(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS engine_run_events (
-        seq INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_id INTEGER NOT NULL,
-        project_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  private assertSchema(): void {
+    const rows = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?)")
+      .all(...REQUIRED_RUNTIME_TABLES) as Array<{ name: string }>;
+    const present = new Set(rows.map((row) => row.name));
+    const missing = REQUIRED_RUNTIME_TABLES.filter((name) => !present.has(name));
+    if (missing.length > 0) {
+      this.db.close();
+      throw new Error(
+        `engine database schema is not migrated; missing ${missing.join(", ")}. ` +
+          "Run backend Alembic migrations before starting the engine.",
       );
-      CREATE INDEX IF NOT EXISTS idx_engine_run_events_run ON engine_run_events(run_id, seq);
-      CREATE TABLE IF NOT EXISTS engine_checkpoints (
-        run_id INTEGER NOT NULL,
-        stage TEXT NOT NULL,
-        state_json TEXT NOT NULL,
-        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-        PRIMARY KEY (run_id, stage)
-      );
-    `);
+    }
   }
 
   appendEvent(runId: number, projectId: number, type: string, payload: unknown): number {
@@ -101,7 +96,7 @@ export class EngineDatabase {
         .prepare("SELECT value FROM configitem WHERE key = ?")
         .get(key) as { value: string } | undefined;
     } catch {
-      // standalone engine DB without the app's configitem table
+      // Standalone test DBs may intentionally omit configitem.
       row = undefined;
     }
     if (row && row.value !== "") return row.value;
