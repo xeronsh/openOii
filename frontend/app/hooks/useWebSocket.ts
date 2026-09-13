@@ -27,6 +27,9 @@ import { getWsBase } from "~/utils/runtimeBase";
 const WS_BASE = getWsBase();
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
+const WS_CURSOR_PREFIX = "openoii.ws.cursor.";
+
+type DurableWsEvent = WsEvent & { event_id?: number };
 
 const TRANSIENT_MESSAGE_PATTERNS = [
 	/^正在生成视频\s+\d+\/\d+/,
@@ -41,6 +44,23 @@ function generateMessageId(): string {
 
 const globalConnections = new Map<number, WebSocket>();
 
+function cursorKey(projectId: number): string {
+	return `${WS_CURSOR_PREFIX}${projectId}`;
+}
+
+export function readWsCursor(projectId: number): number | null {
+	if (typeof window === "undefined") return null;
+	const raw = window.sessionStorage.getItem(cursorKey(projectId));
+	if (raw === null) return null;
+	const value = Number(raw);
+	return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+export function writeWsCursor(projectId: number, eventId: number): void {
+	if (typeof window === "undefined" || !Number.isSafeInteger(eventId) || eventId < 0) return;
+	window.sessionStorage.setItem(cursorKey(projectId), String(eventId));
+}
+
 function shouldAutoConfirm(_agent: string | null, runMode: RunMode): boolean {
 	if (runMode === "yolo") return true;
 	return false;
@@ -49,10 +69,11 @@ function shouldAutoConfirm(_agent: string | null, runMode: RunMode): boolean {
 export function useProjectWebSocket(projectId: number | null) {
 	const reconnectAttempts = useRef(0);
 	const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const autoConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-		null,
-	);
+	const autoConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const sendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
+	const lastEventIdRef = useRef<number | null>(
+		projectId ? readWsCursor(projectId) : null,
+	);
 
 	const clearReconnectTimer = useCallback(() => {
 		if (reconnectTimer.current) {
@@ -89,7 +110,10 @@ export function useProjectWebSocket(projectId: number | null) {
 			ws.readyState === WebSocket.CLOSED ||
 			ws.readyState === WebSocket.CLOSING
 		) {
-			ws = new WebSocket(`${WS_BASE}/ws/projects/${projectId}`);
+			const persistedCursor = readWsCursor(projectId);
+			lastEventIdRef.current = persistedCursor;
+			const after = persistedCursor === null ? "" : `?after=${persistedCursor}`;
+			ws = new WebSocket(`${WS_BASE}/ws/projects/${projectId}${after}`);
 			globalConnections.set(projectId, ws);
 		}
 
@@ -110,8 +134,35 @@ export function useProjectWebSocket(projectId: number | null) {
 
 		ws.onmessage = (event) => {
 			try {
-				const data: WsEvent = JSON.parse(event.data);
+				const data: DurableWsEvent = JSON.parse(event.data);
+				const eventId =
+				typeof data.event_id === "number" && Number.isSafeInteger(data.event_id)
+					? data.event_id
+					: null;
+				if (
+					eventId !== null &&
+					lastEventIdRef.current !== null &&
+					eventId <= lastEventIdRef.current
+				) {
+					return;
+				}
+
 				applyWsEvent(data, useEditorStore.getState(), scheduleAutoConfirm);
+
+				if (eventId !== null) {
+					lastEventIdRef.current = eventId;
+					writeWsCursor(projectId, eventId);
+				} else if (data.type === "connected") {
+					const connectedCursor = Number(data.data.event_cursor);
+					if (
+						lastEventIdRef.current === null &&
+						Number.isSafeInteger(connectedCursor) &&
+						connectedCursor >= 0
+					) {
+						lastEventIdRef.current = connectedCursor;
+						writeWsCursor(projectId, connectedCursor);
+					}
+				}
 			} catch (e) {
 				if (import.meta.env.DEV) {
 					console.error("[WS] 解析错误:", e);
@@ -204,11 +255,12 @@ export function useProjectWebSocket(projectId: number | null) {
 
 	useEffect(() => {
 		reconnectAttempts.current = 0;
+		lastEventIdRef.current = projectId ? readWsCursor(projectId) : null;
 		connect();
 		return () => {
 			clearReconnectTimer();
 		};
-	}, [connect, clearReconnectTimer]);
+	}, [projectId, connect, clearReconnectTimer]);
 
 	return { send, disconnect, reconnect: connect, clearAutoConfirm };
 }
@@ -231,10 +283,7 @@ function clearLoadingStates(
 
 function isTransientProgressMessage(msg: AgentMessage): boolean {
 	const content = msg.content.trim();
-	return (
-		Boolean(msg.isLoading) ||
-		TRANSIENT_MESSAGE_PATTERNS.some((pattern) => pattern.test(content))
-	);
+	return Boolean(msg.isLoading) || TRANSIENT_MESSAGE_PATTERNS.some((pattern) => pattern.test(content));
 }
 
 function cleanupStaleMessages(
@@ -244,15 +293,12 @@ function cleanupStaleMessages(
 	const currentMessages = useEditorStore.getState().messages;
 	const cleaned = currentMessages.filter((msg) => {
 		if (completedAgent && msg.agent !== completedAgent) return true;
-		// 移除确认/继续执行的临时消息
 		if (
 			msg.role === "info" &&
 			(msg.content.includes("已确认") || msg.content.includes("继续执行"))
 		)
 			return false;
-		// 移除空消息
 		if (!msg.content?.trim() && !msg.summary) return false;
-		// 移除加载中的进度消息（临时消息）和批处理流水账
 		if (isTransientProgressMessage(msg)) return false;
 		return true;
 	});
@@ -310,9 +356,7 @@ export function applyWsEvent(
 			store.setAwaitingConfirm(false);
 			store.setRecoveryGate(null);
 			applyStage(store, event.data);
-			if (d.recovery_summary) {
-				store.setRecoverySummary(d.recovery_summary);
-			}
+			if (d.recovery_summary) store.setRecoverySummary(d.recovery_summary);
 			if (Object.hasOwn(d, "provider_snapshot")) {
 				store.setCurrentRunProviderSnapshot(d.provider_snapshot ?? null);
 			}
@@ -336,11 +380,7 @@ export function applyWsEvent(
 			const agent = event.data.agent as string;
 			clearLoadingStates(store, agent);
 			const msgProgress = event.data.progress as number | undefined;
-			if (
-				typeof msgProgress === "number" &&
-				msgProgress >= 0 &&
-				msgProgress <= 1
-			) {
+			if (typeof msgProgress === "number" && msgProgress >= 0 && msgProgress <= 1) {
 				store.setProgress(msgProgress);
 			}
 			const message: AgentMessage = {
@@ -352,13 +392,10 @@ export function applyWsEvent(
 				timestamp: new Date().toISOString(),
 				progress: msgProgress,
 				isLoading: event.data.isLoading as boolean | undefined,
-				// Carry thinking phase/details if present
 				phase: event.data.phase as AgentMessage["phase"],
 				details: event.data.details as string | null | undefined,
 			};
-			if (isTransientProgressMessage(message)) {
-				cleanupStaleMessages(store, agent);
-			}
+			if (isTransientProgressMessage(message)) cleanupStaleMessages(store, agent);
 			store.addMessage(message);
 			break;
 		}
@@ -402,7 +439,6 @@ export function applyWsEvent(
 				content: event.data.message as string,
 				timestamp: new Date().toISOString(),
 			});
-
 			if (!gate.auto_mode && shouldAutoConfirm(gate.agent, store.runMode)) {
 				autoConfirm(gate.run_id);
 			}
@@ -413,16 +449,13 @@ export function applyWsEvent(
 			const confirmed = event.data as unknown as RunConfirmedEventData;
 			store.setAwaitingConfirm(false);
 			store.setRecoveryGate(null);
-			if (confirmed.recovery_summary)
-				store.setRecoverySummary(confirmed.recovery_summary);
+			if (confirmed.recovery_summary) store.setRecoverySummary(confirmed.recovery_summary);
 			applyStage(store, event.data);
 			store.addMessage({
 				id: generateMessageId(),
 				agent: "system",
 				role: "info",
-				content: confirmed.auto_mode
-					? "自动确认，继续执行..."
-					: "已确认，继续执行...",
+				content: confirmed.auto_mode ? "自动确认，继续执行..." : "已确认，继续执行...",
 				timestamp: new Date().toISOString(),
 			});
 			break;
@@ -435,13 +468,9 @@ export function applyWsEvent(
 			store.resetRunState();
 			store.setProgress(1);
 			const stage = resolveEventStage(event.data);
-			if (stage) {
-				store.setCurrentStage(stage);
-			} else if (d.video_generation_pending) {
-				store.setCurrentStage("render");
-			} else {
-				store.setCurrentStage("compose");
-			}
+			if (stage) store.setCurrentStage(stage);
+			else if (d.video_generation_pending) store.setCurrentStage("render");
+			else store.setCurrentStage("compose");
 			if (typeof d.message === "string" && d.message.trim()) {
 				store.addMessage({
 					id: generateMessageId(),
@@ -466,11 +495,7 @@ export function applyWsEvent(
 				content: `生成失败: ${d.error}`,
 				timestamp: new Date().toISOString(),
 			});
-			toast.error({
-				title: "生成失败",
-				message: d.error || "未知错误",
-				duration: 5000,
-			});
+			toast.error({ title: "生成失败", message: d.error || "未知错误", duration: 5000 });
 			break;
 		}
 
@@ -490,41 +515,31 @@ export function applyWsEvent(
 
 		case "character_created":
 		case "character_updated":
-			if (event.data.character) {
-				store.updateCharacter(event.data.character as Character);
-			}
+			if (event.data.character) store.updateCharacter(event.data.character as Character);
 			break;
 
 		case "shot_created":
 		case "shot_updated":
-			if (event.data.shot) {
-				store.updateShot(event.data.shot as Shot);
-			}
+			if (event.data.shot) store.updateShot(event.data.shot as Shot);
 			break;
 
 		case "shots_reordered": {
 			const data = event.data as unknown as ShotsReorderedEventData;
 			if (Array.isArray(data.shots)) {
-				store.setShots(
-					[...data.shots].sort((a, b) => a.order - b.order || a.id - b.id),
-				);
+				store.setShots([...data.shots].sort((a, b) => a.order - b.order || a.id - b.id));
 			}
 			break;
 		}
 
 		case "character_deleted": {
 			const charId = event.data.character_id as number | undefined;
-			if (charId !== undefined) {
-				store.setCharacters(store.characters.filter((c) => c.id !== charId));
-			}
+			if (charId !== undefined) store.setCharacters(store.characters.filter((c) => c.id !== charId));
 			break;
 		}
 
 		case "shot_deleted": {
 			const shotId = event.data.shot_id as number | undefined;
-			if (shotId !== undefined) {
-				store.setShots(store.shots.filter((s) => s.id !== shotId));
-			}
+			if (shotId !== undefined) store.setShots(store.shots.filter((s) => s.id !== shotId));
 			break;
 		}
 
@@ -560,21 +575,13 @@ export function applyWsEvent(
 		case "critique_result": {
 			const critData = event.data as unknown as CritiqueResultEventData;
 			const scoreStr = critData.score.toFixed(1);
-			const dims = critData.dimensions;
-			const dimStr = Object.entries(dims)
+			const dimStr = Object.entries(critData.dimensions)
 				.map(([k, v]) => `${k}: ${v}`)
 				.join(" | ");
-			const issuesStr = critData.issues.length
-				? critData.issues.join("；")
-				: "无";
-			const sugStr = critData.suggestions.length
-				? critData.suggestions.join("；")
-				: "无";
-			const entityLabel =
-				critData.entity_type === "character" ? "角色" : "分镜";
-			const statusText = critData.will_regenerate
-				? "分数低于阈值，将重新生成"
-				: "质量达标";
+			const issuesStr = critData.issues.length ? critData.issues.join("；") : "无";
+			const sugStr = critData.suggestions.length ? critData.suggestions.join("；") : "无";
+			const entityLabel = critData.entity_type === "character" ? "角色" : "分镜";
+			const statusText = critData.will_regenerate ? "分数低于阈值，将重新生成" : "质量达标";
 			store.addMessage({
 				id: generateMessageId(),
 				agent: "critic",
