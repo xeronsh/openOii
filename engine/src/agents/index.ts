@@ -1,11 +1,10 @@
 /**
- * Agent ports (phase 5 parity with backend/app/agents).
+ * Pipeline stage implementations (outline / plan / render / critic / compose).
  *
- * Each agent mutates the shared DB and emits contract events through the
- * PipelineEmitter. LLM text flows through the same prompts as the Python
- * implementation (see prompts.generated.ts).
+ * Each stage mutates the shared DB and emits contract events through the
+ * PipelineEmitter. LLM text flows through the prompts in prompts.ts.
  */
-import { PROMPTS } from "../prompts.generated.js";
+import { PROMPTS } from "../prompts.js";
 import type { PipelineEmitter } from "../pipeline/emitter.js";
 import {
   parseJsonColumn,
@@ -462,7 +461,13 @@ export async function runCritique(
   for (const entity of entities) {
     const imageUrl = entity.image_url;
     const prompt = `You evaluate visual quality. Review image: ${imageUrl ?? "(none)"} for ${entityType} ${entityType === "character" ? ((entity as CharacterRow).name ?? "角色") : `分镜 #${entity.id}`}. Return JSON with total_score, consistency, quality, composition.`;
-    const data = await callLlm(ctx, "critic", PROMPTS["critic.SYSTEM_PROMPT"] ?? "", prompt, 1024);
+    const systemPrompt =
+      PROMPTS[
+        entityType === "character"
+          ? "critic.CHARACTER_REVIEW_SYSTEM_PROMPT"
+          : "critic.SHOT_REVIEW_SYSTEM_PROMPT"
+      ] ?? "";
+    const data = await callLlm(ctx, "critic", systemPrompt, prompt, 1024);
     const score = Number(data.total_score ?? 0);
     const dimensions: Record<string, number> = {
       consistency: Number(data.consistency ?? 0),
@@ -539,11 +544,16 @@ export async function runComposeMerge(ctx: StageContext): Promise<void> {
 }
 
 export async function runAddAudio(ctx: StageContext): Promise<void> {
+  // 能力缺口（已知）：Python 侧 AudioService 能跑真实 TTS/BGM（ffmpeg），
+  // 但引擎还没移植它。旧 langgraph 路径能调，pi 路径一直跳过；默认引擎是 pi，
+  // 所以默认配置下音频早就不生效 —— 删掉 langgraph 后这个缺口变成无条件的。
+  // 在补上移植前，这里必须说实话，不能让用户以为配音已处理。
   if (!ctx.media.audioEnabled) {
     await ctx.emitter.sendMessage("compose", "TTS 和 BGM 均未启用，跳过音频阶段。");
     return;
   }
-  // Real TTS (edge-tts) is driven by the Python side in phase 6 integration;
-  // the engine records the skip-free path used by the parity snapshot config.
-  await ctx.emitter.sendMessage("compose", "音频阶段由后端 TTS 服务处理。");
+  await ctx.emitter.sendMessage(
+    "compose",
+    "[未实现] 音频阶段（TTS 配音 / BGM）尚未移植到引擎，本次输出为无配音版本。",
+  );
 }

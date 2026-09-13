@@ -20,7 +20,6 @@ from app.services.run_signals import (
     trigger_confirm_signal,
     wait_for_confirm_signal,
 )
-from app.services.run_recovery import AGENT_TO_STAGE
 from tests.factories import create_project, create_run
 
 
@@ -44,7 +43,7 @@ class TestStageContract:
         assert resume_agent_for_stage("render_shots") == "render"
 
     def test_recovery_agent_map_matches_signal_map(self):
-        for agent, stage in AGENT_TO_STAGE.items():
+        for agent, stage in GRAPH_STAGE_FOR_AGENT.items():
             assert GRAPH_STAGE_FOR_AGENT[agent] == stage
 
     def test_next_production_stage_skips_gates(self):

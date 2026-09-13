@@ -140,21 +140,28 @@ async def test_generate_project_conflict_is_explicit_about_resume_or_cancel(
 
 
 @pytest.mark.asyncio
-async def test_resume_project_run_returns_existing_live_run(
+async def test_resume_project_run_dispatches_live_run_to_engine(
     async_client, test_session, monkeypatch
 ):
+    """运行中的 run 也要交给引擎 resume —— 引擎自己幂等，Python 不做本地短路。
+
+    旧断言依赖 task_manager.is_running，但引擎模式下 Python 从不注册本地任务，
+    该判断恒为 False，早返回分支实际不可达。
+    """
     project = await create_project(test_session)
     active_run = await create_run(test_session, project_id=project.id, status="running")
 
-    monkeypatch.setattr(generation_routes.task_manager, "is_running", lambda _project_id: True)
-
     engine_resumes: list[dict] = []
 
-    async def _fail_if_dispatched(base_url, **kwargs):
-        engine_resumes.append(kwargs)
-        raise AssertionError("resume endpoint should not re-dispatch a live run")
+    async def _fake_ensure(base_url, database_url, static_dir):
+        return None
 
-    monkeypatch.setattr(generation_routes, "engine_resume_run", _fail_if_dispatched)
+    async def _fake_resume(base_url, *, project_id: int, run_id: int):
+        engine_resumes.append({"project_id": project_id, "run_id": run_id})
+        return {"status": "running"}
+
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _fake_ensure)
+    monkeypatch.setattr(generation_routes, "engine_resume_run", _fake_resume)
 
     res = await async_client.post(
         f"/api/v1/projects/{project.id}/resume", json={"run_id": active_run.id}
@@ -164,6 +171,8 @@ async def test_resume_project_run_returns_existing_live_run(
     data = res.json()
     assert data["id"] == active_run.id
     assert data["project_id"] == project.id
+    assert len(engine_resumes) == 1
+    assert engine_resumes[0]["run_id"] == active_run.id
 
 
 @pytest.mark.asyncio

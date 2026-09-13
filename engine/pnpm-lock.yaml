@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@mariozechner/pi-agent-core':
-        specifier: ^0.73.1
-        version: 0.73.1(ws@8.21.3)(zod@4.6.4)
       '@mariozechner/pi-ai':
         specifier: ^0.73.1
         version: 0.73.1(ws@8.21.3)(zod@4.6.4)
@@ -296,11 +293,6 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
-
-  '@mariozechner/pi-agent-core@0.73.1':
-    resolution: {integrity: sha512-Y/KVOhuKSgRQgYBlwmRtO2gPkUcoavOSqGF9bpQIINvNZvc19k6Z1H3bFDTce3Vp5ApMmTsfLH3+tNvOg75fAQ==}
-    engines: {node: '>=20.0.0'}
-    deprecated: please use @earendil-works/pi-agent-core instead going forward
 
   '@mariozechner/pi-ai@0.73.1':
     resolution: {integrity: sha512-Jh4lXawZYuC83HzSIYuVum9NBqJD49i4JOt3H96cGW/924cwJMOyUs1Mv/e4QPzTXnzrqMoGviNQnvGgSu1LSg==}
@@ -1313,22 +1305,6 @@ snapshots:
       - utf-8-validate
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
-
-  '@mariozechner/pi-agent-core@0.73.1(ws@8.21.3)(zod@4.6.4)':
-    dependencies:
-      '@mariozechner/pi-ai': 0.73.1(ws@8.21.3)(zod@4.6.4)
-      typebox: 1.3.30
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - '@opentelemetry/api'
-      - '@opentelemetry/exporter-trace-otlp-http'
-      - '@opentelemetry/resources'
-      - '@opentelemetry/sdk-trace-base'
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-      - ws
-      - zod
 
   '@mariozechner/pi-ai@0.73.1(ws@8.21.3)(zod@4.6.4)':
     dependencies:

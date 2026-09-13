@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	isWorkflowStage,
-	resolveEventStage,
-	toSimplifiedStage,
-} from "./workflowStage";
+import { resolveEventStage, toSimplifiedStage } from "./workflowStage";
 
 describe("workflowStage mapping", () => {
 	it("maps granular backend stages to simplified UI stages", () => {
@@ -17,9 +13,9 @@ describe("workflowStage mapping", () => {
 	});
 
 	it("treats granular backend stage names as valid workflow stages", () => {
-		expect(isWorkflowStage("plan_outline")).toBe(true);
-		expect(isWorkflowStage("shot_images_approval")).toBe(true);
-		expect(isWorkflowStage("invalid_stage")).toBe(false);
+		expect(toSimplifiedStage("plan_outline")).toBeDefined();
+		expect(toSimplifiedStage("shot_images_approval")).toBeDefined();
+		expect(toSimplifiedStage("invalid_stage")).toBeUndefined();
 	});
 
 	it("resolves stage from either stage or current_stage fields", () => {

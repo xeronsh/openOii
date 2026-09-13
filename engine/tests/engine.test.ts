@@ -32,36 +32,18 @@ describe("engine sidecar", () => {
     expect(body.provider).toBe("fake");
   });
 
-  it("runs a smoke agent loop and records events", async () => {
-    const start = await fetch(`http://127.0.0.1:${port}/runs`, {
+  it("returns 400 when project_id/run_id are missing", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project_id: 1, run_id: 1, stage: "smoke" }),
+      body: JSON.stringify({ project_id: "x" }),
     });
-    expect(start.status).toBe(202);
-
-    await new Promise((r) => setTimeout(r, 400));
-    const eventsRes = await fetch(`http://127.0.0.1:${port}/runs/1/events`);
-    const body = (await eventsRes.json()) as { events: Array<{ type: string }> };
-    const types = body.events.map((e) => e.type);
-    expect(types).toContain("engine_run_started");
-    expect(types).toContain("agent_start");
-    expect(types).toContain("agent_end");
-    expect(types).toContain("engine_run_completed");
+    expect(res.status).toBe(400);
   });
 
-  it("cancel stops a running smoke loop", async () => {
-    await fetch(`http://127.0.0.1:${port}/runs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project_id: 2, run_id: 2, stage: "smoke" }),
-    });
-    const cancel = await fetch(`http://127.0.0.1:${port}/runs/2/cancel`, { method: "POST" });
-    expect(cancel.status).toBe(200);
-    await new Promise((r) => setTimeout(r, 300));
-    const eventsRes = await fetch(`http://127.0.0.1:${port}/runs/2/events`);
-    const body = (await eventsRes.json()) as { events: Array<{ type: string }> };
-    expect(body.events.map((e) => e.type)).toContain("engine_run_cancelled");
+  it("returns 404 for unknown routes", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/nope`);
+    expect(res.status).toBe(404);
   });
 });
 

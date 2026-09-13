@@ -9,16 +9,15 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.orchestration import PHASE2_STAGE_ORDER
+from app.orchestration import PHASE2_STAGE_ORDER, PRODUCTION_STAGE_SEQUENCE
 from app.services.run_recovery import (
-    AGENT_TO_STAGE,
     _engine_checkpoint_stages,
     _infer_current_stage,
-    _thread_id_for_run,
+    thread_id_for_run,
     _safe_stage_name,
     build_recovery_summary,
 )
-from app.orchestration import PRODUCTION_STAGE_SEQUENCE
+from app.services.run_signals import GRAPH_STAGE_FOR_AGENT
 from tests.factories import create_project, create_run
 
 
@@ -30,15 +29,15 @@ class FakeRun:
         self.status = status
 
 
-# --- _thread_id_for_run ---
+# --- thread_id_for_run ---
 
 
 def test_thread_id_with_id():
-    assert _thread_id_for_run(FakeRun(id=42)) == "agent-run-42"
+    assert thread_id_for_run(FakeRun(id=42)) == "agent-run-42"
 
 
 def test_thread_id_pending():
-    assert _thread_id_for_run(FakeRun(id=None)) == "agent-run-pending"
+    assert thread_id_for_run(FakeRun(id=None)) == "agent-run-pending"
 
 
 # --- _safe_stage_name ---
@@ -159,7 +158,7 @@ async def test_recovery_summary_marks_completed_stages(test_session: AsyncSessio
 
 
 def test_agent_to_stage_map_targets_real_stages():
-    for agent, stage in AGENT_TO_STAGE.items():
+    for agent, stage in GRAPH_STAGE_FOR_AGENT.items():
         assert stage in PHASE2_STAGE_ORDER, f"{agent} → {stage} 不在阶段表内"
 
 

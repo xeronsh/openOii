@@ -17,6 +17,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.models.agent_run import AgentRun
 from app.models.project import Character, Shot
 from app.orchestration import PHASE2_STAGE_ORDER, PRODUCTION_STAGE_SEQUENCE
+from app.services.run_signals import GRAPH_STAGE_FOR_AGENT
 from app.schemas.project import (
     AgentRunRead,
     RecoveryControlRead,
@@ -24,16 +25,8 @@ from app.schemas.project import (
     RecoverySummaryRead,
 )
 
-AGENT_TO_STAGE: dict[str, str] = {
-    "outline": "plan_outline",
-    "plan": "plan_characters",
-    "render": "render_characters",
-    "compose": "compose_videos",
-    "review": "review",
-}
-
-
-def _thread_id_for_run(run: AgentRun) -> str:
+def thread_id_for_run(run: AgentRun) -> str:
+    """稳定 thread id（run 未落库时用 pending 占位）。"""
     return f"agent-run-{run.id}" if run.id is not None else "agent-run-pending"
 
 
@@ -68,7 +61,7 @@ def _infer_current_stage(run: AgentRun, completed: Sequence[str]) -> str:
         if index + 1 < len(PRODUCTION_STAGE_SEQUENCE):
             return PRODUCTION_STAGE_SEQUENCE[index + 1]
         return completed[-1]
-    mapped_stage = AGENT_TO_STAGE.get(run.current_agent or "")
+    mapped_stage = GRAPH_STAGE_FOR_AGENT.get(run.current_agent or "")
     if mapped_stage is not None:
         return mapped_stage
     return "plan_outline"
@@ -132,7 +125,7 @@ async def build_recovery_summary(
     return RecoverySummaryRead(
         project_id=run.project_id,
         run_id=run_pk,
-        thread_id=_thread_id_for_run(run),
+        thread_id=thread_id_for_run(run),
         current_stage=current_stage,
         next_stage=current_stage,
         preserved_stages=preserved_stages,

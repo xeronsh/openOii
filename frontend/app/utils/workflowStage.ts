@@ -1,14 +1,5 @@
 import type { WorkflowStage } from "~/types";
 
-const WORKFLOW_STAGE_UNLOCK_RANK: Record<WorkflowStage, number> = {
-	plan: 0,
-	plan_approval: 0,
-	render: 1,
-	render_approval: 1,
-	compose: 2,
-	review: -1,
-};
-
 /**
  * Backend sends granular Phase2Stage names (e.g. "plan_characters",
  * "render_shots", "compose_merge").  Frontend UI uses simplified names.
@@ -53,10 +44,6 @@ export function toSimplifiedStage(value: unknown): WorkflowStage | undefined {
 	return GRANULAR_TO_SIMPLIFIED[value];
 }
 
-export function isWorkflowStage(value: unknown): value is WorkflowStage {
-	return toSimplifiedStage(value) !== undefined;
-}
-
 /**
  * Resolve a stage from WS event data.  Tries `stage` then `current_stage`,
  * mapping granular backend names to simplified UI names.
@@ -66,16 +53,6 @@ export function resolveEventStage(
 ): WorkflowStage | undefined {
 	const raw = data.stage ?? data.current_stage;
 	return toSimplifiedStage(raw);
-}
-
-export function getWorkflowStageUnlockRank(
-	stage: string | null | undefined,
-): number {
-	if (!isWorkflowStage(stage)) {
-		return -1;
-	}
-
-	return WORKFLOW_STAGE_UNLOCK_RANK[stage];
 }
 
 export function getWorkflowStageInfo(stage: WorkflowStage): {

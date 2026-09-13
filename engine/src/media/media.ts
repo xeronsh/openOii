@@ -353,7 +353,7 @@ export class MediaService {
     return url;
   }
 
-  /** TTS/BGM are handled by the Python side in phase 6; engine skips cleanly. */
+  /** 未实现（见 agents runAddAudio）：引擎还没移植 TTS/BGM。 */
   get audioEnabled(): boolean {
     return this.settings.ttsEnabled || this.settings.bgmEnabled;
   }

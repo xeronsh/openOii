@@ -29,6 +29,7 @@ from app.schemas.project import (
 )
 from app.services.engine_client import (
     EngineUnavailableError,
+    engine_active_run_ids,
     engine_cancel_run,
     engine_resume_run,
     engine_start_run,
@@ -130,10 +131,6 @@ async def _route_feedback_to_stage(
     return stage
 
 
-def _agent_run_thread_id(run: AgentRun) -> str:
-    return f"agent-run-{run.id}" if run.id is not None else "agent-run-pending"
-
-
 def _require_run_id(run: AgentRun) -> int:
     return require_run_id(run)
 
@@ -169,11 +166,12 @@ async def get_generation_state(
 
     active_run = await _latest_run_for_project(session, project_id, ("queued", "running"))
     if active_run is not None:
+        running = await engine_active_run_ids(settings.engine_url)
         return await build_recovery_control_surface(
             session=session,
             database_url=settings.database_url,
             run=active_run,
-            state="active" if task_manager.is_running(project_id) else "recoverable",
+            state="active" if active_run.id in running else "recoverable",
         )
 
     resumable_run = await _latest_run_for_project(session, project_id, ("failed", "cancelled"))
@@ -285,9 +283,6 @@ async def resume_project_run(
     if run.project_id != project_id:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    if run.status in ("queued", "running") and task_manager.is_running(project_id):
-        return AgentRunRead.model_validate(run)
-
     run_id = payload.run_id
 
     await _dispatch_to_engine(
@@ -313,7 +308,8 @@ async def cancel_project_run(
     """取消项目的当前运行任务"""
     await get_or_404(session, Project, project_id)
 
-    # 先取消实际的后台任务
+    # 两处都要取消：引擎里的编排 run，以及 Python 内的局部长任务（单体重绘/合成
+    # 仍走本地 agent，见 characters/shots/projects 的 regenerate 路由）。
     task_cancelled = task_manager.cancel(project_id)
     active = await _latest_run_for_project(session, project_id, ("queued", "running"))
     if active is not None and active.id is not None:

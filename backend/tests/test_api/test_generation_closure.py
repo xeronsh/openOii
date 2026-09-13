@@ -18,6 +18,7 @@ from app.api.v1.routes import generation as generation_routes
 from app.main import create_app
 from app.models.agent_run import AgentRun
 from app.schemas.project import ProjectProviderEntry
+from app.services.run_recovery import thread_id_for_run
 from tests.factories import create_project, create_run
 
 
@@ -219,22 +220,24 @@ async def test_resume_returns_404_when_run_missing(closure_client):
 
 
 @pytest.mark.asyncio
-async def test_resume_returns_existing_run_when_task_still_running(
-    closure_client, monkeypatch
-):
+async def test_resume_always_dispatches_to_engine(closure_client):
+    """执行权在引擎：resume 不能靠 Python 侧的任务状态短路掉。
+
+    之前用 task_manager.is_running 判断“已在跑就早返回”，但引擎模式下 Python
+    从不注册本地任务，那个判断恒为 False —— 早返回分支实际不可达；
+    而一旦它真返回，用户点“恢复”将被静默吞掉。统一交给引擎（引擎自己幂等）。
+    """
     client, ctx, engine = closure_client
 
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
         run = await create_run(session, project_id=project.id, status="running")
 
-    monkeypatch.setattr(generation_routes.task_manager, "is_running", lambda pid: True)
-
     res = await client.post(f"/api/v1/projects/{project.id}/resume", json={"run_id": run.id})
     assert res.status_code == 200
     assert res.json()["id"] == run.id
-    assert engine.resume == [], "不应向引擎重复发起 resume"
-    assert engine.runs == 0
+    assert len(engine.resume) == 1
+    assert engine.resume[0]["run_id"] == run.id
 
 
 @pytest.mark.asyncio
@@ -277,15 +280,13 @@ async def test_cancel_returns_404_when_project_missing(closure_client):
 
 
 @pytest.mark.asyncio
-async def test_cancel_marks_runs_emits_ws_and_notifies_engine(closure_client, monkeypatch):
+async def test_cancel_marks_runs_emits_ws_and_notifies_engine(closure_client):
     client, ctx, engine = closure_client
 
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
         await create_run(session, project_id=project.id, status="running")
         await create_run(session, project_id=project.id, status="queued")
-
-    monkeypatch.setattr(generation_routes.task_manager, "cancel", lambda pid: True)
 
     res = await client.post(f"/api/v1/projects/{project.id}/cancel")
     assert res.status_code == 200
@@ -385,11 +386,11 @@ def test_require_run_id_returns_id_when_present():
     assert generation_routes._require_run_id(run) == 42
 
 
-def test_agent_run_thread_id_handles_missing_id():
+def test_thread_id_for_run_handles_missing_id():
     pending = AgentRun(project_id=1, status="queued")
-    assert generation_routes._agent_run_thread_id(pending) == "agent-run-pending"
+    assert thread_id_for_run(pending) == "agent-run-pending"
     persisted = AgentRun(id=99, project_id=1, status="queued")
-    assert generation_routes._agent_run_thread_id(persisted) == "agent-run-99"
+    assert thread_id_for_run(persisted) == "agent-run-99"
 
 
 def test_feedback_agent_to_stage_map_targets_real_stages():

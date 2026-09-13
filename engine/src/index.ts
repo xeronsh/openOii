@@ -2,15 +2,19 @@
  * Engine sidecar HTTP entry (loopback only).
  *
  * GET  /health
- * POST /runs                      {project_id, run_id, stage?, auto_mode?}
+ * GET  /runs                  → {runs: number[]} 当前活跃 run id
+ * POST /runs                  {project_id, run_id, stage?, auto_mode?, user_feedback?}
+ * POST /runs/:id/resume
  * POST /runs/:id/cancel
  * GET  /runs/:id/events?after=N
+ *
+ * The engine is the only orchestrator: every run goes through PipelineRunner
+ * (the 17-stage machine in pipeline/runner.ts). There is no second, shorter
+ * execution path to keep in sync.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { Database as SqliteDatabase } from "better-sqlite3";
 import { EngineDatabase } from "./db.js";
 import { TextLlmService } from "./llm.js";
-import { RunManager } from "./runner.js";
 import { SharedDb } from "./shared-db.js";
 import { PipelineRunner } from "./pipeline/runner.js";
 import { PRODUCTION_STAGE_SEQUENCE, type StageId } from "./contract.js";
@@ -18,9 +22,18 @@ import { PRODUCTION_STAGE_SEQUENCE, type StageId } from "./contract.js";
 export function createEngineApp(dbPath: string) {
   const db = new EngineDatabase(dbPath);
   const llm = new TextLlmService(db);
-  const runs = new RunManager(db, llm);
   const shared = new SharedDb(db.db);
   const pipelines = new Map<number, PipelineRunner>();
+
+  function startPipeline(
+    runId: number,
+    request: Parameters<PipelineRunner["run"]>[0],
+    mode: "run" | "resume",
+  ): void {
+    const runner = new PipelineRunner(db, shared, llm);
+    pipelines.set(runId, runner);
+    void runner[mode](request).finally(() => pipelines.delete(runId));
+  }
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -30,11 +43,19 @@ export function createEngineApp(dbPath: string) {
     };
 
     if (req.method === "GET" && url.pathname === "/health") {
-      send(200, { status: "ok", runs: runs.list().length, provider: llm.resolveProvider().key });
+      send(200, { status: "ok", runs: pipelines.size, provider: llm.resolveProvider().key });
+      return;
+    }
+
+    // Active run ids. The Python side cannot know what is executing (the engine
+    // owns execution), so run-state hydration asks here instead of guessing.
+    if (req.method === "GET" && url.pathname === "/runs") {
+      send(200, { runs: [...pipelines.keys()] });
       return;
     }
 
     const runMatch = /^\/runs\/(\d+)(\/cancel|\/events|\/resume)?$/.exec(url.pathname);
+
     if (req.method === "POST" && url.pathname === "/runs") {
       const body = await readJson(req);
       const projectId = Number(body.project_id);
@@ -43,24 +64,18 @@ export function createEngineApp(dbPath: string) {
         send(400, { error: "project_id and run_id are required" });
         return;
       }
-      const stage = typeof body.stage === "string" ? body.stage : "full";
-      if (stage === "smoke") {
-        const handle = await runs.start({ projectId, runId, stage, autoMode: Boolean(body.auto_mode) });
-        send(202, { status: handle.phase, run_id: runId, project_id: projectId });
-        return;
-      }
-      // full pipeline (phase 4 state machine)
-      const runner = new PipelineRunner(db, shared, llm);
-      pipelines.set(runId, runner);
-      void runner
-        .run({
+      const rawStage = typeof body.stage === "string" ? body.stage : "";
+      startPipeline(
+        runId,
+        {
           projectId,
           runId,
           autoMode: Boolean(body.auto_mode),
           userFeedback: typeof body.user_feedback === "string" ? body.user_feedback : "",
-          startStage: isStageId(stage) ? stage : undefined,
-        })
-        .finally(() => pipelines.delete(runId));
+          startStage: isStageId(rawStage) ? rawStage : undefined,
+        },
+        "run",
+      );
       send(202, { status: "running", run_id: runId, project_id: projectId });
       return;
     }
@@ -73,20 +88,19 @@ export function createEngineApp(dbPath: string) {
         send(400, { error: "project_id is required" });
         return;
       }
-      const runner = new PipelineRunner(db, shared, llm);
-      pipelines.set(runId, runner);
-      void runner
-        .resume({ projectId, runId, autoMode: Boolean(body.auto_mode), userFeedback: "" })
-        .finally(() => pipelines.delete(runId));
+      startPipeline(
+        runId,
+        { projectId, runId, autoMode: Boolean(body.auto_mode), userFeedback: "" },
+        "resume",
+      );
       send(202, { status: "running", run_id: runId, project_id: projectId });
       return;
     }
 
     if (runMatch && req.method === "POST" && runMatch[2] === "/cancel") {
       const runId = Number(runMatch[1]);
-      const okSmoke = runs.cancel(runId);
       pipelines.get(runId)?.requestCancel();
-      send(okSmoke ? 200 : 202, { status: "cancelling" });
+      send(202, { status: "cancelling" });
       return;
     }
 
@@ -117,7 +131,7 @@ export function createEngineApp(dbPath: string) {
     });
   });
 
-  return { server, db, runs, llm, shared, pipelines };
+  return { server, db, llm, shared, pipelines };
 }
 
 function isStageId(value: string): value is StageId {

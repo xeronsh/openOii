@@ -7,8 +7,8 @@ interface StageViewProps {
 }
 
 const InfiniteCanvas = lazy(() =>
-  import("~/components/canvas/InfiniteCanvas").then((m) => ({
-    default: m.InfiniteCanvas,
+  import("~/features/comic-workflow/canvas/ComicWorkflowCanvas").then((m) => ({
+    default: m.ComicWorkflowCanvas,
   })),
 );
 

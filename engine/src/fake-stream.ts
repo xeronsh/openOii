@@ -1,64 +1,9 @@
 /**
- * Fake streamFn for local/no-network runs: emits the given text through the
- * pi-ai AssistantMessageEvent protocol so the Agent loop behaves identically
- * to a real provider call.
+ * Fake LLM fixtures for local/no-network runs (TEXT_PROVIDER=fake).
+ *
+ * 关键：按 system/prompt 里出现的 agent 名回放结构化 JSON，让整条 17 阶段
+ * 流水线在不联网的情况下跑通。
  */
-import {
-  createAssistantMessageEventStream,
-  type AssistantMessage,
-  type AssistantMessageEventStream,
-  type SimpleStreamOptions,
-} from "@mariozechner/pi-ai";
-
-let fakeCounter = 0;
-
-export function fakeStreamFn(
-  _model: unknown,
-  context: { messages: Array<{ content: unknown }> },
-  _options?: SimpleStreamOptions,
-): AssistantMessageEventStream {
-  const lastMessage = context.messages.at(-1);
-  const raw = lastMessage?.content;
-  const prompt =
-    typeof raw === "string"
-      ? raw
-      : Array.isArray(raw)
-        ? raw
-            .map((block) => (typeof block === "object" && block && "text" in block ? String((block as { text: unknown }).text) : ""))
-            .join("\n")
-        : "";
-  const text = fakeRespond(prompt);
-
-  const stream = createAssistantMessageEventStream();
-  const message: AssistantMessage = {
-    role: "assistant",
-    content: [{ type: "text", text }],
-    api: "openai-compat",
-    provider: "fake",
-    model: "fake",
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { total: 0 } },
-    stopReason: "stop",
-    timestamp: Date.now(),
-  } as unknown as AssistantMessage;
-
-  queueMicrotask(() => {
-    stream.push({ type: "start", partial: message } as never);
-    stream.push({ type: "text_start", contentIndex: 0, partial: message } as never);
-    // chunk the text so downstream sees streaming behaviour
-    for (let i = 0; i < text.length; i += 24) {
-      stream.push({
-        type: "text_delta",
-        contentIndex: 0,
-        delta: text.slice(i, i + 24),
-        partial: message,
-      } as never);
-    }
-    stream.push({ type: "text_end", contentIndex: 0, content: text, partial: message } as never);
-    stream.push({ type: "done", reason: "stop", message } as never);
-    stream.end(message);
-  });
-  return stream;
-}
 
 export function fakeRespond(prompt: string): string {
   const combined = prompt.toLowerCase();
@@ -105,8 +50,4 @@ export function fakeRespond(prompt: string): string {
     });
   }
   return JSON.stringify({ text: "Fake 文本响应。" });
-}
-
-export function fakeCallCounter(): number {
-  return ++fakeCounter;
 }

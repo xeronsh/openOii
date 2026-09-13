@@ -58,7 +58,7 @@
 可运行的定义:**没有它,后面每一步都无法判断"没变坏"。**
 
 - [ ] 后端全量 `uv run pytest` 绿基线记录到本文档附录。
-- [ ] **WS 事件契约快照**:跑一条 fake-provider 全流程 run(`TEXT_PROVIDER=fake`、`IMAGE_PROVIDER=fake`、`VIDEO_PROVIDER=fake`),录制完整事件序列(类型/顺序/payload 字段)存 `docs/fixtures/ws-contract-snapshot.json`。这是 Phase 6 对比验收的金标准。
+- [ ] **WS 事件契约快照**:跑一条 fake-provider 全流程 run(`TEXT_PROVIDER=fake`、`IMAGE_PROVIDER=fake`、`VIDEO_PROVIDER=fake`),录制完整事件序列(类型/顺序/payload 字段)。**该快照及其录制脚本已在后续精简中删除**:迁移完成后编排列唯一化,事件契约改由 `engine/src/contract.ts` + `backend/app/schemas/ws.py` 直接对齐。
 - [ ] 用真实 provider 跑一条金丝雀 run,留存产物(角色图、分镜、成片)作为 parity 对比样本。
 - [ ] 建迁移分支 `feat/pi-core-sqlite`,每个 Phase 一个可合并的 PR。
 
@@ -158,7 +158,7 @@
 ### 附录 A:执行基线与验收证据(已填写)
 
 - 基线:`uv run pytest` **1136 passed**(2026-09-13,迁移前)
-- WS 契约快照:`docs/fixtures/ws-contract-snapshot.json`(179 事件,run_completed,fake provider 全流程)
+- WS 契约快照:迁移期生成、验收后删除 ✅
 - 产物结构基准:`docs/fixtures/fake-run-artifact-structure.json`(3 角色/6 分镜/成片 mp4)
 - Parity 验收(AGENT_ENGINE=pi,双进程):事件词表 **16/16 一致**、闸门序列一致(outline→plan→plan→render→render→compose)、terminal=run_completed、领域产物一致(3 角色/6 分镜/成片)
 - 恢复验收:引擎在闸门处被杀 → API `/resume` → 新引擎进程从 `engine_checkpoints` 继续 → run_completed("RESUME VERIFIED")

@@ -15,8 +15,8 @@ vi.mock("~/stores/editorStore", () => ({
   },
 }));
 
-vi.mock("~/components/canvas/InfiniteCanvas", () => ({
-  InfiniteCanvas: ({ projectId }: { projectId: number }) => (
+vi.mock("~/features/comic-workflow/canvas/ComicWorkflowCanvas", () => ({
+  ComicWorkflowCanvas: ({ projectId }: { projectId: number }) => (
     <div data-testid="projected-canvas">project:{projectId}</div>
   ),
 }));

@@ -66,7 +66,6 @@ docker-compose down
 
 ## 易错点
 - `frontend/app/utils/runtimeBase.ts` 会在开发环境按当前页面 hostname 自动推导后端 `18765` 端口，并自动对齐 `localhost`/`127.0.0.1`。默认通常不需要写 `frontend/.env.local`；只有后端不在默认地址时再配 `VITE_API_URL` / `VITE_WS_URL`。
-- `frontend/app/main.tsx` 里的 MSW 默认关闭；只有 `VITE_ENABLE_MSW=true` 才会启用 mock worker。
 - `backend/app/config.py` 里测试与运行时的配置读取路径不同：测试里直接 `Settings()` 不会自动读仓库 `.env`，运行时走 `get_settings()` 才会加载 `.env`。
 - `backend/app/db/session.py:init_db()` 启动时会 `create_all()`、初始化配置、把遗留 `queued/running` run 标成 `cancelled`，并调用 `ensure_postgres_checkpointer_setup()`。改模型/持久化时要同时考虑启动初始化和 Alembic。
 - Alembic 版本文件在 `backend/alembic/versions/`，但 `backend/alembic.ini` 默认指向本地 SQLite；跑迁移前先确认 `DATABASE_URL`/环境变量覆盖正确。

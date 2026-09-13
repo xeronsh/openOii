@@ -86,6 +86,26 @@ async def ensure_engine_running(base_url: str, database_url: str, static_dir: Pa
     raise EngineUnavailableError(f"engine did not become healthy at {base_url}")
 
 
+async def engine_active_run_ids(base_url: str) -> set[int]:
+    """Run ids the engine is actually executing.
+
+    Python 不拥有执行（引擎才是编排者），所以“是否正在跑”只能问引擎。
+    引擎不可达时返回空集：此时没有可信的执行中 run。
+    """
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            res = await client.get(f"{base_url}/runs")
+            if res.status_code != 200:
+                return set()
+            payload = res.json()
+    except Exception:  # noqa: BLE001 - 探活失败等价于“没有活跃 run”
+        return set()
+    runs = payload.get("runs") if isinstance(payload, dict) else None
+    if not isinstance(runs, list):
+        return set()
+    return {int(r) for r in runs if isinstance(r, (int, float))}
+
+
 async def engine_healthy(base_url: str) -> bool:
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:

@@ -12,7 +12,7 @@
 1. **编排引擎迁移到 pi-agent-core**(npm `@mariozechner/pi-agent-core`,TypeScript)。pi 是 TS 运行时,Python 无法嵌入,因此采用 **Node sidecar**(`engine/`,loopback 18766):引擎拥有 run 执行、17 阶段状态机、6 闸门、checkpoint;FastAPI 保留 HTTP/WS/静态/配置/导出,通过 loopback HTTP + 共享 SQLite 与引擎通信。不做全量 TS 后端重写。
 2. **存储默认 SQLite**(WAL,busy_timeout,驱动级 autocommit):零容器本地开发。PostgreSQL 路径完整保留(docker-compose 传入 `DATABASE_URL` 即用),`AGENT_ENGINE=langgraph` 保留为回滚开关。
 3. **跨进程契约只有两个**:共享 SQLite 文件(`agentrun.confirm_requested`/`awaiting_payload` 列 + `engine_run_events` 表)+ 引擎 loopback HTTP。Redis 已删除(confirm/awaiting/export-cache 全部落库)。
-4. **WS 契约不变**:引擎事件落 `engine_run_events`,Python 按连接尾随并经 `ws_manager` 推送;事件词表与金标准快照(`docs/fixtures/ws-contract-snapshot.json`)16/16 一致,闸门序列一致。
+4. **WS 契约不变**:引擎事件落 `engine_run_events`,Python 按连接尾随并经 `ws_manager` 推送;事件词表由 `engine/src/contract.ts` 与 `backend/app/schemas/ws.py` 对齐(迁移期用的金标准快照已随后续重构删除)。
 
 ## 后果
 
