@@ -14,7 +14,7 @@ from sqlmodel import SQLModel
 
 from app.config import get_settings
 from app.models import agent_run, artifact, artifact_version, config_item, message, project, run, stage  # noqa: F401
-from app.orchestration.persistence import redact_credentials, ensure_postgres_checkpointer_setup
+from app.db.utils import redact_credentials
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 ALEMBIC_DIR = Path(__file__).resolve().parents[2] / "alembic"
@@ -144,7 +144,7 @@ def _run_alembic_upgrade() -> None:
     import os
     settings = get_settings()
     env = os.environ.copy()
-    env["DATABASE_URL"] = settings.database_url.replace("+asyncpg", "+psycopg2")
+    env["DATABASE_URL"] = settings.database_url
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         cwd=str(ALEMBIC_INI.parent),
@@ -220,7 +220,6 @@ async def init_db() -> None:
         await session.commit()
 
     log.info("init_db: database_url = %s", redact_credentials(settings.database_url))
-    await ensure_postgres_checkpointer_setup(settings.database_url)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

@@ -1,6 +1,6 @@
 # ADR 0004: 生成编排迁移到 pi-agent-core sidecar + SQLite
 
-- 状态:Accepted(2026-09-13)
+- 状态:Superseded by [ADR 0005](0005-remove-langgraph-postgres.md)(回滚开关与 PG 路径已于 2026-02-14 删除)
 - 关联:`docs/pi-core-sqlite-migration.md`(迁移 goal 与执行记录)、AGENTS.md
 
 ## 背景
@@ -25,4 +25,4 @@
 
 ## 回滚
 
-`AGENT_ENGINE=langgraph` + `DATABASE_URL=postgresql+asyncpg://…` 恢复迁移前编排路径(confirm 信号已改为 agentrun 列,无 Redis)。
+~~`AGENT_ENGINE=langgraph` + `DATABASE_URL=postgresql+asyncpg://…`~~ —— **该开关已由 ADR 0005 删除**，不再可用。

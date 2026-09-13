@@ -194,7 +194,7 @@ async def test_ws_projects_handles_ping_and_echo(monkeypatch):
             return FakeSessionCtx()
 
     monkeypatch.setattr(main_module, "ws_manager", FakeManager())
-    monkeypatch.setattr("app.agents.orchestrator.get_awaiting_payload", lambda run_id: None)
+    monkeypatch.setattr("app.services.run_signals.get_awaiting_payload", lambda run_id: None)
     monkeypatch.setattr(
         main_module,
         "get_settings",
@@ -283,7 +283,7 @@ async def test_ws_projects_replays_awaiting_payload(monkeypatch):
     async def fake_get_awaiting_payload(run_id):
         return {"run_id": run_id, "step": "approve"}
 
-    monkeypatch.setattr("app.agents.orchestrator.get_awaiting_payload", fake_get_awaiting_payload)
+    monkeypatch.setattr("app.services.run_signals.get_awaiting_payload", fake_get_awaiting_payload)
 
     fake_ws = _FakeWebSocket([])
 
@@ -363,7 +363,7 @@ async def test_ws_projects_confirm_invalid_run_sends_error(monkeypatch):
     async def fake_trigger(_run_id):
         return True
 
-    monkeypatch.setattr("app.agents.orchestrator.trigger_confirm_signal", fake_trigger)
+    monkeypatch.setattr("app.services.run_signals.trigger_confirm_signal", fake_trigger)
 
     fake_ws = _FakeWebSocket(
         [
@@ -440,7 +440,7 @@ async def test_ws_projects_confirm_valid_run_saves_feedback_and_triggers_confirm
     )
     monkeypatch.setattr(main_module, "init_db", lambda: None)
     monkeypatch.setattr("app.db.session.async_session_maker", FakeAsyncSessionMaker())
-    monkeypatch.setattr("app.agents.orchestrator.trigger_confirm_signal", fake_trigger)
+    monkeypatch.setattr("app.services.run_signals.trigger_confirm_signal", fake_trigger)
 
     fake_ws = _FakeWebSocket(
         [
@@ -512,7 +512,7 @@ async def test_ws_projects_feedback_save_error_sends_ws_error(monkeypatch):
     async def fake_trigger(_run_id):
         return True
 
-    monkeypatch.setattr("app.agents.orchestrator.trigger_confirm_signal", fake_trigger)
+    monkeypatch.setattr("app.services.run_signals.trigger_confirm_signal", fake_trigger)
 
     fake_ws = _FakeWebSocket(
         [

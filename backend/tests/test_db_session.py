@@ -40,7 +40,6 @@ def _init_db_patches(test_session, test_settings):
         patch("app.db.session.engine", _NoopEngine()),
         patch("app.db.session._sync_missing_metadata_columns"),
         patch("app.db.session.async_session_maker", _mock_session_maker(test_session)),
-        patch("app.db.session.ensure_postgres_checkpointer_setup"),
     )
 
 
@@ -64,7 +63,7 @@ async def test_init_db_cancels_stale_runs(test_session, test_settings):
     await test_session.commit()
 
     patches = _init_db_patches(test_session, test_settings)
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+    with patches[0], patches[1], patches[2], patches[3], patches[4]:
         await init_db()
 
     stale = (await test_session.execute(
@@ -86,7 +85,7 @@ async def test_init_db_sets_default_style(test_session, test_settings):
     await test_session.refresh(project)
 
     patches = _init_db_patches(test_session, test_settings)
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+    with patches[0], patches[1], patches[2], patches[3], patches[4]:
         await init_db()
 
     updated = (await test_session.execute(
@@ -98,7 +97,7 @@ async def test_init_db_sets_default_style(test_session, test_settings):
 @pytest.mark.asyncio
 async def test_init_db_alembic_timeout(test_session, test_settings):
     patches = _init_db_patches(test_session, test_settings)
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], \
+    with patches[0], patches[1], patches[2], patches[3], patches[4], \
          patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
         await init_db()
 
@@ -109,8 +108,7 @@ async def test_init_db_alembic_failure(test_session, test_settings):
          patch("app.db.session._run_alembic_upgrade", side_effect=RuntimeError("alembic died")), \
          patch("app.db.session.engine", _NoopEngine()), \
          patch("app.db.session._sync_missing_metadata_columns"), \
-         patch("app.db.session.async_session_maker", _mock_session_maker(test_session)), \
-         patch("app.db.session.ensure_postgres_checkpointer_setup"):
+         patch("app.db.session.async_session_maker", _mock_session_maker(test_session)):
         await init_db()
 
 

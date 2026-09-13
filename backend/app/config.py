@@ -16,11 +16,7 @@ class Settings(BaseSettings):
     environment: str = Field(default="dev", description="dev|staging|prod")
     log_level: str = Field(default="INFO", description="Uvicorn log level")
 
-    # 生成编排引擎：pi（engine sidecar，零容器默认）或 langgraph（回滚开关）
-    agent_engine: str = Field(
-        default="pi",
-        description="pi | langgraph",
-    )
+    # pi engine sidecar 的 loopback 地址（编排唯一引擎）
     engine_url: str = Field(
         default="http://127.0.0.1:18766",
         description="pi engine sidecar 的 loopback 地址",
@@ -33,7 +29,7 @@ class Settings(BaseSettings):
         description="Admin token for configuration updates (sent via X-Admin-Token header)",
     )
 
-    # 数据库（默认 SQLite 零容器；docker-compose 部署用 PostgreSQL）
+    # 数据库：单文件 SQLite（WAL），与 pi engine sidecar 共享同一文件
     database_url: str = Field(
         default="sqlite+aiosqlite:///./data/openoii.db"
     )

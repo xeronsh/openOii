@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.orchestration.state import workflow_progress_for_stage, PRODUCTION_STAGE_SEQUENCE
+from app.orchestration import workflow_progress_for_stage, PRODUCTION_STAGE_SEQUENCE
 
 
 TOTAL = len(PRODUCTION_STAGE_SEQUENCE)

@@ -49,7 +49,7 @@
 - 不改前端任何代码,WS 事件 schema 保持逐字段兼容(以 Phase 0 的契约快照为准)。
 - 不改 prompt 文案、critic 评分规则、媒体服务的请求参数——只做语言平移,不做行为变更。
 - 不做全后端 TS 重写;不引入消息队列;不做多实例/多机部署。
-- 不删除 PG 路径:`DATABASE_URL=postgresql+asyncpg://…` 时后端仍按原方式工作(docker-compose profile 保留),直到 sidecar 稳定一个里程碑后再评估退役。
+- ~~不删除 PG 路径~~ → **已删除**（见 ADR 0005，2026-02-14）：pi 稳定后 PG 与 langgraph 一并退役。
 
 ## 4. 分阶段计划
 

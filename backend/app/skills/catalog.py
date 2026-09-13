@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from app.orchestration.state import Phase2Stage
+from app.orchestration import Phase2Stage
 
 AgentName = Literal["outline", "plan", "render", "compose", "review"]
 CreationMode = Literal["review", "quick"]

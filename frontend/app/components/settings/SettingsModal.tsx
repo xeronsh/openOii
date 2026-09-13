@@ -943,9 +943,8 @@ function getConfigDescription(key: string): string {
 		CORS_ORIGINS: '跨域配置，JSON 数组格式，如 ["http://localhost:3000"]',
 
 		// 数据库
-		DATABASE_URL: "PostgreSQL 数据库连接字符串（asyncpg 协议）",
+		DATABASE_URL: "SQLite 数据库连接字符串（需与 pi 引擎指向同一文件）",
 		DB_ECHO: "是否在控制台打印 SQL 语句（调试用）",
-		REDIS_URL: "Redis 连接字符串，用于跨进程信号共享",
 
 		// LLM 服务
 		ANTHROPIC_API_KEY: "Anthropic 官方 API 密钥",

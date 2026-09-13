@@ -4,13 +4,13 @@ import asyncio
 from typing import Any
 
 from app.agents.base import AgentContext, TargetIds
-from app.agents.orchestrator import AGENT_STAGE_MAP
+from app.services.run_signals import AGENT_STAGE_MAP
 from app.config import Settings
 from app.db.session import async_session_maker
 from app.db.utils import utcnow
 from app.models.agent_run import AgentRun
 from app.models.project import Project
-from app.orchestration.state import workflow_progress_for_stage
+from app.orchestration import workflow_progress_for_stage
 from app.services.image_factory import create_image_service
 from app.services.task_manager import task_manager
 from app.services.text_factory import create_text_service
@@ -19,7 +19,7 @@ from app.ws.manager import ConnectionManager
 
 
 def _next_stage(stage: str) -> str | None:
-    from app.orchestration.state import next_production_stage
+    from app.orchestration import next_production_stage
     return next_production_stage(stage)
 
 

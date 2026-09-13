@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from app.api.v1.routes import generation as generation_routes
@@ -14,15 +12,6 @@ from app.schemas.project import (
     RecoverySummaryRead,
 )
 from tests.factories import create_project, create_run
-
-
-def _immediate_task(coro):
-    """Helper to make asyncio.create_task synchronous for testing"""
-    loop = asyncio.get_running_loop()
-    coro.close()
-    future = loop.create_future()
-    future.set_result(None)
-    return future
 
 
 def _recovery_control(run, *, state: str, detail: str):
@@ -87,7 +76,6 @@ async def _return_resolution(_project, _settings, resolution: ProviderResolution
 async def test_generate_project_rejects_second_active_full_run(
     async_client, test_session, monkeypatch
 ):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -123,7 +111,6 @@ async def test_generate_project_rejects_second_active_full_run(
 async def test_generate_project_conflict_is_explicit_about_resume_or_cancel(
     async_client, test_session, monkeypatch
 ):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -161,10 +148,13 @@ async def test_resume_project_run_returns_existing_live_run(
 
     monkeypatch.setattr(generation_routes.task_manager, "is_running", lambda _project_id: True)
 
-    def _fail_if_spawned(_coro):
-        raise AssertionError("resume endpoint should not spawn a duplicate task")
+    engine_resumes: list[dict] = []
 
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _fail_if_spawned)
+    async def _fail_if_dispatched(base_url, **kwargs):
+        engine_resumes.append(kwargs)
+        raise AssertionError("resume endpoint should not re-dispatch a live run")
+
+    monkeypatch.setattr(generation_routes, "engine_resume_run", _fail_if_dispatched)
 
     res = await async_client.post(
         f"/api/v1/projects/{project.id}/resume", json={"run_id": active_run.id}
@@ -185,18 +175,16 @@ async def test_resume_project_run_starts_resume_task_for_recoverable_run(
 
     captured: dict[str, int] = {}
 
-    async def _fake_resume(self, *, project_id: int, run_id: int, auto_mode: bool = False):
+    async def _fake_ensure(base_url, database_url, static_dir):
+        captured["ensured"] = 1
+
+    async def _fake_resume(base_url, *, project_id: int, run_id: int):
         captured["project_id"] = project_id
         captured["run_id"] = run_id
+        return {"status": "running"}
 
-    monkeypatch.setattr(
-        generation_routes.GenerationOrchestrator,
-        "resume_from_recovery",
-        _fake_resume,
-    )
-
-    loop = asyncio.get_running_loop()
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", loop.create_task)
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _fake_ensure)
+    monkeypatch.setattr(generation_routes, "engine_resume_run", _fake_resume)
 
     res = await async_client.post(
         f"/api/v1/projects/{project.id}/resume", json={"run_id": resumable_run.id}
@@ -205,6 +193,6 @@ async def test_resume_project_run_starts_resume_task_for_recoverable_run(
     assert res.status_code == 200
     data = res.json()
     assert data["id"] == resumable_run.id
-
-    await asyncio.sleep(0)
-    assert captured == {"project_id": project.id, "run_id": resumable_run.id}
+    assert captured["ensured"] == 1
+    assert captured["project_id"] == project.id
+    assert captured["run_id"] == resumable_run.id

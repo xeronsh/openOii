@@ -4,13 +4,13 @@
   <img src="./doc/logo.png?v=2" width="180" alt="openOii logo" />
 
   <p><strong>故事想法 → 多智能体协作 → 漫剧成片</strong></p>
-  <p>一个以 LangGraph 为核心的 AI 漫剧生成学习项目。</p>
+  <p>一个以 pi-agent-core 编排为核心的 AI 漫剧生成学习项目。</p>
 
   <p>
     <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" />
     <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
     <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React 18" />
-    <img src="https://img.shields.io/badge/LangGraph-Orchestration-6D28D9?style=flat-square" alt="LangGraph" />
+    <img src="https://img.shields.io/badge/pi--agent--core-Orchestration-6D28D9?style=flat-square" alt="pi-agent-core" />
   </p>
 
   <p>
@@ -48,7 +48,7 @@
 openOii 把故事创意串成 **规划、角色/分镜生成、视频生成与合成** 的完整链路，并用无限画布展示过程与结果。
 
 > [!WARNING]
-> 这是一个 **LangGraph 学习 / 演示项目**，重点是验证多阶段编排、恢复执行、实时进度与前后端协作。
+> 这是一个 **多阶段编排学习 / 演示项目**（pi-agent-core sidecar + 共享 SQLite），重点是验证多阶段编排、恢复执行、实时进度与前后端协作。
 > **不适合直接用于工业生产环境**。
 
 ## 你能看到什么
@@ -86,8 +86,9 @@ openOii 把故事创意串成 **规划、角色/分镜生成、视频生成与�
 ## 技术栈
 
 - Frontend: React 18 + TypeScript + tldraw
-- Backend: FastAPI + SQLModel + LangGraph
-- Infra: PostgreSQL + Redis + `/static`
+- Backend: FastAPI + SQLModel（HTTP/WS/静态/配置/导出）
+- Engine: pi-agent-core sidecar（Node/TS，loopback 18766，拥有 17 阶段状态机与 6 闸门）
+- Infra: 单文件 SQLite（WAL）+ `/static`
 
 ## 快速开始
 

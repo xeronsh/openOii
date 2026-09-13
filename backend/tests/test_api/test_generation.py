@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import select
@@ -43,21 +41,6 @@ def _provider_resolution_deterministic() -> generation_routes.ProviderResolution
             reason_message=None,
         ),
     )
-
-
-def _immediate_task(coro):
-    """Helper to make asyncio.create_task synchronous for testing"""
-    loop = asyncio.get_running_loop()
-    inner = None
-    frame = getattr(coro, "cr_frame", None)
-    if frame is not None:
-        inner = frame.f_locals.get("coro")
-    coro.close()
-    if inner is not None:
-        inner.close()
-    future = loop.create_future()
-    future.set_result(None)
-    return future
 
 
 async def _noop_task() -> None:
@@ -135,35 +118,85 @@ async def test_generate_project_not_found(async_client):
 
 
 @pytest.mark.asyncio
-async def test_start_project_task_registers_created_task(monkeypatch):
-    created_coroutines: list[object] = []
-    registered_tasks: list[tuple[int, object]] = []
+async def test_dispatch_to_engine_starts_run(monkeypatch):
+    """_dispatch_to_engine 要把 stage/auto_mode/user_feedback 透传给引擎。"""
+    captured: list[dict] = []
 
-    class DummyTask:
-        def add_done_callback(self, callback):
-            self.callback = callback
+    async def _ensure(base_url, database_url, static_dir):
+        captured.append({"ensured": True})
 
-    dummy_task = DummyTask()
+    async def _start(base_url, **kwargs):
+        captured.append(kwargs)
+        return {"status": "running"}
 
-    monkeypatch.setattr(
-        generation_routes.asyncio,
-        "create_task",
-        lambda coro: created_coroutines.append(coro) or dummy_task,
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _ensure)
+    monkeypatch.setattr(generation_routes, "engine_start_run", _start)
+
+    from app.config import Settings
+
+    settings = Settings(database_url="sqlite+aiosqlite:///:memory:")
+    await generation_routes._dispatch_to_engine(
+        settings=settings,
+        project_id=7,
+        run_id=11,
+        stage="render_shots",
+        auto_mode=True,
+        user_feedback="调整节奏",
     )
-    monkeypatch.setattr(
-        generation_routes.task_manager,
-        "register",
-        lambda project_id, task: registered_tasks.append((project_id, task)),
-    )
 
-    async def worker() -> None:
+    assert captured[0] == {"ensured": True}
+    assert captured[1]["project_id"] == 7
+    assert captured[1]["run_id"] == 11
+    assert captured[1]["stage"] == "render_shots"
+    assert captured[1]["auto_mode"] is True
+    assert captured[1]["user_feedback"] == "调整节奏"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_engine_resume_uses_resume_endpoint(monkeypatch):
+    resumed: list[dict] = []
+
+    async def _ensure(base_url, database_url, static_dir):
         return None
 
-    await generation_routes._start_project_task(42, worker())
+    async def _resume(base_url, **kwargs):
+        resumed.append(kwargs)
+        return {"status": "running"}
 
-    assert len(created_coroutines) == 1
-    assert registered_tasks == [(42, dummy_task)]
-    created_coroutines[0].close()
+    async def _start(base_url, **kwargs):  # pragma: no cover - must not be called
+        raise AssertionError("resume 不应走 start")
+
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _ensure)
+    monkeypatch.setattr(generation_routes, "engine_resume_run", _resume)
+    monkeypatch.setattr(generation_routes, "engine_start_run", _start)
+
+    from app.config import Settings
+
+    settings = Settings(database_url="sqlite+aiosqlite:///:memory:")
+    await generation_routes._dispatch_to_engine(
+        settings=settings, project_id=3, run_id=5, resume=True
+    )
+
+    assert resumed == [{"project_id": 3, "run_id": 5}]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_engine_maps_unavailable_to_503(monkeypatch):
+    from fastapi import HTTPException
+
+    async def _ensure(base_url, database_url, static_dir):
+        raise generation_routes.EngineUnavailableError("engine down")
+
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _ensure)
+
+    from app.config import Settings
+
+    settings = Settings(database_url="sqlite+aiosqlite:///:memory:")
+    with pytest.raises(HTTPException) as exc:
+        await generation_routes._dispatch_to_engine(
+            settings=settings, project_id=1, run_id=1
+        )
+    assert exc.value.status_code == 503
 
 
 @pytest.mark.asyncio
@@ -171,7 +204,6 @@ async def test_generate_project_success(async_client, test_session, monkeypatch)
     expected_snapshot = (
         _provider_resolution_deterministic().as_project_provider_settings().model_dump(mode="json")
     )
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -197,7 +229,6 @@ async def test_generate_project_success(async_client, test_session, monkeypatch)
 async def test_generate_project_returns_provider_precheck_failed_without_creating_run(
     async_client, test_session, monkeypatch
 ):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -225,7 +256,6 @@ async def test_generate_project_returns_provider_precheck_failed_without_creatin
 async def test_generate_project_allows_start_when_only_video_provider_is_invalid(
     async_client, test_session, monkeypatch
 ):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -249,7 +279,6 @@ async def test_generate_project_allows_start_when_only_video_provider_is_invalid
 async def test_generate_project_does_not_require_admin_token(
     test_session, test_settings, ws_manager, monkeypatch
 ):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -332,7 +361,6 @@ async def test_cancel_project_run_updates(async_client, test_session):
 
 @pytest.mark.asyncio
 async def test_feedback_project_success(async_client, test_session, monkeypatch):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -343,6 +371,12 @@ async def test_feedback_project_success(async_client, test_session, monkeypatch)
         ),
     )
 
+    # ReviewAgent 的路由决策由 LLM 承担；此处只验路由契约，不调外部模型。
+    async def _fake_route(**_kwargs) -> str:
+        return "plan_characters"
+
+    monkeypatch.setattr(generation_routes, "_route_feedback_to_stage", _fake_route)
+
     project = await create_project(test_session)
     res = await async_client.post(
         f"/api/v1/projects/{project.id}/feedback",
@@ -352,7 +386,7 @@ async def test_feedback_project_success(async_client, test_session, monkeypatch)
     data = res.json()
     run = await test_session.get(AgentRun, data["run_id"])
     assert run is not None
-    assert run.status == "queued"
+    assert run.status == "running"
     assert (
         run.provider_snapshot
         == _provider_resolution_deterministic()

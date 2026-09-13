@@ -9,7 +9,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.agents.base import AgentContext, BaseAgent, CompletionInfo
 from app.agents.utils import build_character_context
 from app.models.project import Character, Shot
-from app.orchestration.state import workflow_progress_for_stage
+from app.orchestration import workflow_progress_for_stage
 from app.services.audio_service import AudioService
 from app.services.character_bible import build_character_bible
 from app.services.creative_control import collect_project_blocking_clips

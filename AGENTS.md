@@ -3,8 +3,8 @@
 ## 先看这个
 - openOii 是“故事想法 → 漫剧成片”的长链路生成应用；改动生成、恢复、进度推送时，优先保 resumability 和现有执行流。
 - 这是三包仓库，没有根级统一脚本：后端在 `backend/` 用 `uv`，前端在 `frontend/` 用 `pnpm`，生成引擎 sidecar 在 `engine/` 用 `pnpm`（pi-agent-core，TypeScript）。
-- 默认编排引擎是 pi sidecar（`AGENT_ENGINE=pi`）：首次触发生成时由后端自动拉起（loopback 18766），共享同一个 SQLite 文件；本地开发零容器。`AGENT_ENGINE=langgraph` 是回滚开关（见 docs/adr/0004）。
-- 默认数据库是 SQLite（`sqlite+aiosqlite:///./data/openoii.db`，WAL）；docker-compose 部署传 PostgreSQL 的 `DATABASE_URL`。Redis 已移除（confirm 信号走 `agentrun.confirm_requested` 列）。
+- 编排引擎只有 pi sidecar 一种：首次触发生成时由后端自动拉起（loopback 18766），共享同一个 SQLite 文件；本地开发零容器。`AGENT_ENGINE=langgraph` 回滚开关已移除（ADR 0004 → 见 `docs/adr/0005-remove-langgraph-postgres.md`）。
+- 数据库只有单文件 SQLite（`sqlite+aiosqlite:///./data/openoii.db`，WAL）——PostgreSQL / Redis 均已删除，不再有存储分支。
 - 当前 GitHub Actions 只有镜像构建/推送：`.github/workflows/docker-publish.yml`。本地要自己跑测试/构建，CI 不会替你兜底。
 
 ## 关键入口
@@ -70,8 +70,10 @@ docker-compose down
 - `backend/app/config.py` 里测试与运行时的配置读取路径不同：测试里直接 `Settings()` 不会自动读仓库 `.env`，运行时走 `get_settings()` 才会加载 `.env`。
 - `backend/app/db/session.py:init_db()` 启动时会 `create_all()`、初始化配置、把遗留 `queued/running` run 标成 `cancelled`，并调用 `ensure_postgres_checkpointer_setup()`。改模型/持久化时要同时考虑启动初始化和 Alembic。
 - Alembic 版本文件在 `backend/alembic/versions/`，但 `backend/alembic.ini` 默认指向本地 SQLite；跑迁移前先确认 `DATABASE_URL`/环境变量覆盖正确。
-- 生成/恢复/取消流程依赖数据库状态、`agentrun.confirm_requested` 信号列和（langgraph 模式下的）进程内 `task_manager`；不是多实例安全。pi 模式下引擎是独立进程，通过 `agentrun` 列与 `engine_run_events` 表和 Python 侧通信——两边必须指向同一个 SQLite 文件。
-- `backend/aiosqlite/` 是刻意的本地 shim（遮蔽 site-packages 的 aiosqlite）：SQLAlchemy 与 langgraph-checkpoint-sqlite 都依赖它的协议；原始 sqlite 调用经 asyncio.to_thread 下放，别改回事件循环内同步执行（busy 等待会自死锁）。
+- 生成/恢复/取消流程依赖数据库状态、`agentrun.confirm_requested` 信号列和进程内 `task_manager`；不是多实例安全。引擎是独立进程，通过 `agentrun` 列、`engine_checkpoints` 与 `engine_run_events` 表和 Python 侧通信——两边必须指向同一个 SQLite 文件。
+- `backend/aiosqlite/` 是刻意的本地 shim（遮蔽 site-packages 的 aiosqlite）：SQLAlchemy 与 engine 的共享库协议都依赖它；原始 sqlite 调用经 asyncio.to_thread 下放，别改回事件循环内同步执行（busy 等待会自死锁）。
+- 阶段契约的权威表是 `backend/app/orchestration.py` 的 `PHASE2_STAGE_ORDER`；`engine/src/contract.ts` 与 `frontend/app/utils/workflowStage.ts` 是它的镜像，改一处要同步两处（`test_orchestrator_helpers.py` 与后端测试会各自断言）。
+- `backend/Dockerfile` 是多阶段构建：从 `engine/` 拷 node + 已编译的 better-sqlite3 进后端镜像，因为引擎与后端同容器。改 engine 依赖后注意 `engine/pnpm-lock.yaml`。
 - `configitem` 表里的运行时配置会覆盖 `.env`；种子逻辑以进程 env 优先（config_service.ensure_initialized）。若后端连了意料之外的库，先查这张表。
 - Docker 场景下，若图像/视频服务跑在宿主机，`backend/.env` 里不能继续用 `localhost`；按 README 改成 `host.docker.internal` 或宿主机 IP。
 - 静态媒体输出在 `backend/app/static`，Compose 也把这个目录挂出来；改导出/拼接逻辑时不要忽略它。

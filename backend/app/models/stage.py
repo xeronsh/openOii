@@ -13,6 +13,6 @@ class Stage(SQLModel, table=True):
     name: str = Field(index=True)
     status: str = Field(default="pending", index=True)
     version: int = Field(default=1, ge=1)
-    source: str = Field(default="langgraph")
+    source: str = Field(default="engine")
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

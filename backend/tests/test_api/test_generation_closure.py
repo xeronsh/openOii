@@ -1,16 +1,12 @@
-"""Coverage for app.api.v1.routes.generation._task() closure paths and cancel/feedback edges.
+"""Route-level contract for generation/resume/cancel/feedback.
 
-The default test_generation.py uses _immediate_task() which closes the coroutine
-without ever awaiting it, which means the closure body of _task() (the inner
-function defined inside generate_project / resume_project_run / feedback_project)
-never executes. These tests do the opposite: they replace _start_project_task
-with a wrapper that *awaits* the coroutine, so the closure body executes
-end-to-end against a stub orchestrator that the test controls.
+编排已迁移到 pi engine sidecar：路由不再自己跑后台闭包，而是
+`_dispatch_to_engine` → loopback HTTP。测试用 stub 替换 `ensure_engine_running`
+与 `engine_*`，验证路由契约（状态码、DB 状态、引擎调用参数）。
 """
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest
@@ -25,9 +21,38 @@ from app.schemas.project import ProjectProviderEntry
 from tests.factories import create_project, create_run
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+class _EngineCalls:
+    """Record engine HTTP calls in place of the real sidecar."""
+
+    def __init__(self) -> None:
+        self.start: list[dict[str, Any]] = []
+        self.resume: list[dict[str, Any]] = []
+        self.cancel: list[dict[str, Any]] = []
+        self.runs: int = 0
+        self.unavailable: bool = False
+
+    def install(self, monkeypatch) -> None:
+        async def ensure(base_url: str, database_url: str, static_dir: Any) -> None:
+            self.runs += 1
+            if self.unavailable:
+                raise generation_routes.EngineUnavailableError("engine down")
+
+        async def start(base_url: str, **kwargs: Any) -> dict[str, Any]:
+            self.start.append(kwargs)
+            return {"status": "running"}
+
+        async def resume(base_url: str, **kwargs: Any) -> dict[str, Any]:
+            self.resume.append(kwargs)
+            return {"status": "running"}
+
+        async def cancel(base_url: str, run_id: int) -> None:
+            self.cancel.append({"run_id": run_id})
+
+        monkeypatch.setattr(generation_routes, "ensure_engine_running", ensure)
+        monkeypatch.setattr(generation_routes, "engine_start_run", start)
+        monkeypatch.setattr(generation_routes, "engine_resume_run", resume)
+        monkeypatch.setattr(generation_routes, "engine_cancel_run", cancel)
+
 
 def _valid_resolution() -> generation_routes.ProviderResolution:
     return generation_routes.ProviderResolution(
@@ -59,118 +84,24 @@ def _valid_resolution() -> generation_routes.ProviderResolution:
     )
 
 
-class _StubOrchestrator:
-    """Configurable stub for GenerationOrchestrator.
-
-    Class-level switches let tests arm specific exception scenarios for the
-    next instance that is created (the orchestrator is instantiated *inside*
-    the route closure, so we cannot inject it directly).
-    """
-
-    next_run_exception: BaseException | None = None
-    next_resume_exception: BaseException | None = None
-    next_run_from_agent_exception: BaseException | None = None
-
-    instances: list["_StubOrchestrator"] = []
-
-    def __init__(self, *_, **__) -> None:
-        self.run_calls: list[dict[str, Any]] = []
-        self.resume_calls: list[dict[str, Any]] = []
-        self.run_from_agent_calls: list[dict[str, Any]] = []
-        type(self).instances.append(self)
-
-    async def run(self, *, project_id, run_id, request, auto_mode=False) -> None:
-        self.run_calls.append({"project_id": project_id, "run_id": run_id, "request": request, "auto_mode": auto_mode})
-        exc = type(self).next_run_exception
-        type(self).next_run_exception = None
-        if exc is not None:
-            raise exc
-    async def resume_from_recovery(self, *, project_id, run_id) -> None:
-        self.resume_calls.append({"project_id": project_id, "run_id": run_id})
-        exc = type(self).next_resume_exception
-        type(self).next_resume_exception = None
-        if exc is not None:
-            raise exc
-
-    async def run_from_agent(
-        self,
-        *,
-        project_id,
-        run_id,
-        request,
-        agent_name,
-        auto_mode,
-        feedback_type=None,
-        entity_type=None,
-        entity_id=None,
-        entity_ids=None,
-    ) -> None:
-        self.run_from_agent_calls.append(
-            {
-                "project_id": project_id,
-                "run_id": run_id,
-                "request": request,
-                "agent_name": agent_name,
-                "auto_mode": auto_mode,
-                "feedback_type": feedback_type,
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "entity_ids": entity_ids,
-            }
-        )
-        exc = type(self).next_run_from_agent_exception
-        type(self).next_run_from_agent_exception = None
-        if exc is not None:
-            raise exc
+async def _async_return(value):
+    return value
 
 
-@pytest.fixture(autouse=True)
-def _reset_stub() -> None:
-    """Clear class-level switches and instance log between tests."""
-    _StubOrchestrator.next_run_exception = None
-    _StubOrchestrator.next_resume_exception = None
-    _StubOrchestrator.next_run_from_agent_exception = None
-    _StubOrchestrator.instances.clear()
+@pytest.fixture()
+def engine_calls() -> _EngineCalls:
+    return _EngineCalls()
 
 
 @pytest.fixture()
 def closure_app(test_db_engine_sessionmaker, test_settings, ws_manager, monkeypatch):
-    """FastAPI app + AsyncClient where _start_project_task actually awaits the coro.
-
-    This forces the inner _task() closure body to execute end-to-end so its
-    code paths get coverage. The route-level async_session_maker is patched
-    to share the test sqlite db so the closure can read the run row created
-    by the route handler.
-    """
     _, shared_maker = test_db_engine_sessionmaker
 
-    monkeypatch.setattr(generation_routes, "async_session_maker", shared_maker)
-    monkeypatch.setattr(generation_routes, "GenerationOrchestrator", _StubOrchestrator)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
         lambda project, settings: _async_return(_valid_resolution()),
     )
-
-    awaited_results: list[BaseException | None] = []
-
-    async def _await_coro(project_id: int, coro):
-        try:
-            await coro
-            awaited_results.append(None)
-        except asyncio.CancelledError as exc:
-            # Closure already handled cancel (marked run cancelled); we swallow
-            # the re-raised CancelledError so BackgroundTasks doesn't error.
-            awaited_results.append(exc)
-        except BaseException as exc:  # pragma: no cover - defensive
-            awaited_results.append(exc)
-            raise
-
-    async def _bg_runner(project_id: int, coro):
-        # Mirror BackgroundTasks behavior but await directly so closures execute.
-        await _await_coro(project_id, coro)
-
-    monkeypatch.setattr(generation_routes, "_start_project_task", _bg_runner)
 
     app = create_app()
 
@@ -188,249 +119,173 @@ def closure_app(test_db_engine_sessionmaker, test_settings, ws_manager, monkeypa
     app.dependency_overrides[get_app_settings] = override_get_settings
     app.dependency_overrides[get_ws_manager] = override_get_ws
 
-    return {
-        "app": app,
-        "session_maker": shared_maker,
-        "ws": ws_manager,
-        "awaited": awaited_results,
-    }
-
-
-async def _async_return(value):
-    return value
+    return {"app": app, "session_maker": shared_maker, "ws": ws_manager}
 
 
 @pytest_asyncio.fixture()
-async def closure_client(closure_app):
+async def closure_client(closure_app, engine_calls, monkeypatch):
+    engine_calls.install(monkeypatch)
     transport = ASGITransport(app=closure_app["app"])
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client, closure_app
+        yield client, closure_app, engine_calls
 
 
 # ---------------------------------------------------------------------------
-# generate_project: 404 + closure happy/cancel paths + provider helpers
+# generate
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_generate_closure_invokes_orchestrator_run(closure_client):
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
+async def test_generate_dispatches_full_run_to_engine(closure_client):
+    client, ctx, engine = closure_client
 
-    async with session_maker() as session:
+    async with ctx["session_maker"]() as session:
         project = await create_project(session)
 
     res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
     assert res.status_code == 201
 
-    # The closure should have created an orchestrator and called run().
-    assert len(_StubOrchestrator.instances) == 1
-    assert _StubOrchestrator.instances[0].run_calls[0]["project_id"] == project.id
+    assert len(engine.start) == 1
+    assert engine.start[0]["project_id"] == project.id
+    assert engine.start[0]["stage"] == "full"
+
+    async with ctx["session_maker"]() as session:
+        run = await session.get(AgentRun, res.json()["id"])
+        assert run is not None
+        assert run.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_generate_returns_503_when_engine_unavailable(closure_client):
+    client, ctx, engine = closure_client
+    engine.unavailable = True
+
+    async with ctx["session_maker"]() as session:
+        project = await create_project(session)
+
+    res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    assert res.status_code == 503
 
 
 @pytest.mark.asyncio
 async def test_generate_returns_409_for_active_conflict(closure_client):
-    """An active queued/running run must trigger active_conflict (409)."""
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
+    client, ctx, _engine = closure_client
 
-    async with session_maker() as session:
+    async with ctx["session_maker"]() as session:
         project = await create_project(session)
-        # An already-running run should block fresh generation
         await create_run(session, project_id=project.id, status="running")
 
     res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
     assert res.status_code == 409
     body = res.json()
-    # Recovery control surface is returned (not the standard error envelope)
     assert "run" in body or "state" in body or "kind" in body
 
 
 @pytest.mark.asyncio
 async def test_generate_returns_409_for_recoverable_conflict(closure_client):
-    """A failed-but-recoverable run must trigger recoverable_conflict (409)."""
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
+    client, ctx, _engine = closure_client
 
-    async with session_maker() as session:
+    async with ctx["session_maker"]() as session:
         project = await create_project(session)
-        # A failed run is recoverable (not active)
         await create_run(session, project_id=project.id, status="failed")
 
     res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
     assert res.status_code == 409
 
 
-@pytest.mark.asyncio
-async def test_generate_closure_handles_cancel_and_marks_run_cancelled(closure_client):
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
-
-    _StubOrchestrator.next_run_exception = asyncio.CancelledError()
-
-    async with session_maker() as session:
-        project = await create_project(session)
-
-    res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
-    assert res.status_code == 201
-    run_id = res.json()["id"]
-
-    # The closure should have caught CancelledError and marked the run cancelled.
-    async with session_maker() as session:
-        run = await session.get(AgentRun, run_id)
-        assert run is not None
-        assert run.status == "cancelled"
-
-
-@pytest.mark.asyncio
-async def test_generate_closure_skips_status_overwrite_if_already_terminal(closure_client):
-    """If the run was already marked terminal, the cancel branch must not overwrite it."""
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
-
-    _StubOrchestrator.next_run_exception = asyncio.CancelledError()
-
-    async with session_maker() as session:
-        project = await create_project(session)
-
-    # Pre-create a run for the project, then have the route create another.
-    res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
-    assert res.status_code == 201
-    new_run_id = res.json()["id"]
-
-    # Manually flip the new run to "succeeded" then re-trigger cancel via second request:
-    async with session_maker() as session:
-        run = await session.get(AgentRun, new_run_id)
-        assert run is not None
-        run.status = "succeeded"
-        await session.commit()
-
-
 # ---------------------------------------------------------------------------
-# resume_project_run: 404 paths + closure happy/cancel paths + already-running
+# resume
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_resume_returns_404_when_project_missing(closure_client):
-    client, ctx = closure_client
-    res = await client.post(
-        "/api/v1/projects/99999/resume",
-        json={"run_id": 1},
-    )
+    client, _ctx, _engine = closure_client
+    res = await client.post("/api/v1/projects/99999/resume", json={"run_id": 1})
     assert res.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_resume_returns_404_when_run_missing(closure_client):
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
+    client, ctx, _engine = closure_client
 
-    async with session_maker() as session:
+    async with ctx["session_maker"]() as session:
         project = await create_project(session)
 
     res = await client.post(
-        f"/api/v1/projects/{project.id}/resume",
-        json={"run_id": 99999},
+        f"/api/v1/projects/{project.id}/resume", json={"run_id": 99999}
     )
     assert res.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_resume_returns_existing_run_when_task_still_running(closure_client, monkeypatch):
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
+async def test_resume_returns_existing_run_when_task_still_running(
+    closure_client, monkeypatch
+):
+    client, ctx, engine = closure_client
 
-    async with session_maker() as session:
+    async with ctx["session_maker"]() as session:
         project = await create_project(session)
         run = await create_run(session, project_id=project.id, status="running")
 
-    # Pretend the task is still alive in task_manager.
-    monkeypatch.setattr(
-        generation_routes.task_manager,
-        "is_running",
-        lambda project_id: True,
-    )
+    monkeypatch.setattr(generation_routes.task_manager, "is_running", lambda pid: True)
 
-    res = await client.post(
-        f"/api/v1/projects/{project.id}/resume",
-        json={"run_id": run.id},
-    )
+    res = await client.post(f"/api/v1/projects/{project.id}/resume", json={"run_id": run.id})
     assert res.status_code == 200
     assert res.json()["id"] == run.id
-    # Closure must NOT have run.
-    assert _StubOrchestrator.instances == []
+    assert engine.resume == [], "不应向引擎重复发起 resume"
+    assert engine.runs == 0
 
 
 @pytest.mark.asyncio
-async def test_resume_closure_invokes_resume_from_recovery(closure_client):
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
+async def test_resume_dispatches_to_engine(closure_client):
+    client, ctx, engine = closure_client
 
-    async with session_maker() as session:
+    async with ctx["session_maker"]() as session:
         project = await create_project(session)
         run = await create_run(session, project_id=project.id, status="paused")
 
-    res = await client.post(
-        f"/api/v1/projects/{project.id}/resume",
-        json={"run_id": run.id},
-    )
+    res = await client.post(f"/api/v1/projects/{project.id}/resume", json={"run_id": run.id})
     assert res.status_code == 200
-    assert len(_StubOrchestrator.instances) == 1
-    assert _StubOrchestrator.instances[0].resume_calls[0]["run_id"] == run.id
+    assert len(engine.resume) == 1
+    assert engine.resume[0]["run_id"] == run.id
 
 
 @pytest.mark.asyncio
-async def test_resume_closure_handles_cancel_and_marks_run_cancelled(closure_client):
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
+async def test_resume_returns_503_when_engine_unavailable(closure_client):
+    client, ctx, engine = closure_client
+    engine.unavailable = True
 
-    _StubOrchestrator.next_resume_exception = asyncio.CancelledError()
-
-    async with session_maker() as session:
+    async with ctx["session_maker"]() as session:
         project = await create_project(session)
         run = await create_run(session, project_id=project.id, status="paused")
 
-    res = await client.post(
-        f"/api/v1/projects/{project.id}/resume",
-        json={"run_id": run.id},
-    )
-    assert res.status_code == 200
-
-    async with session_maker() as session:
-        refreshed = await session.get(AgentRun, run.id)
-        assert refreshed is not None
-        assert refreshed.status == "cancelled"
+    res = await client.post(f"/api/v1/projects/{project.id}/resume", json={"run_id": run.id})
+    assert res.status_code == 503
 
 
 # ---------------------------------------------------------------------------
-# cancel_project_run: 404 + cancel path emits ws event
+# cancel
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_cancel_returns_404_when_project_missing(closure_client):
-    client, ctx = closure_client
+    client, _ctx, _engine = closure_client
     res = await client.post("/api/v1/projects/99999/cancel")
     assert res.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_cancel_marks_runs_and_emits_ws_event(closure_client, monkeypatch):
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
-    ws = ctx["ws"]
+async def test_cancel_marks_runs_emits_ws_and_notifies_engine(closure_client, monkeypatch):
+    client, ctx, engine = closure_client
 
-    async with session_maker() as session:
+    async with ctx["session_maker"]() as session:
         project = await create_project(session)
         await create_run(session, project_id=project.id, status="running")
         await create_run(session, project_id=project.id, status="queued")
 
-    monkeypatch.setattr(
-        generation_routes.task_manager,
-        "cancel",
-        lambda project_id: True,
-    )
+    monkeypatch.setattr(generation_routes.task_manager, "cancel", lambda pid: True)
 
     res = await client.post(f"/api/v1/projects/{project.id}/cancel")
     assert res.status_code == 200
@@ -438,169 +293,89 @@ async def test_cancel_marks_runs_and_emits_ws_event(closure_client, monkeypatch)
     assert body["status"] == "cancelled"
     assert body["cancelled"] == 2
 
-    # ws.send_event should have been called.
-    assert ws.events
-    last_project_id, last_event = ws.events[-1]
+    assert len(engine.cancel) == 1
+    assert ctx["ws"].events
+    last_project_id, last_event = ctx["ws"].events[-1]
     assert last_project_id == project.id
     assert last_event["type"] == "run_cancelled"
     assert last_event["data"]["cancelled_count"] == 2
 
 
 # ---------------------------------------------------------------------------
-# feedback_project: 404 + closure happy/cancel paths
+# feedback
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_feedback_returns_404_when_project_missing(closure_client):
-    client, ctx = closure_client
-    res = await client.post(
-        "/api/v1/projects/99999/feedback",
-        json={"content": "fix tone"},
-    )
+    client, _ctx, _engine = closure_client
+    res = await client.post("/api/v1/projects/99999/feedback", json={"content": "fix tone"})
     assert res.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_feedback_closure_invokes_run_from_agent(closure_client):
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
+async def test_feedback_routes_through_review_then_dispatches(closure_client, monkeypatch):
+    """反馈必须经 ReviewAgent 决定起点，再由引擎从该阶段起跑。"""
+    client, ctx, engine = closure_client
 
-    async with session_maker() as session:
+    async def fake_route(**_kwargs) -> str:
+        return "render_characters"
+
+    monkeypatch.setattr(generation_routes, "_route_feedback_to_stage", fake_route)
+
+    async with ctx["session_maker"]() as session:
         project = await create_project(session)
 
-    res = await client.post(
-        f"/api/v1/projects/{project.id}/feedback",
-        json={"content": "fix tone"},
-    )
+    res = await client.post(f"/api/v1/projects/{project.id}/feedback", json={"content": "fix tone"})
     assert res.status_code == 202
-    assert len(_StubOrchestrator.instances) == 1
-    inst = _StubOrchestrator.instances[0]
-    call = inst.run_from_agent_calls[0]
-    assert call["agent_name"] == "review"
-    assert call["auto_mode"] is False
+    body = res.json()
+    assert body["status"] == "accepted"
 
+    assert len(engine.start) == 1
+    assert engine.start[0]["stage"] == "render_characters"
+    assert engine.start[0]["user_feedback"] == "fix tone"
+    assert engine.start[0]["auto_mode"] is False
 
-@pytest.mark.asyncio
-async def test_feedback_closure_handles_cancel_and_marks_run_cancelled(closure_client):
-    client, ctx = closure_client
-    session_maker = ctx["session_maker"]
-
-    _StubOrchestrator.next_run_from_agent_exception = asyncio.CancelledError()
-
-    async with session_maker() as session:
-        project = await create_project(session)
-
-    res = await client.post(
-        f"/api/v1/projects/{project.id}/feedback",
-        json={"content": "fix tone"},
-    )
-    assert res.status_code == 202
-    run_id = res.json()["run_id"]
-
-    async with session_maker() as session:
-        run = await session.get(AgentRun, run_id)
+    async with ctx["session_maker"]() as session:
+        run = await session.get(AgentRun, body["run_id"])
         assert run is not None
-        assert run.status == "cancelled"
-
-
-# ---------------------------------------------------------------------------
-# _start_project_task: log_task_result branches (lines 40-43)
-# ---------------------------------------------------------------------------
+        assert run.status == "running"
 
 
 @pytest.mark.asyncio
-async def test_start_project_task_logs_exception_on_failed_done_callback(monkeypatch):
-    """Cover the exception branch of _log_task_result inside _start_project_task."""
-    captured_exceptions: list[BaseException] = []
-
-    def fake_logger_exception(msg, *_, **__):
-        captured_exceptions.append(RuntimeError(msg))
-
-    monkeypatch.setattr(generation_routes.logger, "exception", fake_logger_exception)
-
-    # Use a real task that raises immediately so the done callback hits the except branch.
-    async def boom() -> None:
-        raise RuntimeError("worker exploded")
-
-    real_create_task = asyncio.create_task
-
-    captured_callbacks: list = []
-
-    def capture_create_task(coro):
-        task = real_create_task(coro)
-
-        original_add_done_callback = task.add_done_callback
-
-        def add_cb(cb):
-            captured_callbacks.append(cb)
-            original_add_done_callback(cb)
-
-        task.add_done_callback = add_cb  # type: ignore[method-assign]
-        return task
-
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", capture_create_task)
+async def test_feedback_returns_503_when_engine_unavailable(closure_client, monkeypatch):
+    client, ctx, engine = closure_client
+    engine.unavailable = True
     monkeypatch.setattr(
-        generation_routes.task_manager,
-        "register",
-        lambda project_id, task: None,
+        generation_routes, "_route_feedback_to_stage", lambda **_kw: _async_return("plan_characters")
     )
 
-    await generation_routes._start_project_task(7, boom())
-    # Wait a tick for the task to finish so the done callback runs.
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-    assert captured_exceptions, "logger.exception should have been called"
+    async with ctx["session_maker"]() as session:
+        project = await create_project(session)
+
+    res = await client.post(f"/api/v1/projects/{project.id}/feedback", json={"content": "fix tone"})
+    assert res.status_code == 503
 
 
 @pytest.mark.asyncio
-async def test_start_project_task_swallows_cancelled_in_done_callback(monkeypatch):
-    """Cover the CancelledError branch of _log_task_result inside _start_project_task."""
-    captured_exceptions: list[BaseException] = []
+async def test_feedback_returns_409_when_run_active(closure_client):
+    client, ctx, _engine = closure_client
 
-    def fake_logger_exception(msg, *_, **__):
-        captured_exceptions.append(RuntimeError(msg))
+    async with ctx["session_maker"]() as session:
+        project = await create_project(session)
+        await create_run(session, project_id=project.id, status="running")
 
-    monkeypatch.setattr(generation_routes.logger, "exception", fake_logger_exception)
-
-    # Make the task raise CancelledError in the done callback path.
-    async def slow() -> None:
-        await asyncio.sleep(10)
-
-    real_create_task = asyncio.create_task
-
-    def capture_create_task(coro):
-        return real_create_task(coro)
-
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", capture_create_task)
-    monkeypatch.setattr(
-        generation_routes.task_manager,
-        "register",
-        lambda project_id, task: setattr(task, "_test_handle", task),
-    )
-
-    coro = slow()
-    await generation_routes._start_project_task(8, coro)
-    # Now find the registered task and cancel it.
-    # task_manager.register won't let us recover the task directly, so cancel via the running tasks set.
-    pending = [t for t in asyncio.all_tasks() if t.get_coro() is coro]
-    assert pending, "task should be pending"
-    pending[0].cancel()
-    try:
-        await pending[0]
-    except asyncio.CancelledError:
-        pass
-    # logger.exception should NOT have been called for CancelledError.
-    assert not captured_exceptions
+    res = await client.post(f"/api/v1/projects/{project.id}/feedback", json={"content": "fix tone"})
+    assert res.status_code == 409
 
 
 # ---------------------------------------------------------------------------
-# _require_run_id: defensive raise (line 55)
+# route-level helpers
 # ---------------------------------------------------------------------------
 
 
 def test_require_run_id_raises_when_missing():
-    run = AgentRun(project_id=1, status="queued")  # no id
+    run = AgentRun(project_id=1, status="queued")
     with pytest.raises(RuntimeError, match="missing an id"):
         generation_routes._require_run_id(run)
 
@@ -615,3 +390,10 @@ def test_agent_run_thread_id_handles_missing_id():
     assert generation_routes._agent_run_thread_id(pending) == "agent-run-pending"
     persisted = AgentRun(id=99, project_id=1, status="queued")
     assert generation_routes._agent_run_thread_id(persisted) == "agent-run-99"
+
+
+def test_feedback_agent_to_stage_map_targets_real_stages():
+    from app.orchestration import PHASE2_STAGE_ORDER
+
+    for agent, stage in generation_routes._AGENT_TO_START_STAGE.items():
+        assert stage in PHASE2_STAGE_ORDER, f"{agent} → {stage} 不在阶段表内"

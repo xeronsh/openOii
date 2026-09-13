@@ -8,8 +8,8 @@ from typing import AsyncGenerator
 
 # Must run before any app.db.session import: the global engine/maker is built
 # from Settings(.env) at import time. Without this, unpatched production paths
-# (WS replay, export cache, run confirm signal) would open real asyncpg
-# connections from tests and leak them (PytestUnraisableExceptionWarning).
+# (WS replay, export cache, run confirm signal) would open the real
+# data/openoii.db from tests and leak handles.
 _TEST_GLOBAL_DB = Path(__file__).resolve().parent / "test-global-sandbox.db"
 os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_GLOBAL_DB}")
 
@@ -43,7 +43,6 @@ def _cleanup_global_sandbox_db():
 def test_settings() -> Settings:
     return Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        agent_engine="langgraph",
         text_provider="anthropic",
         image_provider="openai",
         video_provider="openai",
@@ -123,6 +122,33 @@ async def checkpoint_sessionmaker(
 @pytest.fixture()
 def ws_manager() -> StubWsManager:
     return StubWsManager()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_engine(monkeypatch):
+    """测试绝不允许真的拉起 pi 引擎 sidecar（子进程 + 真 LLM + 真媒体）。
+
+    路由现在总是经 loopback HTTP 派发；默认把它们换成 no-op stub，
+    需要验证派发契约的测试可在自己的 fixture 里覆盖。
+    """
+    from app.api.v1.routes import generation as generation_routes
+
+    async def _ensure(base_url, database_url, static_dir):
+        return None
+
+    async def _start(base_url, **kwargs):
+        return {"status": "running"}
+
+    async def _resume(base_url, **kwargs):
+        return {"status": "running"}
+
+    async def _cancel(base_url, run_id):
+        return None
+
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _ensure)
+    monkeypatch.setattr(generation_routes, "engine_start_run", _start)
+    monkeypatch.setattr(generation_routes, "engine_resume_run", _resume)
+    monkeypatch.setattr(generation_routes, "engine_cancel_run", _cancel)
 
 
 @pytest_asyncio.fixture(scope="function")

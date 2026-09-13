@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from operator import add
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Literal
 
 
 Phase2Stage = Literal[
@@ -24,6 +22,28 @@ Phase2Stage = Literal[
     "compose_approval",
     "review",
 ]
+
+# Full gate-inclusive stage order (production + approval + critique).
+# Canonical: engine/src/contract.ts NEXT_STAGE mirrors this.
+PHASE2_STAGE_ORDER: tuple[str, ...] = (
+    "plan_outline",
+    "outline_approval",
+    "plan_characters",
+    "characters_approval",
+    "plan_shots",
+    "shots_approval",
+    "render_characters",
+    "character_images_approval",
+    "critique_character_images",
+    "render_shots",
+    "shot_images_approval",
+    "critique_shot_images",
+    "compose_videos",
+    "compose_merge",
+    "add_audio",
+    "compose_approval",
+    "review",
+)
 
 # Ordered sequence of production stages (excludes approval gates).
 PRODUCTION_STAGE_SEQUENCE: tuple[str, ...] = (
@@ -87,32 +107,3 @@ def workflow_progress_for_stage(stage: str, *, within_stage: float = 0.0) -> flo
     return min((stage_index + clamped_within) / total, 1.0)
 
 
-class Phase2State(TypedDict, total=False):
-    project_id: int
-    run_id: int
-    thread_id: str
-    current_stage: str
-    next_stage: str
-    stage_history: Annotated[list[str], add]
-    approval_history: Annotated[list[str], add]
-    artifact_lineage: Annotated[list[str], add]
-    approval_feedback: str
-    review_requested: bool
-    route_stage: str
-    route_mode: str
-    video_generation_skipped: bool
-    critique_scores: dict
-    critique_round: int
-    # Skill / selection focus (propagated for routing + observability)
-    skill_id: str
-    focus_entity_type: str
-    focus_entity_id: int
-
-
-@dataclass(slots=True)
-class Phase2RuntimeContext:
-    orchestrator: Any
-    agent_context: Any
-    start_stage: Phase2Stage = "plan_outline"
-    auto_mode: bool = False
-    skill_id: str | None = None

@@ -1,44 +1,20 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: openoii
-      POSTGRES_PASSWORD: openoii_dev
-      POSTGRES_DB: openoii
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U openoii"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   backend:
-    build: ./backend
-    depends_on:
-      postgres:
-        condition: service_healthy
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     env_file:
       - ./backend/.env
     environment:
-      # 覆盖 .env 中的数据库和 Redis 配置，使用 Docker 内部服务名
-      DATABASE_URL: postgresql+asyncpg://openoii:openoii_dev@postgres:5432/openoii
-      # task_manager 是进程内字典，必须单 worker 才安全
+      DATABASE_URL: sqlite+aiosqlite:///./data/openoii.db
+      ENGINE_URL: http://127.0.0.1:18766
       WEB_CONCURRENCY: "1"
-      # 如果图像/视频服务也在 Docker 中，取消注释并修改为实际的容器名和端口
-      # IMAGE_BASE_URL: http://your_image_service:port
-      # VIDEO_BASE_URL: http://your_video_service:port
     ports:
       - "18765:18765"
     volumes:
       - ./backend/app/static:/app/app/static
+      - backend_data:/app/data
     restart: unless-stopped
-    # 如果需要连接到其他 Docker 网络，取消注释并修改网络名
-    # networks:
-    #   - default
-    #   - your_external_network
 
   frontend:
     build: ./frontend
@@ -49,9 +25,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
-
-# 如果需要连接到外部 Docker 网络，取消注释并修改网络名
-# networks:
-#   your_external_network:
-#     external: true
+  backend_data:

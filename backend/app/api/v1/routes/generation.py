@@ -1,25 +1,24 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections.abc import Coroutine
 from datetime import datetime
 from typing import cast
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
-from app.agents.orchestrator import GenerationOrchestrator
+from app.agents.base import AgentContext
+from app.agents.review_rules import ReviewAgent
 from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404, require_run_id
 from app.config import Settings
-from app.db.session import async_session_maker
 from app.exceptions import BusinessError
 from app.models.agent_run import AgentMessage, AgentRun
 from app.models.message import Message
 from app.models.project import Project
+from app.orchestration import PHASE2_STAGE_ORDER, PRODUCTION_STAGE_SEQUENCE
 from app.schemas.project import (
     AgentRunRead,
     FeedbackRequest,
@@ -36,28 +35,99 @@ from app.services.engine_client import (
     ensure_engine_running,
 )
 from app.services.generation_entry import decide_generation_entry
+from app.services.image_factory import create_image_service
 from app.services.provider_resolution import resolve_project_provider_settings_async
 from app.services.run_recovery import build_recovery_control_surface
 from app.services.task_manager import task_manager
+from app.services.text_factory import create_text_service
+from app.services.video_factory import create_video_service
 from app.ws.manager import ConnectionManager
 
 router = APIRouter(prefix="/projects")
 logger = logging.getLogger(__name__)
 
+# ReviewAgent 的 start_agent → 引擎可从该阶段起跑
+_AGENT_TO_START_STAGE: dict[str, str] = {
+    "outline": "plan_outline",
+    "plan": "plan_characters",
+    "render": "render_characters",
+    "compose": "compose_videos",
+}
 
-async def _start_project_task(project_id: int, coro: Coroutine[object, object, None]) -> None:
-    task = asyncio.create_task(coro)
 
-    def _log_task_result(done_task: asyncio.Task[None]) -> None:
-        try:
-            done_task.result()
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            logger.exception("Background project task failed", extra={"project_id": project_id})
+async def _dispatch_to_engine(
+    *,
+    settings: Settings,
+    project_id: int,
+    run_id: int,
+    stage: str = "full",
+    auto_mode: bool = False,
+    user_feedback: str = "",
+    resume: bool = False,
+) -> None:
+    """保证引擎在跑并发起 run；引擎不可用时回 503。"""
+    from app.main import STATIC_DIR
 
-    task.add_done_callback(_log_task_result)
-    task_manager.register(project_id, task)
+    try:
+        await ensure_engine_running(settings.engine_url, settings.database_url, STATIC_DIR)
+        if resume:
+            await engine_resume_run(settings.engine_url, project_id=project_id, run_id=run_id)
+        else:
+            await engine_start_run(
+                settings.engine_url,
+                project_id=project_id,
+                run_id=run_id,
+                stage=stage,
+                auto_mode=auto_mode,
+                user_feedback=user_feedback,
+            )
+    except EngineUnavailableError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+async def _route_feedback_to_stage(
+    *,
+    settings: Settings,
+    ws: ConnectionManager,
+    session: AsyncSession,
+    project: Project,
+    run: AgentRun,
+    content: str,
+    feedback_type: str | None,
+    entity_type: str | None,
+    entity_id: int | None,
+    entity_ids: list[int] | None,
+) -> str:
+    """用 ReviewAgent 把用户反馈路由到具体重跑阶段（含画布选区优先级）。
+
+    路由失败回退到全量重跑，不让反馈丢失。
+    """
+    ctx = AgentContext(
+        settings=settings,
+        session=session,
+        ws=ws,
+        project=project,
+        run=run,
+        llm=create_text_service(settings),
+        image=create_image_service(settings),
+        video=create_video_service(settings),
+        user_feedback=content,
+        feedback_type=feedback_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_ids=list(dict.fromkeys(entity_ids)) if entity_ids else None,
+    )
+    try:
+        routing = await ReviewAgent().run(ctx)
+    except Exception:  # noqa: BLE001 - 路由是尽力而为，失败退回全量
+        logger.warning("ReviewAgent routing failed; falling back to full re-plan", exc_info=True)
+        return PRODUCTION_STAGE_SEQUENCE[0]
+
+    start_agent = routing.get("start_agent") if isinstance(routing, dict) else None
+    stage = _AGENT_TO_START_STAGE.get(start_agent or "", PRODUCTION_STAGE_SEQUENCE[0])
+    if stage not in PHASE2_STAGE_ORDER:
+        return PRODUCTION_STAGE_SEQUENCE[0]
+    return stage
 
 
 def _agent_run_thread_id(run: AgentRun) -> str:
@@ -124,7 +194,6 @@ async def get_generation_state(
 async def generate_project(
     project_id: int,
     payload: GenerateRequest,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = SessionDep,
     settings: Settings = SettingsDep,
     ws: ConnectionManager = WsManagerDep,
@@ -188,50 +257,17 @@ async def generate_project(
     await session.refresh(run)
     run_id = _require_run_id(run)
 
-    async def _task() -> None:
-        try:
-            async with async_session_maker() as task_session:
-                orchestrator = GenerationOrchestrator(
-                    settings=settings, ws=ws, session=task_session
-                )
-                await orchestrator.run(
-                    project_id=project_id,
-                    run_id=run_id,
-                    request=payload,
-                    auto_mode=payload.auto_mode,
-                )
-        except asyncio.CancelledError:
-            # 任务被取消，更新数据库状态
-            async with async_session_maker() as cancel_session:
-                run_obj = await cancel_session.get(AgentRun, run_id)
-                if run_obj and run_obj.status not in ("cancelled", "failed", "succeeded"):
-                    run_obj.status = "cancelled"
-                    await cancel_session.commit()
-            raise
-        finally:
-            task_manager.remove(project_id)
-
-    if settings.agent_engine == "pi" and settings.database_url.startswith("sqlite"):
-        from app.main import STATIC_DIR
-
-        try:
-            await ensure_engine_running(settings.engine_url, settings.database_url, STATIC_DIR)
-            await engine_start_run(
-                settings.engine_url,
-                project_id=project_id,
-                run_id=run_id,
-                stage="full",
-                auto_mode=bool(payload.auto_mode),
-            )
-        except EngineUnavailableError as exc:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-        run.status = "running"
-        session.add(run)
-        await session.commit()
-        await session.refresh(run)
-        return AgentRunRead.model_validate(run)
-
-    background_tasks.add_task(_start_project_task, project_id, _task())
+    await _dispatch_to_engine(
+        settings=settings,
+        project_id=project_id,
+        run_id=run_id,
+        stage="full",
+        auto_mode=bool(payload.auto_mode),
+    )
+    run.status = "running"
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
     return AgentRunRead.model_validate(run)
 
 
@@ -239,7 +275,6 @@ async def generate_project(
 async def resume_project_run(
     project_id: int,
     payload: ResumeRequest,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = SessionDep,
     settings: Settings = SettingsDep,
     ws: ConnectionManager = WsManagerDep,
@@ -255,38 +290,16 @@ async def resume_project_run(
 
     run_id = payload.run_id
 
-    async def _task() -> None:
-        try:
-            async with async_session_maker() as task_session:
-                orchestrator = GenerationOrchestrator(
-                    settings=settings, ws=ws, session=task_session
-                )
-                await orchestrator.resume_from_recovery(project_id=project_id, run_id=run_id)
-        except asyncio.CancelledError:
-            async with async_session_maker() as cancel_session:
-                run_obj = await cancel_session.get(AgentRun, run_id)
-                if run_obj and run_obj.status not in ("cancelled", "failed", "succeeded"):
-                    run_obj.status = "cancelled"
-                    await cancel_session.commit()
-            raise
-        finally:
-            task_manager.remove(project_id)
-
-    if settings.agent_engine == "pi" and settings.database_url.startswith("sqlite"):
-        from app.main import STATIC_DIR
-
-        try:
-            await ensure_engine_running(settings.engine_url, settings.database_url, STATIC_DIR)
-            await engine_resume_run(settings.engine_url, project_id=project_id, run_id=run_id)
-        except EngineUnavailableError as exc:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-        run.status = "running"
-        session.add(run)
-        await session.commit()
-        await session.refresh(run)
-        return AgentRunRead.model_validate(run)
-
-    background_tasks.add_task(_start_project_task, project_id, _task())
+    await _dispatch_to_engine(
+        settings=settings,
+        project_id=project_id,
+        run_id=run_id,
+        resume=True,
+    )
+    run.status = "running"
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
     return AgentRunRead.model_validate(run)
 
 
@@ -302,10 +315,9 @@ async def cancel_project_run(
 
     # 先取消实际的后台任务
     task_cancelled = task_manager.cancel(project_id)
-    if settings.agent_engine == "pi" and settings.database_url.startswith("sqlite"):
-        active = await _latest_run_for_project(session, project_id, ("queued", "running"))
-        if active is not None:
-            await engine_cancel_run(settings.engine_url, active.id)
+    active = await _latest_run_for_project(session, project_id, ("queued", "running"))
+    if active is not None and active.id is not None:
+        await engine_cancel_run(settings.engine_url, active.id)
 
     # 更新数据库状态
     project_id_col = cast(InstrumentedAttribute[int], cast(object, AgentRun.project_id))
@@ -347,7 +359,6 @@ async def cancel_project_run(
 async def feedback_project(
     project_id: int,
     payload: FeedbackRequest,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = SessionDep,
     settings: Settings = SettingsDep,
     ws: ConnectionManager = WsManagerDep,
@@ -400,33 +411,30 @@ async def feedback_project(
     )
     await session.commit()
 
-    async def _task() -> None:
-        try:
-            async with async_session_maker() as task_session:
-                orchestrator = GenerationOrchestrator(
-                    settings=settings, ws=ws, session=task_session
-                )
-                await orchestrator.run_from_agent(
-                    project_id=project_id,
-                    run_id=run_id,
-                    request=GenerateRequest(notes=payload.content),
-                    agent_name="review",
-                    auto_mode=False,
-                    feedback_type=payload.feedback_type,
-                    entity_type=payload.entity_type,
-                    entity_id=payload.entity_id,
-                    entity_ids=payload.entity_ids,
-                )
-        except asyncio.CancelledError:
-            # 任务被取消，更新数据库状态
-            async with async_session_maker() as cancel_session:
-                run_obj = await cancel_session.get(AgentRun, run_id)
-                if run_obj and run_obj.status not in ("cancelled", "failed", "succeeded"):
-                    run_obj.status = "cancelled"
-                    await cancel_session.commit()
-            raise
-        finally:
-            task_manager.remove(project_id)
-
-    background_tasks.add_task(_start_project_task, project_id, _task())
+    # 反馈语义：先由 ReviewAgent 决定从哪个阶段重跑，再让引擎从该阶段起跑。
+    user_feedback = payload.content.strip()
+    start_stage = await _route_feedback_to_stage(
+        settings=settings,
+        ws=ws,
+        session=session,
+        project=project,
+        run=run,
+        content=user_feedback,
+        feedback_type=payload.feedback_type,
+        entity_type=payload.entity_type,
+        entity_id=payload.entity_id,
+        entity_ids=payload.entity_ids,
+    )
+    await _dispatch_to_engine(
+        settings=settings,
+        project_id=project_id,
+        run_id=run_id,
+        stage=start_stage,
+        auto_mode=False,
+        user_feedback=user_feedback,
+    )
+    run.status = "running"
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
     return {"status": "accepted", "run_id": run_id}

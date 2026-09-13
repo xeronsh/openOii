@@ -184,7 +184,7 @@ def create_app() -> FastAPI:
 
     @app.websocket("/ws/projects/{project_id}")
     async def ws_projects(websocket: WebSocket, project_id: int):
-        from app.agents.orchestrator import (
+        from app.services.run_signals import (
             get_awaiting_payload,
             trigger_confirm_signal,
         )
@@ -218,7 +218,7 @@ def create_app() -> FastAPI:
                                 {"type": "run_awaiting_confirm", "data": payload},
                             )
                         else:
-                            from app.agents.orchestrator import GRAPH_STAGE_FOR_AGENT
+                            from app.services.run_signals import GRAPH_STAGE_FOR_AGENT
 
                             mapped_stage = GRAPH_STAGE_FOR_AGENT.get(
                                 run.current_agent or "", run.current_agent or "plan"
@@ -240,12 +240,10 @@ def create_app() -> FastAPI:
             except Exception as e:
                 logger.warning(f"Failed to replay state for project {project_id}: {e}")
 
-            # pi 引擎模式：尾随 engine_run_events，把引擎事件推给 WS 客户端
-            engine_tailer_task: asyncio.Task[None] | None = None
-            if getattr(settings, "agent_engine", "langgraph") == "pi":
-                engine_tailer_task = asyncio.create_task(
-                    _tail_engine_events(project_id, websocket)
-                )
+            # pi 引擎：尾随 engine_run_events，把引擎事件推给 WS 客户端
+            engine_tailer_task = asyncio.create_task(
+                _tail_engine_events(project_id, websocket)
+            )
 
             while True:
                 # Pre-check: if the socket is no longer connected, exit cleanly.

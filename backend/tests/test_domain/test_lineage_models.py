@@ -47,7 +47,7 @@ async def test_lineage_models_persist_project_run_stage_and_artifact(test_sessio
         name="character",
         status="pending",
         version=1,
-        source="langgraph",
+        source="engine",
     )
     test_session.add(stage)
     await test_session.commit()

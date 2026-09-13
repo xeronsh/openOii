@@ -13,6 +13,7 @@ import { TextLlmService } from "./llm.js";
 import { RunManager } from "./runner.js";
 import { SharedDb } from "./shared-db.js";
 import { PipelineRunner } from "./pipeline/runner.js";
+import { PRODUCTION_STAGE_SEQUENCE, type StageId } from "./contract.js";
 
 export function createEngineApp(dbPath: string) {
   const db = new EngineDatabase(dbPath);
@@ -57,6 +58,7 @@ export function createEngineApp(dbPath: string) {
           runId,
           autoMode: Boolean(body.auto_mode),
           userFeedback: typeof body.user_feedback === "string" ? body.user_feedback : "",
+          startStage: isStageId(stage) ? stage : undefined,
         })
         .finally(() => pipelines.delete(runId));
       send(202, { status: "running", run_id: runId, project_id: projectId });
@@ -116,6 +118,10 @@ export function createEngineApp(dbPath: string) {
   });
 
   return { server, db, runs, llm, shared, pipelines };
+}
+
+function isStageId(value: string): value is StageId {
+  return (PRODUCTION_STAGE_SEQUENCE as readonly string[]).includes(value);
 }
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {

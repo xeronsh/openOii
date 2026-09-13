@@ -64,3 +64,17 @@ describe("engine sidecar", () => {
     expect(body.events.map((e) => e.type)).toContain("engine_run_cancelled");
   });
 });
+
+describe("better-sqlite3 native binding", () => {
+  it("native module loads and executes SQL", async () => {
+    // 回归守卫：better-sqlite3 的 prebuild 在 Node 20 上会 segfault（exit 139），
+    // 症状是引擎静默崩溃、无日志。Docker 基础镜像因此固定在 Node 22。
+    const { default: Database } = await import("better-sqlite3");
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE t (a INTEGER)");
+    db.prepare("INSERT INTO t (a) VALUES (?)").run(42);
+    const row = db.prepare("SELECT a FROM t").get() as { a: number };
+    expect(row.a).toBe(42);
+    db.close();
+  });
+});

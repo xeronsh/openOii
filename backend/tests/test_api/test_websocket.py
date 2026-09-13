@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from app import main as main_module
-from app.agents import orchestrator as orchestrator_module
 from app.schemas.project import RecoverySummaryRead
 from app.ws.manager import ws_manager
 
@@ -198,7 +197,7 @@ async def test_websocket_connection_replays_awaiting_payload(monkeypatch):
             }
         return None
 
-    monkeypatch.setattr(orchestrator_module, "get_awaiting_payload", fake_get_awaiting_payload)
+    monkeypatch.setattr("app.services.run_signals.get_awaiting_payload", fake_get_awaiting_payload)
     manager = _FakeManager()
     _patch_ws_app(monkeypatch, manager)
     monkeypatch.setattr(
@@ -223,7 +222,7 @@ async def test_websocket_connection_replays_run_progress_for_non_awaiting_run(mo
     async def fake_get_awaiting_payload(candidate_run_id: int) -> dict[str, Any] | None:
         return None
 
-    monkeypatch.setattr(orchestrator_module, "get_awaiting_payload", fake_get_awaiting_payload)
+    monkeypatch.setattr("app.services.run_signals.get_awaiting_payload", fake_get_awaiting_payload)
     manager = _FakeManager()
     _patch_ws_app(monkeypatch, manager)
     monkeypatch.setattr(

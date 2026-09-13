@@ -146,7 +146,7 @@ class Cursor:
 
     async def __aiter__(self):
         # sqlite3 results are already materialized client-side; expose them
-        # through the async iteration protocol langgraph's saver relies on.
+        # through the async iteration protocol SQLAlchemy's async cursor relies on.
         await self._ensure_cursor()
         assert self._cursor is not None
         rows = await asyncio.to_thread(self._cursor.fetchall)
@@ -178,7 +178,7 @@ class Connection:
 
     def cursor(self, *args: Any, **kwargs: Any) -> Cursor:
         # Sync per the aiosqlite protocol: the returned proxy runs lazily via
-        # __await__/__aenter__ (SQLAlchemy's await_() and langgraph's
+        # __await__/__aenter__ (SQLAlchemy's await_() and the engine's
         # `async with conn.cursor()` both work against this).
         return Cursor(self)
 
@@ -229,7 +229,7 @@ def connect(
 
     def _connector() -> sqlite3.Connection:
         # Driver-level autocommit: transactions are explicit (SQLAlchemy emits
-        # BEGIN IMMEDIATE; langgraph saver writes become short autocommit
+        # BEGIN IMMEDIATE; cross-process writes become short autocommit
         # statements). Avoids deferred read→write upgrades that fail instantly
         # with "database is locked" under concurrency.
         kwargs.setdefault("check_same_thread", False)

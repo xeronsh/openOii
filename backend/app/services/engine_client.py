@@ -1,4 +1,4 @@
-"""pi-engine sidecar client (AGENT_ENGINE=pi integration, phase 6).
+"""pi-engine sidecar client.
 
 The engine owns run execution; the Python API keeps the HTTP/WS surface and
 tails engine_run_events. Communication is loopback HTTP + the shared SQLite
@@ -8,7 +8,6 @@ file.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import shutil
@@ -54,7 +53,7 @@ async def ensure_engine_running(base_url: str, database_url: str, static_dir: Pa
     db_path = engine_db_path(database_url)
     if db_path is None:
         raise EngineUnavailableError(
-            "AGENT_ENGINE=pi requires DATABASE_URL=sqlite+aiosqlite:///… (shared file)"
+            "pi engine requires DATABASE_URL=sqlite+aiosqlite:///… (shared file)"
         )
 
     env = os.environ.copy()

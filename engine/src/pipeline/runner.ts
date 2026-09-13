@@ -38,6 +38,8 @@ export interface PipelineRequest {
   runId: number;
   autoMode: boolean;
   userFeedback: string;
+  /** Feedback reruns start mid-pipeline; defaults to a full run from plan_outline. */
+  startStage?: StageId;
 }
 
 export interface PipelineOutcome {
@@ -86,7 +88,15 @@ export class PipelineRunner {
   }
 
   async run(request: PipelineRequest): Promise<PipelineOutcome> {
-    return this.runFromStage(request, "plan_outline", new Set<string>());
+    const startStage = request.startStage ?? "plan_outline";
+    // 中途起跑（用户反馈重跑）时，把起点之前的生产阶段标记为已完成，
+    // 使这些阶段对应的闸门自动放行、不重复生成。
+    const completed = new Set<string>();
+    for (const stage of PRODUCTION_STAGE_SEQUENCE) {
+      if (stage === startStage) break;
+      completed.add(stage);
+    }
+    return this.runFromStage(request, startStage, completed);
   }
 
   private async runFromStage(
@@ -110,27 +120,31 @@ export class PipelineRunner {
     });
 
     // run_started + data_cleared (contract parity: full re-plan wipe)
+    const fullRun = startStage === "plan_outline";
+    const startAgent = agentForStage(startStage);
     this.shared.updateRun(request.runId, {
       status: "running",
-      current_agent: "outline",
-      progress: 0,
+      current_agent: startAgent,
+      progress: progressForStage(startStage),
       error: null,
     });
     emitter.emit("run_started", {
       run_id: request.runId,
       project_id: request.projectId,
-      current_stage: "plan_outline",
-      stage: "plan_outline",
-      next_stage: "outline_approval",
-      progress: 0,
-      current_agent: "outline",
-      preserved_stages: [],
+      current_stage: startStage,
+      stage: startStage,
+      next_stage: NEXT_STAGE[startStage],
+      progress: progressForStage(startStage),
+      current_agent: startAgent,
+      preserved_stages: fullRun ? [] : PRODUCTION_STAGE_SEQUENCE.filter((s) => completedStages.has(s)),
     });
-    emitter.emit("data_cleared", {
-      cleared_types: ["characters", "shots", "messages"],
-      start_agent: "outline",
-      mode: "full",
-    });
+    if (fullRun) {
+      emitter.emit("data_cleared", {
+        cleared_types: ["characters", "shots", "messages"],
+        start_agent: "outline",
+        mode: "full",
+      });
+    }
 
     const ctx: StageContext = {
       shared: this.shared,

@@ -1,10 +1,8 @@
-"""Skill catalog + graph driver unit tests (simple skills only)."""
+"""Skill catalog unit tests (simple skills only)."""
 
 from __future__ import annotations
 
-import pytest
 
-from app.orchestration.driver import gate_name_from_interrupt, drive_graph_until_idle
 from app.skills.catalog import get_skill, list_skills, resolve_skill_entry
 from app.skills.context import (
     apply_skill_defaults_to_create,
@@ -123,43 +121,3 @@ def test_resolve_project_skill_id_prefers_request():
         )
         == "character-design"
     )
-
-
-def test_gate_name_from_interrupt():
-    class FakeInterrupt:
-        value = {"gate": "outline_approval", "message": "ok"}
-
-    assert gate_name_from_interrupt(FakeInterrupt()) == "outline_approval"
-
-
-@pytest.mark.asyncio
-async def test_drive_graph_until_idle_interrupt_loop():
-    calls = {"n": 0}
-
-    class FakeGraph:
-        async def ainvoke(self, payload, config, context=None):
-            calls["n"] += 1
-            if calls["n"] == 1:
-                class Interrupt:
-                    value = {"gate": "characters_approval"}
-
-                return {
-                    "current_stage": "characters_approval",
-                    "__interrupt__": [Interrupt()],
-                }
-            return {"current_stage": "compose_merge", "video_generation_skipped": False}
-
-    async def on_interrupt(item):
-        return {"action": "approve", "feedback": ""}
-
-    result = await drive_graph_until_idle(
-        FakeGraph(),
-        initial_payload={"route_stage": "plan_characters"},
-        graph_config={"configurable": {"thread_id": "t1"}},
-        runtime_context=None,
-        on_interrupt=on_interrupt,
-        run_id=1,
-    )
-    assert result.final_stage == "compose_merge"
-    assert result.interrupt_count == 1
-    assert calls["n"] == 2
