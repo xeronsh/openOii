@@ -1,8 +1,3 @@
-/**
- * Phase 4 integration: full fake-provider pipeline over the real app schema.
- * Gates are confirmed by flipping agentrun.confirm_requested (the same
- * cross-process signal the Python WS handler sets).
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +7,7 @@ import { EngineDatabase } from "../src/db.js";
 import { SharedDb } from "../src/shared-db.js";
 import { TextLlmService } from "../src/llm.js";
 import { PipelineRunner } from "../src/pipeline/runner.js";
+import { installEngineRuntimeSchema, installExecutionLeaseColumns } from "./test-db.js";
 
 const SCHEMA = readFileSync(
   resolve(import.meta.dirname, "fixtures/app-schema.sql"),
@@ -32,6 +28,8 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
     dbFile = join(cleanupDir, "openoii.db");
     const raw = new SqliteDatabase(dbFile);
     raw.exec(SCHEMA);
+    installExecutionLeaseColumns(raw);
+    installEngineRuntimeSchema(raw);
     raw.close();
   });
 
@@ -57,7 +55,9 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
                  strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
       .run();
-    return Number((edb.db.prepare("SELECT MAX(id) AS id FROM project").get() as { id: number | null }).id ?? 0);
+    return Number(
+      (edb.db.prepare("SELECT MAX(id) AS id FROM project").get() as { id: number | null }).id ?? 0,
+    );
   }
 
   it("completes all stages, persists domain rows, emits contract events", async () => {
@@ -69,9 +69,10 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
          VALUES (?, 'queued', 'outline', 0, 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
       .run(projectId);
-    const runId = Number((edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get() as { id: number | null }).id ?? 0);
+    const runId = Number(
+      (edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get() as { id: number | null }).id ?? 0,
+    );
 
-    // confirm gates asynchronously (auto-advance)
     const confirmer = setInterval(() => {
       shared.updateRun(runId, { confirm_requested: 1 });
     }, 100);
@@ -99,7 +100,6 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
       expect(s.video_url).toContain("/static/videos/");
     }
 
-    // contract event coverage on engine_run_events
     const types = edb.eventsForRun(runId).map((e) => e.type);
     for (const expected of [
       "run_started",
@@ -120,11 +120,13 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
       expect(types, `missing ${expected}`).toContain(expected);
     }
 
-    // message rows persisted for chat replay
     const messageCount = Number(
-      (edb.db.prepare("SELECT COUNT(*) AS n FROM message WHERE run_id = ?").get(runId) as { n: number }).n,
+      (edb.db.prepare("SELECT COUNT(*) AS n FROM message WHERE run_id = ?").get(runId) as {
+        n: number;
+      }).n,
     );
     expect(messageCount).toBeGreaterThan(0);
+    edb.close();
   }, 60000);
 
   it("gate pause/resume: stops at awaiting, continues after confirm signal", async () => {
@@ -136,12 +138,12 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
          VALUES (?, 'queued', 'outline', 0, 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
       .run(projectId);
-    const runId = Number((edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get() as { id: number | null }).id ?? 0);
+    const runId = Number(
+      (edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get() as { id: number | null }).id ?? 0,
+    );
 
     const running = runner.run({ projectId, runId, autoMode: false, userFeedback: "" });
 
-    // wait until the outline gate awaits, then keep consuming the confirm
-    // signal (the runner clears it once per gate before waiting)
     let sawAwaiting = false;
     const confirmer = setInterval(() => {
       if (!sawAwaiting) {
@@ -156,6 +158,35 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
       expect(outcome.status).toBe("completed");
     } finally {
       clearInterval(confirmer);
+      edb.close();
     }
   }, 60000);
+
+  it("durable lease rejects a second owner and fences stale writers", () => {
+    const { shared, edb } = boot();
+    const projectId = seedProject(edb);
+    edb.db
+      .prepare(
+        `INSERT INTO agentrun (project_id, status, current_agent, progress, confirm_requested, created_at, updated_at)
+         VALUES (?, 'queued', 'outline', 0, 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+      )
+      .run(projectId);
+    const runId = Number(
+      (edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get() as { id: number | null }).id ?? 0,
+    );
+
+    expect(shared.acquireRunLease(runId, "owner-a", "token-a", 120)).toBe(true);
+    expect(shared.acquireRunLease(runId, "owner-b", "token-b", 120)).toBe(false);
+
+    const stale = shared.fenced(runId, "token-a");
+    stale.updateRun(runId, { status: "running" });
+    expect(shared.releaseRunLease(runId, "owner-a", "token-a")).toBe(true);
+    expect(() => stale.updateRun(runId, { status: "failed" })).toThrow(/execution lease lost/);
+
+    expect(shared.acquireRunLease(runId, "owner-b", "token-b", 120)).toBe(true);
+    const current = shared.fenced(runId, "token-b");
+    current.updateRun(runId, { status: "running" });
+    expect(shared.getRun(runId)?.status).toBe("running");
+    edb.close();
+  });
 });
