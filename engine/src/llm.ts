@@ -6,7 +6,7 @@
  * - anthropic       : Anthropic-compatible endpoint (中转站 via custom baseUrl)
  * - openai          : OpenAI-compatible endpoint (custom baseUrl)
  */
-import { complete, getModel, getProviders } from "@mariozechner/pi-ai";
+import { complete, type Model } from "@mariozechner/pi-ai";
 import type { EngineDatabase } from "./db.js";
 import { fakeRespond } from "./fake-stream.js";
 
@@ -62,18 +62,31 @@ export class TextLlmService {
     if (resolved.key === "fake") {
       return { text: fakeRespond(req.prompt), provider: "fake", model: "fake" };
     }
-
-    if (!getProviders().includes(resolved.key)) {
-      throw new Error(`pi-ai does not know provider ${resolved.key}`);
+    if (!resolved.baseUrl) {
+      throw new Error(`provider ${resolved.key} needs a base URL (TEXT_BASE_URL / ANTHROPIC_BASE_URL)`);
     }
-    const model = getModel(resolved.key, resolved.model as never);
+
+    // Hand-built Model for OpenAI/Anthropic-COMPATIBLE relays (中转站): the
+    // configured base URL + arbitrary model id, bypassing the curated catalog.
+    const model = {
+      id: resolved.model,
+      name: resolved.model,
+      api: resolved.key === "anthropic" ? "anthropic-messages" : "openai-completions",
+      provider: resolved.key,
+      baseUrl: resolved.baseUrl,
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1000000,
+      maxTokens: 128000,
+    } as unknown as Model<never>;
+
     const context = {
       systemPrompt: req.system,
       messages: [{ role: "user" as const, content: req.prompt, timestamp: Date.now() }],
     };
     const message = await complete(model, context, {
       apiKey: resolved.apiKey,
-      ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
       maxTokens: req.maxTokens ?? 4096,
     });
     if (message.stopReason === "error") {
