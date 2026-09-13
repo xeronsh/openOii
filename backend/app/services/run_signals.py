@@ -1,10 +1,9 @@
 """Run confirm signal + awaiting payload (agentrun 列；替代原 Redis 实现).
 
-信号位跨进程可见（Python 与 pi 引擎 sidecar 经共享 SQLite 读写同一列），
+信号位跨进程可见（Python 与 workflow engine sidecar 经共享 SQLite 读写同一列），
 编排侧轮询消费；payload 用于 WS 重连补发。
 
-Stage/agent 映射常量同住这里：route 层、WS 层与 agent_runner 都依赖它们，
-而它们是纯数据，不该拖着编排执行体一起被 import。
+Stage/agent 映射由 contracts/workflow.json 生成，不能在这里再维护一份。
 """
 
 from __future__ import annotations
@@ -13,41 +12,13 @@ import asyncio
 
 from sqlalchemy import select, update
 
+from app.generated.workflow_contract import GRAPH_STAGE_FOR_AGENT, STAGE_AGENT_MAP
 from app.models.agent_run import AgentRun
 
 _CONFIRM_POLL_INTERVAL_S = 0.3
 
-# 阶段 → 执行该阶段的 agent
-STAGE_AGENT_MAP: dict[str, str] = {
-    "plan_outline": "outline",
-    "outline_approval": "outline",
-    "plan_characters": "plan",
-    "characters_approval": "plan",
-    "plan_shots": "plan",
-    "shots_approval": "plan",
-    "render_characters": "render",
-    "character_images_approval": "render",
-    "critique_character_images": "critic",
-    "render_shots": "render",
-    "shot_images_approval": "render",
-    "critique_shot_images": "critic",
-    "compose_videos": "compose",
-    "compose_merge": "compose",
-    "add_audio": "compose",
-    "compose_approval": "compose",
-    "review": "review",
-}
-
-# agent → 具有代表性的图阶段（WS 进度回放用）
-GRAPH_STAGE_FOR_AGENT: dict[str, str] = {
-    "outline": "plan_outline",
-    "plan": "plan_characters",
-    "render": "render_characters",
-    "compose": "compose_videos",
-    "review": "review",
-    "critic": "critique_character_images",
-}
-
+# Compatibility aliases for callers that still use the old names. All point to
+# the generated canonical map.
 AGENT_STAGE_MAP = STAGE_AGENT_MAP
 RESUME_AGENT_FOR_STAGE = STAGE_AGENT_MAP
 
