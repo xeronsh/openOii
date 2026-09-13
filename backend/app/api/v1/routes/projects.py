@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
-from typing import cast
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse
@@ -13,7 +12,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.agents.base import TargetIds
 from app.agents.compose import ComposeAgent
 from app.agents.render import RenderAgent
-from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404, require_run_id
+from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404
 from app.config import Settings
 from app.db.utils import utcnow
 from app.models.agent_run import AgentRun
@@ -37,16 +36,18 @@ from app.schemas.project import (
     StoryOutlineRead,
     StoryOutlineUpdate,
 )
-from app.services.agent_runner import run_agent_plan
+from app.services.run_lifecycle import (
+    LocalRunSpec,
+    create_local_run,
+    project_updated_event,
+)
 from app.services.creative_control import (
-    collect_project_blocking_clips,
     invalidate_shot_clip_output,
     invalidate_shot_storyboard_outputs,
 )
 from app.services.file_cleaner import get_local_path
 from app.services.project_deletion import delete_project_by_id, delete_projects_by_ids
 from app.services.provider_resolution import resolve_project_provider_settings_async
-from app.services.task_manager import task_manager
 from app.ws.manager import ConnectionManager
 
 router = APIRouter()
@@ -417,12 +418,12 @@ async def fill_empty_shots(
     project = await get_or_404(session, Project, project_id)
 
     active = await session.execute(
-        select(AgentRun)
+        select(AgentRun.id)
         .where(AgentRun.project_id == project_id)
         .where(AgentRun.status.in_(("queued", "running")))
         .limit(1)
     )
-    if active.scalars().first() is not None:
+    if active.first() is not None:
         raise HTTPException(status_code=409, detail="Project already has an active run")
 
     shot_res = await session.execute(
@@ -438,7 +439,7 @@ async def fill_empty_shots(
             raise HTTPException(status_code=400, detail="All shot cells already have images")
         for shot in empty:
             await invalidate_shot_storyboard_outputs(session, project, shot)
-        agent_plan = [RenderAgent()]
+        agent_plan: list[Any] = [RenderAgent()]
         resource_type = "shot_fill_image"
     else:
         empty = [s for s in shots if s.id is not None and not s.video_url]
@@ -450,51 +451,31 @@ async def fill_empty_shots(
 
     await session.commit()
     await session.refresh(project)
-    blocking_clips = await collect_project_blocking_clips(session, project)
-    await ws.send_event(
-        project_id,
-        {
-            "type": "project_updated",
-            "data": {
-                "project": {
-                    "id": project_id,
-                    "video_url": project.video_url,
-                    "status": project.status,
-                    "blocking_clips": blocking_clips,
-                }
-            },
-        },
-    )
 
-    target_ids = TargetIds(
-        shot_ids=[s.id for s in empty if s.id is not None],
-        character_ids=[],
+    await ws.send_event(project_id, await project_updated_event(session, project))
+
+    result = await create_local_run(
+        session,
+        settings=settings,
+        ws=ws,
+        spec=LocalRunSpec(
+            project_id=project_id,
+            resource_type="project",
+            resource_id=None,
+            agent_plan=agent_plan,
+            target_ids=TargetIds(
+                shot_ids=[s.id for s in empty if s.id is not None],
+                character_ids=[],
+            ),
+        ),
     )
-    run = AgentRun(
-        project_id=project_id,
-        status="running",
-        current_agent=getattr(agent_plan[0], "name", None),
-        progress=0.0,
-        error=None,
-        resource_type=resource_type,
-        resource_id=None,
-    )
+    run = result.run
+    # 保留 resource_type 细分（shot_fill_image / shot_fill_video），
+    # 前端用它区分补齐的是首帧还是视频。
+    run.resource_type = resource_type
     session.add(run)
     await session.commit()
     await session.refresh(run)
-    run_id = require_run_id(run)
-
-    task = asyncio.create_task(
-        run_agent_plan(
-            project_id=project_id,
-            run_id=run_id,
-            agent_plan=agent_plan,
-            settings=settings,
-            ws=ws,
-            target_ids=target_ids,
-        )
-    )
-    task_manager.register(project_id, task)
     return AgentRunRead.model_validate(run)
 
 

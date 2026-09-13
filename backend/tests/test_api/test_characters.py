@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from app.api.v1.routes import characters as characters_routes
+from app.services import run_lifecycle
 from app.services import agent_runner as agent_runner_mod
 from app.models.agent_run import AgentRun
 from tests.factories import create_character, create_project
@@ -167,7 +167,8 @@ async def test_regenerate_character_rejects_invalid_type(async_client, test_sess
 
 @pytest.mark.asyncio
 async def test_regenerate_character_happy_path(async_client, test_session, monkeypatch):
-    monkeypatch.setattr(characters_routes.asyncio, "create_task", _immediate_task)
+    # 起 task 的逻辑已收进 run_lifecycle，patron 该模块的 create_task
+    monkeypatch.setattr(run_lifecycle.asyncio, "create_task", _immediate_task)
 
     project = await create_project(test_session)
     character = await create_character(

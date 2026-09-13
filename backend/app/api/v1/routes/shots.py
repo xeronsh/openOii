@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, status
@@ -16,14 +15,18 @@ from app.config import Settings
 from app.models.agent_run import AgentRun
 from app.models.project import Character, Project, Shot, ShotCharacterBinding
 from app.schemas.project import AgentRunRead, RegenerateRequest, ShotRead, ShotUpdate
-from app.services.agent_runner import run_agent_plan
+from app.services.run_lifecycle import (
+    LocalRunSpec,
+    RunConflict,
+    assert_resource_idle,
+    create_local_run,
+    project_updated_event,
+)
 from app.services.creative_control import (
-    collect_project_blocking_clips,
     invalidate_shot_clip_output,
     invalidate_shot_storyboard_outputs,
 )
 from app.services.file_cleaner import delete_file
-from app.services.task_manager import task_manager
 from app.ws.manager import ConnectionManager
 
 router = APIRouter()
@@ -176,102 +179,43 @@ async def regenerate_shot(
     project = await get_or_404(session, Project, shot.project_id)
     project_id = shot.project_id
 
-    # 检查是否有针对该分镜的运行中任务（细粒度锁）
-    project_id_col = cast(InstrumentedAttribute[int], cast(object, AgentRun.project_id))
-    status_col = cast(InstrumentedAttribute[str], cast(object, AgentRun.status))
-    resource_type_col = cast(
-        InstrumentedAttribute[str | None], cast(object, AgentRun.resource_type)
-    )
-    resource_id_col = cast(InstrumentedAttribute[int | None], cast(object, AgentRun.resource_id))
-    res = await session.execute(
-        select(AgentRun)
-        .where(project_id_col == project_id)
-        .where(status_col.in_(("queued", "running")))
-        .where(resource_type_col == "shot")
-        .where(resource_id_col == shot_id)
-        .limit(1)
-    )
-    if res.scalars().first() is not None:
-        raise HTTPException(status_code=409, detail="This shot is already being regenerated")
+    try:
+        await assert_resource_idle(
+            session, project_id=project_id, resource_type="shot", resource_id=shot_id
+        )
+    except RunConflict as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
 
-    agent_plan: list[Any]
-    target_ids = TargetIds(shot_ids=[shot_id])
     if payload.type == "image":
         await invalidate_shot_storyboard_outputs(session, project, shot)
         await session.commit()
         await session.refresh(shot)
         await session.refresh(project)
-        blocking_clips = await collect_project_blocking_clips(session, project)
-
         await ws.send_event(
-            project_id,
-            {"type": "shot_updated", "data": {"shot": _shot_read(shot)}},
+            project_id, {"type": "shot_updated", "data": {"shot": _shot_read(shot)}}
         )
-        await ws.send_event(
-            project_id,
-            {
-                "type": "project_updated",
-                "data": {
-                    "project": {
-                        "id": project_id,
-                        "video_url": project.video_url,
-                        "status": project.status,
-                        "blocking_clips": blocking_clips,
-                    }
-                },
-            },
-        )
-
-        agent_plan = [RenderAgent()]
+        agent_plan: list[Any] = [RenderAgent()]
     else:
         await invalidate_shot_clip_output(session, project)
         await session.commit()
         await session.refresh(project)
-        blocking_clips = await collect_project_blocking_clips(session, project)
-
-        await ws.send_event(
-            project_id,
-            {
-                "type": "project_updated",
-                "data": {
-                    "project": {
-                        "id": project_id,
-                        "video_url": project.video_url,
-                        "status": project.status,
-                        "blocking_clips": blocking_clips,
-                    }
-                },
-            },
-        )
-
         agent_plan = [ComposeAgent()]
 
-    run = AgentRun(
-        project_id=project_id,
-        status="running",
-        current_agent=getattr(agent_plan[0], "name", None) if agent_plan else None,
-        progress=0.0,
-        error=None,
-        resource_type="shot",  # 设置资源类型
-        resource_id=shot_id,  # 设置资源 ID
-    )
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-    run_id = _require_run_id(run)
+    await ws.send_event(project_id, await project_updated_event(session, project))
 
-    task = asyncio.create_task(
-        run_agent_plan(
+    result = await create_local_run(
+        session,
+        settings=settings,
+        ws=ws,
+        spec=LocalRunSpec(
             project_id=project_id,
-            run_id=run_id,
+            resource_type="shot",
+            resource_id=shot_id,
             agent_plan=agent_plan,
-            settings=settings,
-            ws=ws,
-            target_ids=target_ids,
-        )
+            target_ids=TargetIds(shot_ids=[shot_id]),
+        ),
     )
-    task_manager.register(project_id, task)
-    return AgentRunRead.model_validate(run)
+    return AgentRunRead.model_validate(result.run)
 
 
 @router.delete("/{shot_id}", status_code=status.HTTP_204_NO_CONTENT)

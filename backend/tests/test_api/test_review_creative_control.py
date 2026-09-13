@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from app.api.v1.routes import characters as characters_routes
+from app.services import run_lifecycle
 
 from tests.factories import create_character, create_project, create_shot
 
@@ -21,7 +21,7 @@ def _completed_task(coro):
 async def test_character_regenerate_accepts_edit_payload_and_promotes_on_approval(
     async_client, test_session, monkeypatch
 ):
-    monkeypatch.setattr(characters_routes.asyncio, "create_task", _completed_task)
+    monkeypatch.setattr(run_lifecycle.asyncio, "create_task", _completed_task)
 
     project = await create_project(test_session)
     character = await create_character(
@@ -108,7 +108,7 @@ async def test_character_regenerate_accepts_edit_payload_and_promotes_on_approva
 async def test_character_regenerate_keeps_stale_final_visible_and_surfaces_blockers(
     async_client, test_session, ws_manager, monkeypatch
 ):
-    monkeypatch.setattr(characters_routes.asyncio, "create_task", _completed_task)
+    monkeypatch.setattr(run_lifecycle.asyncio, "create_task", _completed_task)
 
     project = await create_project(test_session, title="Final Assembly")
     character = await create_character(
