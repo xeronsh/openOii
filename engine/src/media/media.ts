@@ -1,14 +1,20 @@
 /**
  * Media services: image / video / TTS.
  *
- * Fake providers mirror backend/app/services/fake_image.py and fake_video.py
- * (local SVG placeholders and ffmpeg color clips under backend/app/static).
- * Real providers use the same HTTP contracts as the Python service layer
- * (modelscope / OpenAI-compatible images & videos / doubao Ark).
+ * Provider identity/model/endpoint is pinned by RunContextSnapshot. Secrets are
+ * resolved by credential key at execution time so rotation does not rewrite a
+ * historical run snapshot. External create requests carry the durable stage
+ * idempotency key when the provider accepts arbitrary HTTP headers.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { EngineDatabase } from "../db.js";
@@ -30,7 +36,7 @@ export interface MediaSettings {
   videoModel: string;
   videoEndpoint: string;
   enableImageToVideo: boolean;
-  videoMode: string; // "text" | "image"
+  videoMode: string;
   fakeVideoFixtureUrl: string | null;
   fakeVideoFixturePath: string | null;
   doubaoApiKey: string | null;
@@ -40,7 +46,6 @@ export interface MediaSettings {
 
   ttsEnabled: boolean;
   bgmEnabled: boolean;
-
   staticDir: string;
 }
 
@@ -79,27 +84,17 @@ function asNumber(value: unknown, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-/**
- * Resolve media settings for one execution.
- *
- * When a run snapshot exists, provider identity/model/endpoint/policy are taken
- * only from that immutable snapshot. Secrets are intentionally not snapshotted;
- * credential_keys name the live secret slots so keys may be rotated safely.
- * Tests and legacy direct callers without a run snapshot keep the old live-config
- * behavior.
- */
 export function resolveMediaSettings(
   db: EngineDatabase,
   snapshot?: MediaRunSnapshot | null,
 ): MediaSettings {
   const staticDir =
-    process.env.ENGINE_STATIC_DIR ??
-    resolve(process.cwd(), "../backend/app/static");
+    process.env.ENGINE_STATIC_DIR ?? resolve(process.cwd(), "../backend/app/static");
   const pick = (key: string, env: string, fallback: string): string =>
     db.configValue(key, env, fallback) ?? fallback;
   const optional = (key: string, env: string): string | null => {
-    const v = db.configValue(key, env);
-    return v ? v : null;
+    const value = db.configValue(key, env);
+    return value ? value : null;
   };
   const secret = (keys: string[] | null | undefined): string | null => {
     for (const key of keys ?? []) {
@@ -113,12 +108,18 @@ export function resolveMediaSettings(
   const videoSnapshot = snapshot?.video ?? null;
   const policy = snapshot?.policy ?? null;
 
-  const imageProviderRaw = imageSnapshot?.provider ?? pick("IMAGE_PROVIDER", "IMAGE_PROVIDER", "fake");
+  const imageProviderRaw =
+    imageSnapshot?.provider ?? pick("IMAGE_PROVIDER", "IMAGE_PROVIDER", "fake");
   const imageProvider: MediaSettings["imageProvider"] =
-    imageProviderRaw === "modelscope" || imageProviderRaw === "openai" ? imageProviderRaw : "fake";
-  const videoProviderRaw = videoSnapshot?.provider ?? pick("VIDEO_PROVIDER", "VIDEO_PROVIDER", "fake");
+    imageProviderRaw === "modelscope" || imageProviderRaw === "openai"
+      ? imageProviderRaw
+      : "fake";
+  const videoProviderRaw =
+    videoSnapshot?.provider ?? pick("VIDEO_PROVIDER", "VIDEO_PROVIDER", "fake");
   const videoProvider: MediaSettings["videoProvider"] =
-    videoProviderRaw === "openai" || videoProviderRaw === "doubao" ? videoProviderRaw : "fake";
+    videoProviderRaw === "openai" || videoProviderRaw === "doubao"
+      ? videoProviderRaw
+      : "fake";
 
   const imageBaseUrl = imageSnapshot
     ? String(imageSnapshot.base_url ?? "")
@@ -129,7 +130,12 @@ export function resolveMediaSettings(
   if (imageSnapshot && imageProvider !== "fake" && !imageBaseUrl) {
     throw new Error(`pinned image provider ${imageProvider} has no base_url`);
   }
-  if (videoSnapshot && videoProvider !== "fake" && videoProvider !== "doubao" && !videoBaseUrl) {
+  if (
+    videoSnapshot &&
+    videoProvider !== "fake" &&
+    videoProvider !== "doubao" &&
+    !videoBaseUrl
+  ) {
     throw new Error(`pinned video provider ${videoProvider} has no base_url`);
   }
 
@@ -159,8 +165,6 @@ export function resolveMediaSettings(
     enableImageToImage: imageSnapshot
       ? asBoolean(imageSnapshot.enable_image_to_image, true)
       : pick("ENABLE_IMAGE_TO_IMAGE", "ENABLE_IMAGE_TO_IMAGE", "true") === "true",
-    // Fixture paths are local test/development plumbing, not execution provider
-    // identity. They deliberately remain live and are ignored by real providers.
     fakeImageFixtureUrl: optional("FAKE_IMAGE_FIXTURE_URL", "FAKE_IMAGE_FIXTURE_URL"),
 
     videoProvider,
@@ -193,7 +197,11 @@ export function resolveMediaSettings(
         : null,
     doubaoVideoModel: videoSnapshot
       ? String(videoSnapshot.model ?? "doubao-seedance-1-5-pro-251215")
-      : pick("DOUBAO_VIDEO_MODEL", "DOUBAO_VIDEO_MODEL", "doubao-seedance-1-5-pro-251215"),
+      : pick(
+          "DOUBAO_VIDEO_MODEL",
+          "DOUBAO_VIDEO_MODEL",
+          "doubao-seedance-1-5-pro-251215",
+        ),
     doubaoVideoDuration: videoSnapshot
       ? asNumber(videoSnapshot.duration, 5)
       : Number(pick("DOUBAO_VIDEO_DURATION", "DOUBAO_VIDEO_DURATION", "5")),
@@ -207,14 +215,9 @@ export function resolveMediaSettings(
     bgmEnabled: policy
       ? asBoolean(policy.bgm_enabled, true)
       : pick("BGM_ENABLED", "BGM_ENABLED", "true") === "true",
-
     staticDir,
   };
 }
-
-// ---------------------------------------------------------------------------
-// fake image (fake_image.py port)
-// ---------------------------------------------------------------------------
 
 function safeSlug(prompt: string, fallback: string): string {
   const cleaned = prompt
@@ -231,11 +234,14 @@ function placeholderSvg(prompt: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540"><rect width="100%" height="100%" fill="#1e1b4b"/><text x="50%" y="45%" fill="#fbbf24" font-size="36" text-anchor="middle" font-family="sans-serif">Fake Image</text><text x="50%" y="58%" fill="#ffffff" font-size="20" text-anchor="middle" font-family="sans-serif">${label}</text></svg>`;
 }
 
-// ---------------------------------------------------------------------------
-// fake video (fake_video.py port)
-// ---------------------------------------------------------------------------
-
-const FAKE_VIDEO_COLORS = ["0x111827", "0x1e1b4b", "0x422006", "0x052e16", "0x3b0764", "0x0f172a"];
+const FAKE_VIDEO_COLORS = [
+  "0x111827",
+  "0x1e1b4b",
+  "0x422006",
+  "0x052e16",
+  "0x3b0764",
+  "0x0f172a",
+];
 
 function videoSlug(prompt: string, prefix = "fake_video_v2"): string {
   const digest = createHash("sha1").update(prompt).digest("hex").slice(0, 10);
@@ -250,15 +256,25 @@ function promptLabel(prompt: string): string {
   return `local prompt ${digest}`;
 }
 
-// ---------------------------------------------------------------------------
-// MediaService
-// ---------------------------------------------------------------------------
-
 export class MediaService {
+  private idempotencyKey: string | null = null;
+
   constructor(private readonly settings: MediaSettings) {}
+
+  setOperationIdentity(idempotencyKey: string | null): void {
+    this.idempotencyKey = idempotencyKey;
+  }
+
+  private operationHeaders(): Record<string, string> {
+    return this.idempotencyKey ? { "Idempotency-Key": this.idempotencyKey } : {};
+  }
 
   get staticDir(): string {
     return this.settings.staticDir;
+  }
+
+  get audioEnabled(): boolean {
+    return this.settings.ttsEnabled || this.settings.bgmEnabled;
   }
 
   async generateImageUrl(args: {
@@ -293,6 +309,7 @@ export class MediaService {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.settings.imageApiKey}`,
+        ...this.operationHeaders(),
       },
       body: JSON.stringify(payload),
     });
@@ -313,31 +330,19 @@ export class MediaService {
     if (this.settings.fakeVideoFixtureUrl) return this.settings.fakeVideoFixtureUrl;
 
     if (this.settings.videoProvider === "fake") {
-      const dir = join(this.settings.staticDir, "videos");
-      mkdirSync(dir, { recursive: true });
-      const filename = videoSlug(prompt);
-      const path = join(dir, filename);
-      if (this.settings.fakeVideoFixturePath && existsSync(this.settings.fakeVideoFixturePath)) {
-        if (!existsSync(path)) writeFileSync(path, readFileSync(this.settings.fakeVideoFixturePath));
+      if (this.settings.fakeVideoFixturePath) {
+        const source = resolve(this.settings.fakeVideoFixturePath);
+        if (!existsSync(source)) {
+          throw new Error(`Fake video fixture file not found: ${source}`);
+        }
+        const dir = join(this.settings.staticDir, "videos");
+        mkdirSync(dir, { recursive: true });
+        const filename = videoSlug(prompt, "fake_clip");
+        const destination = join(dir, filename);
+        if (!existsSync(destination)) copyFileSync(source, destination);
         return `/static/videos/${filename}`;
       }
-      if (!existsSync(path)) {
-        const idx = parseInt(createHash("sha1").update(prompt).digest("hex").slice(0, 2), 16) % FAKE_VIDEO_COLORS.length;
-        const duration = Math.max(1, Math.min(args.duration ?? 3, 10));
-        await execFileAsync("ffmpeg", [
-          "-y",
-          "-f",
-          "lavfi",
-          "-i",
-          `color=c=${FAKE_VIDEO_COLORS[idx]}:s=960x540:d=${duration}`,
-          "-vf",
-          `drawtext=text='${promptLabel(prompt).replace(/'/g, "") }':fontcolor=white:fontsize=26:x=(w-text_w)/2:y=(h-text_h)/2`,
-          "-pix_fmt",
-          "yuv420p",
-          path,
-        ]);
-      }
-      return `/static/videos/${filename}`;
+      return this.ensureDefaultFakeClip(prompt, args.duration);
     }
 
     if (this.settings.videoProvider === "doubao") {
@@ -349,31 +354,42 @@ export class MediaService {
         ratio: this.settings.doubaoVideoRatio,
       };
       if (args.imageUrl && this.settings.enableImageToVideo) {
-        (payload.content as unknown[]).push({ type: "image_url", image_url: { url: args.imageUrl } });
+        (payload.content as unknown[]).push({
+          type: "image_url",
+          image_url: { url: args.imageUrl },
+        });
       }
-      const createResponse = await fetch("https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.settings.doubaoApiKey}`,
+      const createResponse = await fetch(
+        "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.settings.doubaoApiKey}`,
+            ...this.operationHeaders(),
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-      });
-      if (!createResponse.ok) throw new Error(`doubao create failed: ${createResponse.status}`);
+      );
+      if (!createResponse.ok) {
+        throw new Error(`doubao create failed: ${createResponse.status}`);
+      }
       const created = (await createResponse.json()) as Record<string, unknown>;
       const taskId = String(created.id ?? "");
       if (!taskId) throw new Error("doubao returned no task id");
       for (let attempt = 0; attempt < 120; attempt += 1) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const poll = await fetch(`https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/${taskId}`, {
-          headers: { Authorization: `Bearer ${this.settings.doubaoApiKey}` },
-        });
+        await sleep(2000);
+        const poll = await fetch(
+          `https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/${taskId}`,
+          { headers: { Authorization: `Bearer ${this.settings.doubaoApiKey}` } },
+        );
         if (!poll.ok) throw new Error(`doubao poll failed: ${poll.status}`);
         const state = (await poll.json()) as Record<string, unknown>;
         const status = String(state.status ?? "");
         if (status === "succeeded") {
           const content = state.content as Record<string, unknown> | undefined;
-          const videoUrl = content && typeof content.video_url === "string" ? content.video_url : null;
+          const videoUrl =
+            content && typeof content.video_url === "string" ? content.video_url : null;
           if (!videoUrl) throw new Error("doubao returned no video URL");
           return videoUrl;
         }
@@ -397,6 +413,7 @@ export class MediaService {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.settings.videoApiKey}`,
+        ...this.operationHeaders(),
       },
       body: JSON.stringify(payload),
     });
@@ -404,9 +421,138 @@ export class MediaService {
     const body = (await response.json()) as Record<string, unknown>;
     const directUrl = typeof body.url === "string" ? body.url : null;
     const data = Array.isArray(body.data) ? body.data[0] : null;
-    const nestedUrl = data && typeof data === "object" ? (data as Record<string, unknown>).url : null;
+    const nestedUrl =
+      data && typeof data === "object" ? (data as Record<string, unknown>).url : null;
     const url = directUrl ?? (typeof nestedUrl === "string" ? nestedUrl : null);
     if (!url) throw new Error("video provider returned no URL");
     return url;
   }
+
+  private async ensureDefaultFakeClip(prompt: string, durationArg?: number): Promise<string> {
+    const dir = join(this.settings.staticDir, "videos");
+    mkdirSync(dir, { recursive: true });
+    const filename = videoSlug(prompt);
+    const destination = join(dir, filename);
+    if (existsSync(destination)) return `/static/videos/${filename}`;
+
+    const digest = parseInt(createHash("sha1").update(prompt).digest("hex").slice(0, 8), 16);
+    const color = FAKE_VIDEO_COLORS[digest % FAKE_VIDEO_COLORS.length] ?? "0x111827";
+    const label = promptLabel(prompt).replace(/\\/g, "\\\\").replace(/:/g, "\\:");
+    const duration = Math.max(1, Math.min(durationArg ?? 2, 10));
+    const command = [
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=${color}:s=960x540:d=${duration}`,
+      "-f",
+      "lavfi",
+      "-i",
+      "anullsrc=channel_layout=stereo:sample_rate=44100",
+      "-vf",
+      [
+        "drawtext=text='Fake Video':fontcolor=white:fontsize=58:x=(w-text_w)/2:y=150",
+        `drawtext=text='${label}':fontcolor=white@0.82:fontsize=24:x=(w-text_w)/2:y=315`,
+        "drawtext=text='no external API call':fontcolor=white@0.62:fontsize=22:x=(w-text_w)/2:y=370",
+      ].join(","),
+      "-shortest",
+      "-c:v",
+      "libx264",
+      "-t",
+      String(duration),
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      destination,
+    ];
+    try {
+      await execFileAsync("ffmpeg", command);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Fake video provider needs ffmpeg: ${message.slice(0, 300)}`);
+    }
+    return `/static/videos/${filename}`;
+  }
+
+  async mergeVideos(videoUrls: string[], outputFilename?: string): Promise<string> {
+    if (videoUrls.length === 0) throw new Error("No video URLs provided");
+    const name =
+      outputFilename ??
+      `merged_${createHash("sha1").update(videoUrls.join()).digest("hex").slice(0, 8)}`;
+    const outputDir = join(this.settings.staticDir, "videos");
+    mkdirSync(outputDir, { recursive: true });
+    const outputPath = join(outputDir, `${name}.mp4`);
+
+    const localPaths = videoUrls.map((url) => this.localPathFor(url));
+    for (const path of localPaths) {
+      if (!existsSync(path)) throw new Error(`video file missing for merge: ${path}`);
+    }
+
+    if (localPaths.length === 1) {
+      copyFileSync(localPaths[0] as string, outputPath);
+      return `/static/videos/${name}.mp4`;
+    }
+
+    const concatFile = join(outputDir, `concat_${name}.txt`);
+    writeFileSync(
+      concatFile,
+      localPaths.map((path) => `file '${path.replaceAll("'", "'\\''")}'`).join("\n") + "\n",
+      "utf8",
+    );
+    try {
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concatFile,
+        "-c",
+        "copy",
+        outputPath,
+      ]);
+    } catch {
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concatFile,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ]);
+    }
+    return `/static/videos/${name}.mp4`;
+  }
+
+  localPathFor(url: string): string {
+    if (url.startsWith("/static/")) {
+      return join(this.settings.staticDir, url.slice("/static/".length));
+    }
+    if (url.startsWith("file://")) return url.slice("file://".length);
+    return url;
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
+export function mediaDirOf(staticDir: string, kind: "images" | "videos"): string {
+  return join(resolve(staticDir), kind);
 }
