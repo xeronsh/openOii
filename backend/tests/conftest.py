@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# The test database URL must be injected before importing app.db.session because
+# that module constructs its global engine/maker at import time.
+# ruff: noqa: E402
+
 import asyncio
 import os
 from contextlib import asynccontextmanager
@@ -13,7 +17,7 @@ from typing import AsyncGenerator
 _TEST_GLOBAL_DB = Path(__file__).resolve().parent / "test-global-sandbox.db"
 os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_GLOBAL_DB}")
 
-import pytest  # noqa: E402
+import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
@@ -39,164 +43,69 @@ def _cleanup_global_sandbox_db():
     _TEST_GLOBAL_DB.unlink(missing_ok=True)
 
 
-@pytest.fixture(scope="session")
-def test_settings() -> Settings:
-    return Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_provider="anthropic",
-        image_provider="openai",
-        video_provider="openai",
-        anthropic_api_key="test-key",
-        image_api_key="test-key",
-        video_api_key="test-key",
-    )
+@pytest_asyncio.fixture
+async def db_session(tmp_path: Path) -> AsyncGenerator[AsyncSession, None]:
+    db_path = tmp_path / "test.db"
+    test_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    async with test_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as session:
+        yield session
+    await test_engine.dispose()
 
 
-class StubWsManager:
+class _DummyWsManager:
     def __init__(self) -> None:
         self.events: list[tuple[int, dict]] = []
 
     async def send_event(self, project_id: int, event: dict) -> None:
         self.events.append((project_id, event))
 
-
-@pytest_asyncio.fixture(scope="function")
-async def test_db_engine_sessionmaker(
-    tmp_path: Path,
-) -> AsyncGenerator[tuple, None]:
-    """Function-scoped sqlite engine + sessionmaker.
-
-    Shared between test_session (for direct DB writes) and closure_app
-    (for route-level async_session_maker patching) so both layers see the
-    same data.
-    """
-    db_path = tmp_path / "test.db"
-    database_url = f"sqlite+aiosqlite:///{db_path}"
-    engine = create_async_engine(database_url, echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    try:
-        yield engine, session_maker
-    finally:
-        await engine.dispose()
+    async def send_event_to(self, _websocket, event: dict) -> None:
+        self.events.append((-1, event))
 
 
-@pytest_asyncio.fixture(scope="function")
-async def test_session(test_db_engine_sessionmaker) -> AsyncGenerator[AsyncSession, None]:
-    _, session_maker = test_db_engine_sessionmaker
-    async with session_maker() as session:
-        yield session
+@pytest.fixture
+def ws_manager() -> _DummyWsManager:
+    return _DummyWsManager()
 
 
-@pytest.fixture()
-def shared_session_maker(test_db_engine_sessionmaker):
-    """Sessionmaker shared with test_session.
-
-    Used by closure_app fixture to patch route-level async_session_maker
-    so route _task() closures hit the same sqlite db as test_session.
-    """
-    _, session_maker = test_db_engine_sessionmaker
-    return session_maker
-
-
-@pytest_asyncio.fixture(scope="function")
-async def checkpoint_sessionmaker(
-    tmp_path: Path,
-) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
-    database_url = os.environ.get("TEST_CHECKPOINT_DATABASE_URL")
-    if not database_url:
-        database_url = f"sqlite+aiosqlite:///{tmp_path / 'checkpoint.db'}"
-
-    engine = create_async_engine(database_url, echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-
-    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    try:
-        yield session_maker
-    finally:
-        await engine.dispose()
+@pytest.fixture
+def settings(tmp_path: Path) -> Settings:
+    return Settings(
+        environment="test",
+        database_url=f"sqlite+aiosqlite:///{tmp_path / 'app.db'}",
+        text_provider="fake",
+        image_provider="fake",
+        video_provider="fake",
+        tts_enabled=False,
+        bgm_enabled=False,
+    )
 
 
-@pytest.fixture()
-def ws_manager() -> StubWsManager:
-    return StubWsManager()
+@pytest.fixture
+def app(db_session: AsyncSession, settings: Settings, ws_manager: _DummyWsManager):
+    application = create_app()
+
+    async def _get_session_override():
+        yield db_session
+
+    application.dependency_overrides[get_db_session] = _get_session_override
+    application.dependency_overrides[get_app_settings] = lambda: settings
+    application.dependency_overrides[get_ws_manager] = lambda: ws_manager
+    application.dependency_overrides[require_admin] = lambda: None
+    return application
 
 
-@pytest.fixture(autouse=True)
-def _no_real_engine(monkeypatch):
-    """测试绝不允许真的拉起 pi 引擎 sidecar（子进程 + 真 LLM + 真媒体）。
-
-    路由现在总是经 loopback HTTP 派发；默认把它们换成 no-op stub，
-    需要验证派发契约的测试可在自己的 fixture 里覆盖。
-    """
-    from app.api.v1.routes import runs as generation_routes
-
-    async def _ensure(base_url, database_url, static_dir):
-        return None
-
-    async def _start(base_url, **kwargs):
-        return {"status": "running"}
-
-    async def _resume(base_url, **kwargs):
-        return {"status": "running"}
-
-    async def _cancel(base_url, run_id):
-        return None
-
-    monkeypatch.setattr(generation_routes, "ensure_engine_running", _ensure)
-    monkeypatch.setattr(generation_routes, "engine_start_run", _start)
-    monkeypatch.setattr(generation_routes, "engine_resume_run", _resume)
-    monkeypatch.setattr(generation_routes, "engine_cancel_run", _cancel)
+@pytest.fixture
+def client(app):
+    with TestClient(app) as c:
+        yield c
 
 
-@pytest_asyncio.fixture(scope="function")
-async def app(test_session: AsyncSession, test_settings: Settings, ws_manager: StubWsManager):
-    app = create_app()
-
-    async def override_get_session() -> AsyncGenerator[AsyncSession, None]:
-        yield test_session
-
-    async def override_get_settings() -> Settings:
-        return test_settings
-
-    async def override_get_ws() -> StubWsManager:
-        return ws_manager
-
-    async def override_require_admin() -> None:
-        return None
-
-    app.dependency_overrides[get_db_session] = override_get_session
-    app.dependency_overrides[get_app_settings] = override_get_settings
-    app.dependency_overrides[get_ws_manager] = override_get_ws
-    app.dependency_overrides[require_admin] = override_require_admin
-    return app
-
-
-@pytest_asyncio.fixture(scope="function")
+@pytest_asyncio.fixture
 async def async_client(app):
     transport = ASGITransport(app=app)
-
-    class _AsyncClientWithYield(AsyncClient):
-        async def request(self, *args, **kwargs):
-            loop = asyncio.get_running_loop()
-            task = loop.create_task(super().request(*args, **kwargs))
-            # ASGITransport + body-carrying requests can deadlock on this runtime
-            # unless the request coroutine gets at least one scheduling slice.
-            await asyncio.sleep(0.01)
-            return await task
-
-    async with _AsyncClientWithYield(transport=transport, base_url="http://test") as client:
-        yield client
-
-
-@asynccontextmanager
-async def _no_lifespan(_: object):
-    yield
-
-
-@pytest.fixture()
-def ws_client(app):
-    app.router.lifespan_context = _no_lifespan
-    return TestClient(app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
