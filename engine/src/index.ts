@@ -1,5 +1,5 @@
 /**
- * Engine sidecar HTTP entry (loopback only).
+ * Workflow engine sidecar HTTP entry (loopback only).
  *
  * GET  /health
  * GET  /runs                  → {runs: number[]} 当前活跃 run id
@@ -7,40 +7,57 @@
  * POST /runs/:id/resume
  * POST /runs/:id/cancel
  * GET  /runs/:id/events?after=N
- *
- * The engine is the only orchestrator: every run goes through PipelineRunner
- * (the 17-stage machine in pipeline/runner.ts). There is no second, shorter
- * execution path to keep in sync.
  */
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { EngineDatabase } from "./db.js";
 import { TextLlmService } from "./llm.js";
 import { SharedDb } from "./shared-db.js";
 import { PipelineRunner } from "./pipeline/runner.js";
-import { PRODUCTION_STAGE_SEQUENCE, type StageId } from "./contract.js";
+import { PRODUCTION_STAGE_SEQUENCE, type StageId, WORKFLOW_VERSION } from "./contract.js";
+
+const LEASE_TTL_SECONDS = 120;
+const LEASE_HEARTBEAT_MS = 30_000;
 
 export function createEngineApp(dbPath: string) {
   const db = new EngineDatabase(dbPath);
   const llm = new TextLlmService(db);
   const shared = new SharedDb(db.db);
   const pipelines = new Map<number, PipelineRunner>();
+  const ownerId = `engine-${process.pid}-${randomUUID()}`;
 
   function startPipeline(
     runId: number,
     request: Parameters<PipelineRunner["run"]>[0],
     mode: "run" | "resume",
   ): boolean {
-    // A run id is an execution identity, not merely a lookup key. Starting the
-    // same run twice used to overwrite the Map entry while the old runner kept
-    // executing, leaving two writers for one run and making cancel target only
-    // the newest runner. Reject duplicates until the active execution exits.
+    // Fast in-process guard first; the durable lease below is the cross-restart
+    // source of truth and prevents an orphan executor from sharing this run.
     if (pipelines.has(runId)) return false;
 
-    const runner = new PipelineRunner(db, shared, llm);
+    const leaseToken = randomUUID();
+    if (!shared.acquireRunLease(runId, ownerId, leaseToken, LEASE_TTL_SECONDS)) {
+      return false;
+    }
+
+    const fencedShared = shared.fenced(runId, leaseToken);
+    const runner = new PipelineRunner(db, fencedShared, llm);
     pipelines.set(runId, runner);
+
+    const heartbeat = setInterval(() => {
+      const renewed = shared.renewRunLease(runId, ownerId, leaseToken, LEASE_TTL_SECONDS);
+      if (!renewed) {
+        clearInterval(heartbeat);
+        runner.requestCancel();
+      }
+    }, LEASE_HEARTBEAT_MS);
+    heartbeat.unref();
+
     void runner[mode](request).finally(() => {
-      // Defensive fencing: only the runner that still owns the slot may clear
-      // it. This matters if execution ownership becomes durable in the future.
+      clearInterval(heartbeat);
+      // Releasing is token-conditional: a stale executor can never clear a
+      // newer executor's lease.
+      shared.releaseRunLease(runId, ownerId, leaseToken);
       if (pipelines.get(runId) === runner) pipelines.delete(runId);
     });
     return true;
@@ -56,19 +73,23 @@ export function createEngineApp(dbPath: string) {
       send(409, {
         error: {
           code: "RUN_ALREADY_ACTIVE",
-          message: `run ${runId} already has an active executor`,
+          message: `run ${runId} already has an active executor lease`,
           details: { run_id: runId },
         },
       });
     };
 
     if (req.method === "GET" && url.pathname === "/health") {
-      send(200, { status: "ok", runs: pipelines.size, provider: llm.resolveProvider().key });
+      send(200, {
+        status: "ok",
+        runs: pipelines.size,
+        provider: llm.resolveProvider().key,
+        workflow_version: WORKFLOW_VERSION,
+        owner_id: ownerId,
+      });
       return;
     }
 
-    // Active run ids. The Python side cannot know what is executing (the engine
-    // owns execution), so run-state hydration asks here instead of guessing.
     if (req.method === "GET" && url.pathname === "/runs") {
       send(200, { runs: [...pipelines.keys()] });
       return;
@@ -127,6 +148,8 @@ export function createEngineApp(dbPath: string) {
 
     if (runMatch && req.method === "POST" && runMatch[2] === "/cancel") {
       const runId = Number(runMatch[1]);
+      // Persist intent first so cancellation survives API/engine process races.
+      shared.requestRunCancel(runId);
       pipelines.get(runId)?.requestCancel();
       send(202, { status: "cancelling" });
       return;
@@ -159,7 +182,7 @@ export function createEngineApp(dbPath: string) {
     });
   });
 
-  return { server, db, llm, shared, pipelines };
+  return { server, db, llm, shared, pipelines, ownerId };
 }
 
 function isStageId(value: string): value is StageId {
