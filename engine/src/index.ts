@@ -1,18 +1,13 @@
-/**
- * Workflow engine sidecar HTTP entry (loopback only).
- *
- * GET  /health
- * GET  /runs                  → {runs: number[]} 当前活跃 run id
- * POST /runs                  {project_id, run_id, stage?, auto_mode?, user_feedback?}
- * POST /runs/:id/resume
- * POST /runs/:id/cancel
- * GET  /runs/:id/events?after=N
- */
+/** Workflow engine sidecar HTTP entry (loopback only). */
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { EngineDatabase } from "./db.js";
-import { TextLlmService } from "./llm.js";
-import { SharedDb } from "./shared-db.js";
+import {
+  TextLlmService,
+  type RunCreativeContext,
+  type TextProviderSnapshot,
+} from "./llm.js";
+import { SharedDb, parseJsonColumn } from "./shared-db.js";
 import { PipelineRunner } from "./pipeline/runner.js";
 import { PRODUCTION_STAGE_SEQUENCE, type StageId, WORKFLOW_VERSION } from "./contract.js";
 
@@ -26,14 +21,37 @@ export function createEngineApp(dbPath: string) {
   const pipelines = new Map<number, PipelineRunner>();
   const ownerId = `engine-${process.pid}-${randomUUID()}`;
 
+  function runScopedLlm(runId: number): TextLlmService {
+    const row = shared.getRun(runId);
+    const context = parseJsonColumn(
+      row?.context_snapshot,
+      {} as RunCreativeContext,
+    );
+    const providers =
+      typeof context.providers === "object" && context.providers !== null
+        ? (context.providers as Record<string, unknown>)
+        : {};
+    const text =
+      typeof providers.text === "object" && providers.text !== null
+        ? (providers.text as TextProviderSnapshot)
+        : undefined;
+    return llm.forSnapshot(text, context);
+  }
+
   function startPipeline(
     runId: number,
     request: Parameters<PipelineRunner["run"]>[0],
     mode: "run" | "resume",
   ): boolean {
-    // Fast in-process guard first; the durable lease below is the cross-restart
-    // source of truth and prevents an orphan executor from sharing this run.
     if (pipelines.has(runId)) return false;
+
+    const run = shared.getRun(runId);
+    if (!run || run.project_id !== request.projectId) return false;
+    if (run.workflow_version !== WORKFLOW_VERSION) {
+      throw new Error(
+        `run ${runId} workflow version ${run.workflow_version} is incompatible with engine ${WORKFLOW_VERSION}`,
+      );
+    }
 
     const leaseToken = randomUUID();
     if (!shared.acquireRunLease(runId, ownerId, leaseToken, LEASE_TTL_SECONDS)) {
@@ -41,7 +59,7 @@ export function createEngineApp(dbPath: string) {
     }
 
     const fencedShared = shared.fenced(runId, leaseToken);
-    const runner = new PipelineRunner(db, fencedShared, llm);
+    const runner = new PipelineRunner(db, fencedShared, runScopedLlm(runId));
     pipelines.set(runId, runner);
 
     const heartbeat = setInterval(() => {
@@ -55,8 +73,6 @@ export function createEngineApp(dbPath: string) {
 
     void runner[mode](request).finally(() => {
       clearInterval(heartbeat);
-      // Releasing is token-conditional: a stale executor can never clear a
-      // newer executor's lease.
       shared.releaseRunLease(runId, ownerId, leaseToken);
       if (pipelines.get(runId) === runner) pipelines.delete(runId);
     });
@@ -148,7 +164,6 @@ export function createEngineApp(dbPath: string) {
 
     if (runMatch && req.method === "POST" && runMatch[2] === "/cancel") {
       const runId = Number(runMatch[1]);
-      // Persist intent first so cancellation survives API/engine process races.
       shared.requestRunCancel(runId);
       pipelines.get(runId)?.requestCancel();
       send(202, { status: "cancelling" });
