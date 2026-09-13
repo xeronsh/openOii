@@ -87,7 +87,8 @@ class ConnectionManager:
                 if not self._conns[project_id]:
                     self._conns.pop(project_id, None)
 
-    async def send_event(self, project_id: int, event: dict[str, Any] | WsEvent) -> None:
+    @staticmethod
+    def _validated_payload(event: dict[str, Any] | WsEvent) -> dict[str, Any]:
         if isinstance(event, dict):
             event = WsEvent.model_validate(event)
 
@@ -95,7 +96,21 @@ class ConnectionManager:
         if data_model is not None:
             validated_data = data_model.model_validate(event.data)
             event = WsEvent(type=event.type, data=validated_data.model_dump(mode="json"))
-        payload = event.model_dump()
+        return event.model_dump()
+
+    async def send_event_to(self, websocket: WebSocket, event: dict[str, Any] | WsEvent) -> None:
+        """Validate and send one event to exactly one WebSocket.
+
+        Engine event replay is per connection. Broadcasting a replayed event to
+        every project socket causes N tailers × N clients duplicate delivery
+        when the same project is open in multiple tabs.
+        """
+        if websocket.client_state != WebSocketState.CONNECTED:
+            return
+        await websocket.send_json(self._validated_payload(event))
+
+    async def send_event(self, project_id: int, event: dict[str, Any] | WsEvent) -> None:
+        payload = self._validated_payload(event)
         conns = list(self._conns.get(project_id, set()))
         for ws in conns:
             if ws.client_state != WebSocketState.CONNECTED:
