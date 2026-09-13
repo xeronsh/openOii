@@ -2,8 +2,11 @@
  * Domain persistence on the app's shared SQLite schema.
  *
  * Column names/types mirror the SQLModel tables (backend/app/models). All
- * writes are parameterized prepared statements on better-sqlite3 (sync, fast,
- * single writer per process — see phase 2 notes on BEGIN semantics).
+ * writes are parameterized prepared statements on better-sqlite3.
+ *
+ * A pipeline receives a fenced SharedDb instance. Every mutation checks the
+ * run's durable lease token first, so an expired/orphan executor can finish an
+ * external provider request but cannot commit stale data afterwards.
  */
 import type Database from "better-sqlite3";
 
@@ -35,6 +38,13 @@ export interface AgentRunRow {
   thread_id: string | null;
   confirm_requested: 0 | 1 | boolean | null;
   awaiting_payload: string | null;
+  workflow_version: number;
+  execution_attempt: number;
+  lease_owner: string | null;
+  lease_token: string | null;
+  lease_expires_at: string | null;
+  cancel_requested_at: string | null;
+  context_snapshot: string | null;
 }
 
 export interface CharacterRow {
@@ -242,8 +252,27 @@ function snapshotOf(row: Record<string, unknown>, fields: readonly string[]): Re
   return out;
 }
 
+interface ExecutionFence {
+  runId: number;
+  token: string;
+}
+
 export class SharedDb {
-  constructor(private readonly db: Database.Database) {}
+  constructor(
+    private readonly db: Database.Database,
+    private readonly fence?: ExecutionFence,
+  ) {}
+
+  fenced(runId: number, token: string): SharedDb {
+    return new SharedDb(this.db, { runId, token });
+  }
+
+  assertExecutionFence(): void {
+    if (!this.fence) return;
+    if (!this.runLeaseOwned(this.fence.runId, this.fence.token)) {
+      throw new Error(`execution lease lost for run ${this.fence.runId}`);
+    }
+  }
 
   // ---- project ----
 
@@ -254,6 +283,7 @@ export class SharedDb {
   }
 
   updateProject(projectId: number, fields: Partial<ProjectRow> & Record<string, unknown>): void {
+    this.assertExecutionFence();
     const entries = Object.entries(fields).filter(([k]) => k !== "id");
     if (entries.length === 0) return;
     const sets = entries.map(([k]) => `${k} = ?`).join(", ");
@@ -261,7 +291,12 @@ export class SharedDb {
       .prepare(
         `UPDATE project SET ${sets}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
       )
-      .run(...entries.map(([, v]) => (v === undefined ? null : typeof v === "object" && v !== null ? JSON.stringify(v) : v)), projectId);
+      .run(
+        ...entries.map(([, v]) =>
+          v === undefined ? null : typeof v === "object" && v !== null ? JSON.stringify(v) : v,
+        ),
+        projectId,
+      );
   }
 
   // ---- agentrun ----
@@ -273,6 +308,7 @@ export class SharedDb {
   }
 
   updateRun(runId: number, fields: Record<string, unknown>): void {
+    this.assertExecutionFence();
     const entries = Object.entries(fields);
     if (entries.length === 0) return;
     const sets = entries.map(([k]) => `${k} = ?`).join(", ");
@@ -281,6 +317,76 @@ export class SharedDb {
         `UPDATE agentrun SET ${sets}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
       )
       .run(...entries.map(([, v]) => (v === undefined ? null : v)), runId);
+  }
+
+  acquireRunLease(runId: number, owner: string, token: string, ttlSeconds: number): boolean {
+    const info = this.db
+      .prepare(
+        `UPDATE agentrun
+         SET execution_attempt = COALESCE(execution_attempt, 0) + 1,
+             lease_owner = ?, lease_token = ?,
+             lease_expires_at = datetime('now', ?),
+             cancel_requested_at = NULL,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+         WHERE id = ?
+           AND (lease_token IS NULL OR lease_expires_at IS NULL OR lease_expires_at <= datetime('now'))`,
+      )
+      .run(owner, token, `+${ttlSeconds} seconds`, runId);
+    return info.changes === 1;
+  }
+
+  renewRunLease(runId: number, owner: string, token: string, ttlSeconds: number): boolean {
+    const info = this.db
+      .prepare(
+        `UPDATE agentrun
+         SET lease_expires_at = datetime('now', ?),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+         WHERE id = ? AND lease_owner = ? AND lease_token = ?`,
+      )
+      .run(`+${ttlSeconds} seconds`, runId, owner, token);
+    return info.changes === 1;
+  }
+
+  releaseRunLease(runId: number, owner: string, token: string): boolean {
+    const info = this.db
+      .prepare(
+        `UPDATE agentrun
+         SET lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+         WHERE id = ? AND lease_owner = ? AND lease_token = ?`,
+      )
+      .run(runId, owner, token);
+    return info.changes === 1;
+  }
+
+  runLeaseOwned(runId: number, token: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 AS owned FROM agentrun
+         WHERE id = ? AND lease_token = ?
+           AND lease_expires_at IS NOT NULL AND lease_expires_at > datetime('now')`,
+      )
+      .get(runId, token) as { owned: number } | undefined;
+    return row?.owned === 1;
+  }
+
+  runCancelRequested(runId: number): boolean {
+    const row = this.db
+      .prepare("SELECT cancel_requested_at FROM agentrun WHERE id = ?")
+      .get(runId) as { cancel_requested_at: string | null } | undefined;
+    return Boolean(row?.cancel_requested_at);
+  }
+
+  requestRunCancel(runId: number): void {
+    this.db
+      .prepare(
+        `UPDATE agentrun
+         SET cancel_requested_at = COALESCE(cancel_requested_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+             status = CASE WHEN status IN ('queued','running','waiting_for_approval') THEN 'cancelling' ELSE status END,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+         WHERE id = ?`,
+      )
+      .run(runId);
   }
 
   consumeConfirmSignal(runId: number): boolean {
@@ -316,15 +422,26 @@ export class SharedDb {
     progress?: number | null,
     isLoading?: boolean,
   ): void {
+    this.assertExecutionFence();
     this.db
       .prepare(
         `INSERT INTO message (project_id, run_id, agent, role, content, summary, progress, is_loading, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
-      .run(projectId, runId, agent, role, content, summary ?? null, progress ?? null, isLoading ? 1 : 0);
+      .run(
+        projectId,
+        runId,
+        agent,
+        role,
+        content,
+        summary ?? null,
+        progress ?? null,
+        isLoading ? 1 : 0,
+      );
   }
 
   insertAgentMessage(runId: number, agent: string, role: string, content: string): void {
+    this.assertExecutionFence();
     this.db
       .prepare(
         `INSERT INTO agentmessage (run_id, agent, role, content, created_at)
@@ -336,7 +453,9 @@ export class SharedDb {
   // ---- characters ----
 
   charactersForProject(projectId: number): CharacterRow[] {
-    return this.db.prepare("SELECT * FROM character WHERE project_id = ? ORDER BY id").all(projectId) as CharacterRow[];
+    return this.db
+      .prepare("SELECT * FROM character WHERE project_id = ? ORDER BY id")
+      .all(projectId) as CharacterRow[];
   }
 
   getCharacter(characterId: number): CharacterRow | undefined {
@@ -345,7 +464,13 @@ export class SharedDb {
       | undefined;
   }
 
-  insertCharacter(projectId: number, name: string, description: string | null, visualNotes: string | null): number {
+  insertCharacter(
+    projectId: number,
+    name: string,
+    description: string | null,
+    visualNotes: string | null,
+  ): number {
+    this.assertExecutionFence();
     const info = this.db
       .prepare(
         "INSERT INTO character (project_id, name, description, visual_notes, approval_version) VALUES (?, ?, ?, ?, 0)",
@@ -355,22 +480,31 @@ export class SharedDb {
   }
 
   updateCharacter(characterId: number, fields: Record<string, unknown>): void {
+    this.assertExecutionFence();
     const entries = Object.entries(fields).filter(([k]) => k !== "id");
     if (entries.length === 0) return;
     const sets = entries.map(([k]) => `${k} = ?`).join(", ");
     this.db
       .prepare(`UPDATE character SET ${sets} WHERE id = ?`)
-      .run(...entries.map(([, v]) => (v === undefined ? null : typeof v === "object" && v !== null ? JSON.stringify(v) : v)), characterId);
+      .run(
+        ...entries.map(([, v]) =>
+          v === undefined ? null : typeof v === "object" && v !== null ? JSON.stringify(v) : v,
+        ),
+        characterId,
+      );
   }
 
   deleteCharacter(characterId: number): void {
+    this.assertExecutionFence();
     this.db.prepare("DELETE FROM character WHERE id = ?").run(characterId);
   }
 
   // ---- shots ----
 
   shotsForProject(projectId: number): ShotRow[] {
-    return this.db.prepare("SELECT * FROM shot WHERE project_id = ? ORDER BY \"order\"").all(projectId) as unknown as ShotRow[];
+    return this.db
+      .prepare('SELECT * FROM shot WHERE project_id = ? ORDER BY "order"')
+      .all(projectId) as unknown as ShotRow[];
   }
 
   getShot(shotId: number): ShotRow | undefined {
@@ -382,6 +516,7 @@ export class SharedDb {
     order: number,
     fields: Omit<Partial<ShotRow>, "character_ids"> & { character_ids?: number[] },
   ): number {
+    this.assertExecutionFence();
     const info = this.db
       .prepare(
         `INSERT INTO shot (project_id, "order", description, character_ids, approval_version)
@@ -389,21 +524,36 @@ export class SharedDb {
       )
       .run(projectId, order, fields.description ?? "", JSON.stringify(fields.character_ids ?? []));
     const id = Number(info.lastInsertRowid);
-    const extra = Object.entries(fields).filter(([k]) => !["id", "project_id", "description", "character_ids"].includes(k));
+    const extra = Object.entries(fields).filter(
+      ([k]) => !["id", "project_id", "description", "character_ids"].includes(k),
+    );
     if (extra.length > 0) this.updateShot(id, Object.fromEntries(extra));
     return id;
   }
 
   updateShot(shotId: number, fields: Record<string, unknown>): void {
+    this.assertExecutionFence();
     const entries = Object.entries(fields).filter(([k]) => k !== "id" && k !== "order");
     if (entries.length === 0) return;
     const sets = entries.map(([k]) => `${k} = ?`).join(", ");
     this.db
       .prepare(`UPDATE shot SET ${sets} WHERE id = ?`)
-      .run(...entries.map(([k, v]) => (typeof v === "object" && v !== null ? JSON.stringify(v) : v === undefined ? null : k.endsWith("_ids") ? JSON.stringify(v) : v)), shotId);
+      .run(
+        ...entries.map(([k, v]) =>
+          typeof v === "object" && v !== null
+            ? JSON.stringify(v)
+            : v === undefined
+              ? null
+              : k.endsWith("_ids")
+                ? JSON.stringify(v)
+                : v,
+        ),
+        shotId,
+      );
   }
 
   deleteShot(shotId: number): void {
+    this.assertExecutionFence();
     this.db.prepare("DELETE FROM shot WHERE id = ?").run(shotId);
   }
 
@@ -417,7 +567,7 @@ export class SharedDb {
     runId: number | null,
     trigger: string,
   ): number {
-    // returns the created version number
+    this.assertExecutionFence();
     const fields = entityType === "character" ? CHARACTER_SNAPSHOT_FIELDS : SHOT_SNAPSHOT_FIELDS;
     const snapshot = snapshotOf(row as unknown as Record<string, unknown>, fields);
     const maxRow = this.db
@@ -431,7 +581,15 @@ export class SharedDb {
         `INSERT INTO artifactversion (project_id, entity_type, entity_id, version, snapshot, run_id, trigger, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
-      .run(projectId, entityType, entityId, nextVersion, JSON.stringify(snapshot), runId, trigger);
+      .run(
+        projectId,
+        entityType,
+        entityId,
+        nextVersion,
+        JSON.stringify(snapshot),
+        runId,
+        trigger,
+      );
     void Number(info.lastInsertRowid);
     return nextVersion;
   }
