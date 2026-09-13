@@ -19,8 +19,8 @@ from app.schemas.ws import (
     CritiqueResultEventData,
     DataClearedEventData,
     ErrorEventData,
-    ProjectUpdatedEventData,
     OutlineUpdatedEventData,
+    ProjectUpdatedEventData,
     RunAwaitingConfirmEventData,
     RunCancelledEventData,
     RunCompletedEventData,
@@ -99,15 +99,31 @@ class ConnectionManager:
         return event.model_dump()
 
     async def send_event_to(self, websocket: WebSocket, event: dict[str, Any] | WsEvent) -> None:
-        """Validate and send one event to exactly one WebSocket.
-
-        Engine event replay is per connection. Broadcasting a replayed event to
-        every project socket causes N tailers × N clients duplicate delivery
-        when the same project is open in multiple tabs.
-        """
         if websocket.client_state != WebSocketState.CONNECTED:
             return
         await websocket.send_json(self._validated_payload(event))
+
+    async def send_durable_event_to(
+        self,
+        websocket: WebSocket,
+        *,
+        event_id: int,
+        event_type: str,
+        data: dict[str, Any],
+    ) -> None:
+        """Validate event data, then attach transport-level durable cursor.
+
+        ``event_id`` is transport metadata rather than business payload. Keeping
+        it outside the Pydantic event-data models means generated/replayed
+        events retain the exact same domain schema while clients still get a
+        monotonic cursor for dedupe and reconnect replay.
+        """
+        if websocket.client_state != WebSocketState.CONNECTED:
+            return
+        event = WsEvent.model_validate({"type": event_type, "data": data})
+        payload = self._validated_payload(event)
+        payload["event_id"] = event_id
+        await websocket.send_json(payload)
 
     async def send_event(self, project_id: int, event: dict[str, Any] | WsEvent) -> None:
         payload = self._validated_payload(event)
