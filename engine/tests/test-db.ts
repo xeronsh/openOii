@@ -18,6 +18,7 @@ export function installEngineRuntimeSchema(db: SqliteDatabase.Database): void {
       ON engine_run_events(run_id, seq);
     CREATE INDEX IF NOT EXISTS idx_engine_run_events_project
       ON engine_run_events(project_id, seq);
+
     CREATE TABLE IF NOT EXISTS engine_checkpoints (
       run_id INTEGER NOT NULL,
       stage TEXT NOT NULL,
@@ -25,6 +26,28 @@ export function installEngineRuntimeSchema(db: SqliteDatabase.Database): void {
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       PRIMARY KEY (run_id, stage)
     );
+
+    CREATE TABLE IF NOT EXISTS engine_stage_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      stage_attempt_id TEXT NOT NULL UNIQUE,
+      run_id INTEGER NOT NULL,
+      stage TEXT NOT NULL,
+      attempt INTEGER NOT NULL,
+      execution_attempt INTEGER NOT NULL DEFAULT 0,
+      input_hash TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL,
+      provider_request_id TEXT,
+      result_json TEXT,
+      error TEXT,
+      started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(run_id, stage, attempt)
+    );
+    CREATE INDEX IF NOT EXISTS idx_engine_stage_attempts_run_stage
+      ON engine_stage_attempts(run_id, stage, attempt);
+    CREATE INDEX IF NOT EXISTS idx_engine_stage_attempts_status
+      ON engine_stage_attempts(status);
   `);
 }
 
