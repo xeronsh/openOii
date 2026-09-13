@@ -5,17 +5,22 @@
  */
 import {
   AGENT_COMPLETION_INFO,
-  APPROVAL_TO_PRODUCED_STAGE,
   GATE_AGENT,
   NEXT_STAGE,
   PRODUCTION_STAGE_SEQUENCE,
+  STAGE_ORDER,
   agentForStage,
   progressForStage,
   type StageId,
 } from "../contract.js";
 import type { EngineDatabase } from "../db.js";
-import { MediaService, resolveMediaSettings } from "../media/media.js";
-import { TextLlmService } from "../llm.js";
+import {
+  MediaService,
+  resolveMediaSettings,
+  type MediaProviderSnapshot,
+  type MediaRunSnapshot,
+} from "../media/media.js";
+import { TextLlmService, type RunCreativeContext } from "../llm.js";
 import { SharedDb, parseJsonColumn } from "../shared-db.js";
 import {
   runAddAudio,
@@ -48,6 +53,28 @@ export interface PipelineOutcome {
 const CONFIRM_POLL_MS = 300;
 const CONFIRM_TIMEOUT_MS = 30 * 60 * 1000;
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export class PipelineRunner {
   private cancelRequested = false;
 
@@ -55,6 +82,7 @@ export class PipelineRunner {
     private readonly db: EngineDatabase,
     private readonly shared: SharedDb,
     private readonly llm: TextLlmService,
+    private readonly runContext?: RunCreativeContext,
   ) {}
 
   requestCancel(): void {
@@ -65,23 +93,55 @@ export class PipelineRunner {
     return this.cancelRequested || this.shared.runCancelRequested(runId);
   }
 
+  private policy(): Record<string, unknown> | null {
+    return asRecord(this.runContext?.policy);
+  }
+
+  private mediaSnapshot(): MediaRunSnapshot | null {
+    if (!this.runContext) return null;
+    const providers = asRecord(this.runContext.providers);
+    return {
+      image: asRecord(providers?.image) as MediaProviderSnapshot | null,
+      video: asRecord(providers?.video) as MediaProviderSnapshot | null,
+      policy: this.policy(),
+    };
+  }
+
+  private boolPolicy(key: string, liveKey: string, fallback: boolean): boolean {
+    const policy = this.policy();
+    if (policy && key in policy) return asBoolean(policy[key], fallback);
+    return (this.db.configValue(liveKey, liveKey, String(fallback)) ?? String(fallback)) === "true";
+  }
+
+  private numberPolicy(key: string, liveKey: string, fallback: number): number {
+    const policy = this.policy();
+    if (policy && key in policy) return asNumber(policy[key], fallback);
+    return Number(this.db.configValue(liveKey, liveKey, String(fallback)) ?? fallback);
+  }
+
+  private stringPolicy(key: string, liveKey: string, fallback: string): string {
+    const policy = this.policy();
+    if (policy && typeof policy[key] === "string") return String(policy[key]);
+    return this.db.configValue(liveKey, liveKey, fallback) ?? fallback;
+  }
+
   /**
-   * Resume after an engine restart: rebuild completed stages from
-   * engine_checkpoints and continue from the next pending stage.
+   * Resume after an engine restart from the last durably completed stage.
+   * Approval gates have their own checkpoint: production completion never
+   * implies user approval.
    */
   async resume(request: PipelineRequest): Promise<PipelineOutcome> {
     this.shared.assertExecutionFence();
     const completed = new Set<string>();
-    for (const stage of PRODUCTION_STAGE_SEQUENCE) {
+    for (const stage of STAGE_ORDER) {
       const row = this.db.db
         .prepare("SELECT stage FROM engine_checkpoints WHERE run_id = ? AND stage = ?")
         .get(request.runId, stage);
       if (row) completed.add(stage);
     }
-    if (completed.size === 0) {
-      return this.run(request);
-    }
-    const lastCompleted = PRODUCTION_STAGE_SEQUENCE.filter((s) => completed.has(s)).at(-1);
+    if (completed.size === 0) return this.run(request);
+
+    const lastCompleted = STAGE_ORDER.filter((stage) => completed.has(stage)).at(-1);
     if (!lastCompleted) return this.run(request);
     const resumeStage = NEXT_STAGE[lastCompleted];
     if (!resumeStage) return { status: "completed" };
@@ -92,14 +152,12 @@ export class PipelineRunner {
   async run(request: PipelineRequest): Promise<PipelineOutcome> {
     this.shared.assertExecutionFence();
     const startStage = request.startStage ?? "plan_outline";
-    // 中途起跑（用户反馈重跑）时，把起点之前的生产阶段标记为已完成，
-    // 使这些阶段对应的闸门自动放行、不重复生成。
-    const completed = new Set<string>();
-    for (const stage of PRODUCTION_STAGE_SEQUENCE) {
+    const preserved = new Set<string>();
+    for (const stage of STAGE_ORDER) {
       if (stage === startStage) break;
-      completed.add(stage);
+      preserved.add(stage);
     }
-    return this.runFromStage(request, startStage, completed);
+    return this.runFromStage(request, startStage, preserved);
   }
 
   private async finishCancelled(
@@ -121,25 +179,27 @@ export class PipelineRunner {
   private async runFromStage(
     request: PipelineRequest,
     startStage: StageId,
-    completedStages: Set<string>,
+    preservedStages: Set<string>,
   ): Promise<PipelineOutcome> {
     this.shared.assertExecutionFence();
     const project = this.shared.getProject(request.projectId);
     if (!project) return { status: "failed", error: `project ${request.projectId} not found` };
 
-    const mediaSettings = resolveMediaSettings(this.db);
+    const mediaSettings = resolveMediaSettings(this.db, this.mediaSnapshot());
     const media = new MediaService(mediaSettings);
     const emitter = new PipelineEmitter(this.db, this.shared, request.projectId, request.runId, {
-      thinkingChainEnabled:
-        this.db.configValue("THINKING_CHAIN_ENABLED", "THINKING_CHAIN_ENABLED", "true") === "true",
-      thinkingDetailLevel: (this.db.configValue(
-        "THINKING_CHAIN_DETAIL_LEVEL",
+      thinkingChainEnabled: this.boolPolicy(
+        "thinking_chain_enabled",
+        "THINKING_CHAIN_ENABLED",
+        true,
+      ),
+      thinkingDetailLevel: this.stringPolicy(
+        "thinking_chain_detail_level",
         "THINKING_CHAIN_DETAIL_LEVEL",
         "normal",
-      ) ?? "normal") as "minimal" | "normal" | "verbose",
+      ) as "minimal" | "normal" | "verbose",
     });
 
-    // run_started + data_cleared (contract parity: full re-plan wipe)
     const fullRun = startStage === "plan_outline";
     const startAgent = agentForStage(startStage);
     this.shared.updateRun(request.runId, {
@@ -156,9 +216,7 @@ export class PipelineRunner {
       next_stage: NEXT_STAGE[startStage],
       progress: progressForStage(startStage),
       current_agent: startAgent,
-      preserved_stages: fullRun
-        ? []
-        : PRODUCTION_STAGE_SEQUENCE.filter((s) => completedStages.has(s)),
+      preserved_stages: fullRun ? [] : STAGE_ORDER.filter((s) => preservedStages.has(s)),
     });
     if (fullRun) {
       emitter.emit("data_cleared", {
@@ -178,21 +236,19 @@ export class PipelineRunner {
       runId: request.runId,
       userFeedback: request.userFeedback,
       critiqueRounds: { characters: 0, shots: 0 },
-      critiqueEnabled:
-        this.db.configValue("CRITIQUE_ENABLED", "CRITIQUE_ENABLED", "true") === "true",
-      critiqueScoreThreshold: Number(
-        this.db.configValue("CRITIQUE_SCORE_THRESHOLD", "CRITIQUE_SCORE_THRESHOLD", "6") ?? 6,
+      critiqueEnabled: this.boolPolicy("critique_enabled", "CRITIQUE_ENABLED", true),
+      critiqueScoreThreshold: this.numberPolicy(
+        "critique_score_threshold",
+        "CRITIQUE_SCORE_THRESHOLD",
+        6,
       ),
-      critiqueMaxRounds: Number(
-        this.db.configValue("CRITIQUE_MAX_ROUNDS", "CRITIQUE_MAX_ROUNDS", "2") ?? 2,
-      ),
+      critiqueMaxRounds: this.numberPolicy("critique_max_rounds", "CRITIQUE_MAX_ROUNDS", 2),
       completionInfo: null,
       willRegenerate: false,
     };
 
     let stage: StageId = startStage;
     let guard = 0;
-    const completedSet = completedStages;
     try {
       while (stage !== null && guard < 64) {
         guard += 1;
@@ -201,16 +257,9 @@ export class PipelineRunner {
           return await this.finishCancelled(request, emitter);
         }
 
-        if (stage === "review") {
-          break;
-        }
+        if (stage === "review") break;
 
         if (isGate(stage)) {
-          const produced = APPROVAL_TO_PRODUCED_STAGE[stage];
-          if (produced && completedSet.has(produced)) {
-            stage = NEXT_STAGE[stage] as StageId;
-            continue;
-          }
           await this.runGate(stage, request, ctx);
           if (this.shouldCancel(request.runId)) {
             return await this.finishCancelled(request, emitter);
@@ -233,14 +282,15 @@ export class PipelineRunner {
             stage = entityType === "character" ? "render_characters" : "render_shots";
             continue;
           }
+          this.db.saveCheckpoint(request.runId, stage, {
+            completed_at: new Date().toISOString(),
+            will_regenerate: false,
+          });
           stage = NEXT_STAGE[stage] as StageId;
           continue;
         }
 
         await this.runProduction(stage, ctx, request);
-        // External calls are at-least-once. Before recording completion, verify
-        // this runner still owns the fencing token and that cancellation was not
-        // requested while the provider call was in flight.
         this.shared.assertExecutionFence();
         if (this.shouldCancel(request.runId)) {
           return await this.finishCancelled(request, emitter);
@@ -248,7 +298,6 @@ export class PipelineRunner {
         this.db.saveCheckpoint(request.runId, stage, {
           completed_at: new Date().toISOString(),
         });
-        completedSet.add(stage);
         stage = NEXT_STAGE[stage] as StageId;
       }
 
@@ -264,8 +313,6 @@ export class PipelineRunner {
         );
       }
       this.shared.updateProject(request.projectId, { status: "ready" });
-      // Persist terminal projection before publishing the terminal event so a
-      // reconnect hydration can never observe running after seeing completion.
       this.shared.updateRun(request.runId, {
         status: "succeeded",
         progress: 1,
@@ -282,13 +329,9 @@ export class PipelineRunner {
       return { status: "completed" };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-
-      // A stale executor must stop silently: its fencing token no longer gives
-      // it authority to mutate the run or project.
       if (message.startsWith("execution lease lost for run")) {
         return { status: "failed", error: message };
       }
-
       if (this.shouldCancel(request.runId)) {
         return await this.finishCancelled(request, emitter);
       }
@@ -302,7 +345,7 @@ export class PipelineRunner {
         project_id: request.projectId,
         error: message,
         agent: null,
-        current_stage: null,
+        current_stage: stage,
       });
       return { status: "failed", error: message };
     }
@@ -421,22 +464,7 @@ export class PipelineRunner {
     if (request.autoMode) {
       this.shared.setAwaitingPayload(request.runId, null);
       this.shared.updateRun(request.runId, { status: "running" });
-      const postStage = nextStage ?? currentStage;
-      ctx.emitter.emit("run_confirmed", {
-        run_id: request.runId,
-        project_id: request.projectId,
-        agent: gateAgent,
-        gate: gateAgent,
-        current_stage: postStage,
-        stage: postStage,
-        next_stage: NEXT_STAGE[postStage as StageId] ?? null,
-        recovery_summary: {
-          project_id: request.projectId,
-          run_id: request.runId,
-          thread_id: `agent-run-${request.runId}`,
-          current_stage: postStage,
-        },
-      });
+      this.emitGateConfirmed(stage, request, ctx, gateAgent, currentStage, nextStage);
       return;
     }
 
@@ -447,7 +475,17 @@ export class PipelineRunner {
     }
     this.shared.setAwaitingPayload(request.runId, null);
     this.shared.updateRun(request.runId, { status: "running" });
+    this.emitGateConfirmed(stage, request, ctx, gateAgent, currentStage, nextStage);
+  }
 
+  private emitGateConfirmed(
+    stage: StageId,
+    request: PipelineRequest,
+    ctx: StageContext,
+    gateAgent: string,
+    currentStage: StageId,
+    nextStage: StageId | null,
+  ): void {
     const postStage = nextStage ?? currentStage;
     ctx.emitter.emit("run_confirmed", {
       run_id: request.runId,
@@ -456,13 +494,19 @@ export class PipelineRunner {
       gate: gateAgent,
       current_stage: postStage,
       stage: postStage,
-      next_stage: NEXT_STAGE[postStage as StageId] ?? null,
+      next_stage: NEXT_STAGE[postStage] ?? null,
       recovery_summary: {
         project_id: request.projectId,
         run_id: request.runId,
         thread_id: `agent-run-${request.runId}`,
         current_stage: postStage,
       },
+    });
+    // Approval is a durable state transition of its own. A production
+    // checkpoint must never be interpreted as implicit user approval.
+    this.db.saveCheckpoint(request.runId, stage, {
+      completed_at: new Date().toISOString(),
+      approved: true,
     });
   }
 
