@@ -1,4 +1,4 @@
-/** Text LLM service built on pi-ai with immutable per-run provider selection. */
+/** Text LLM service built on pi-ai with immutable per-run provider/context selection. */
 import { complete, type Model } from "@mariozechner/pi-ai";
 import type { EngineDatabase } from "./db.js";
 import { fakeRespond } from "./fake-stream.js";
@@ -11,6 +11,17 @@ export interface TextProviderSnapshot {
   model?: string | null;
   endpoint?: string | null;
   credential_keys?: string[] | null;
+}
+
+export interface RunCreativeContext {
+  workflow_version?: number;
+  project?: Record<string, unknown> | null;
+  skill?: Record<string, unknown> | null;
+  universe_context?: Record<string, unknown> | null;
+  style_template?: Record<string, unknown> | null;
+  providers?: Record<string, unknown> | null;
+  policy?: Record<string, unknown> | null;
+  [key: string]: unknown;
 }
 
 export interface LlmRequest {
@@ -29,10 +40,14 @@ export class TextLlmService {
   constructor(
     private readonly db: EngineDatabase,
     private readonly pinned?: TextProviderSnapshot,
+    private readonly runContext?: RunCreativeContext,
   ) {}
 
-  forSnapshot(snapshot: TextProviderSnapshot | null | undefined): TextLlmService {
-    return new TextLlmService(this.db, snapshot ?? undefined);
+  forSnapshot(
+    snapshot: TextProviderSnapshot | null | undefined,
+    runContext?: RunCreativeContext | null,
+  ): TextLlmService {
+    return new TextLlmService(this.db, snapshot ?? undefined, runContext ?? undefined);
   }
 
   private secret(keys: string[]): string {
@@ -41,6 +56,35 @@ export class TextLlmService {
       if (value) return value;
     }
     return "";
+  }
+
+  private promptWithRunContext(prompt: string): string {
+    if (!this.runContext) return prompt;
+    try {
+      const parsed = JSON.parse(prompt) as unknown;
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        const input = parsed as Record<string, unknown>;
+        return JSON.stringify({
+          ...input,
+          skill: this.runContext.skill ?? input.skill ?? null,
+          universe_context:
+            this.runContext.universe_context ?? input.universe_context ?? null,
+          style_template: this.runContext.style_template ?? input.style_template ?? null,
+          run_context: {
+            workflow_version: this.runContext.workflow_version ?? null,
+            project_revision:
+              typeof this.runContext.project === "object" && this.runContext.project !== null
+                ? this.runContext.project.revision ?? null
+                : null,
+            policy: this.runContext.policy ?? null,
+          },
+        });
+      }
+    } catch {
+      // Some future tool may send plain text. Preserve it and add a clearly
+      // delimited immutable context block instead of silently dropping context.
+    }
+    return `${prompt}\n\n<run_context>${JSON.stringify(this.runContext)}</run_context>`;
   }
 
   resolveProvider(): { key: TextProviderKey; baseUrl?: string; apiKey?: string; model: string } {
@@ -97,8 +141,9 @@ export class TextLlmService {
 
   async generate(req: LlmRequest): Promise<LlmResponse> {
     const resolved = this.resolveProvider();
+    const prompt = this.promptWithRunContext(req.prompt);
     if (resolved.key === "fake") {
-      return { text: fakeRespond(req.prompt), provider: "fake", model: resolved.model };
+      return { text: fakeRespond(prompt), provider: "fake", model: resolved.model };
     }
     if (!resolved.baseUrl) {
       throw new Error(`provider ${resolved.key} needs a base URL in the run context snapshot`);
@@ -119,7 +164,7 @@ export class TextLlmService {
 
     const context = {
       systemPrompt: req.system,
-      messages: [{ role: "user" as const, content: req.prompt, timestamp: Date.now() }],
+      messages: [{ role: "user" as const, content: prompt, timestamp: Date.now() }],
     };
     const message = await complete(model, context, {
       apiKey: resolved.apiKey,
