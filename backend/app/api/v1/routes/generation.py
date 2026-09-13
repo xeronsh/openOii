@@ -21,6 +21,8 @@ from app.models.project import Project
 from app.orchestration import PHASE2_STAGE_ORDER, PRODUCTION_STAGE_SEQUENCE
 from app.schemas.project import (
     AgentRunRead,
+    CancelRunResponse,
+    FeedbackAcceptedResponse,
     FeedbackRequest,
     GenerateRequest,
     ProviderResolution,
@@ -129,10 +131,6 @@ async def _route_feedback_to_stage(
     if stage not in PHASE2_STAGE_ORDER:
         return PRODUCTION_STAGE_SEQUENCE[0]
     return stage
-
-
-def _require_run_id(run: AgentRun) -> int:
-    return require_run_id(run)
 
 
 async def _latest_run_for_project(
@@ -253,7 +251,7 @@ async def generate_project(
     session.add(run)
     await session.commit()
     await session.refresh(run)
-    run_id = _require_run_id(run)
+    run_id = require_run_id(run)
 
     await _dispatch_to_engine(
         settings=settings,
@@ -298,7 +296,11 @@ async def resume_project_run(
     return AgentRunRead.model_validate(run)
 
 
-@router.post("/{project_id}/cancel", status_code=status.HTTP_200_OK)
+@router.post(
+    "/{project_id}/cancel",
+    response_model=CancelRunResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def cancel_project_run(
     project_id: int,
     session: AsyncSession = SessionDep,
@@ -326,7 +328,7 @@ async def cancel_project_run(
     runs = res.scalars().all()
 
     if not runs and not task_cancelled:
-        return {"status": "no_active_run", "cancelled": 0}
+        return CancelRunResponse(status="no_active_run")
 
     cancelled_count = 0
     for run in runs:
@@ -348,10 +350,18 @@ async def cancel_project_run(
         },
     )
 
-    return {"status": "cancelled", "cancelled": cancelled_count}
+    return CancelRunResponse(
+        status="cancelled",
+        cancelled=cancelled_count,
+        run_ids=[r.id for r in runs if r.id is not None],
+    )
 
 
-@router.post("/{project_id}/feedback", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{project_id}/feedback",
+    response_model=FeedbackAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def feedback_project(
     project_id: int,
     payload: FeedbackRequest,
@@ -389,7 +399,7 @@ async def feedback_project(
     session.add(run)
     await session.commit()
     await session.refresh(run)
-    run_id = _require_run_id(run)
+    run_id = require_run_id(run)
 
     msg = AgentMessage(run_id=run_id, agent="user", role="user", content=payload.content)
     session.add(msg)
@@ -433,4 +443,4 @@ async def feedback_project(
     session.add(run)
     await session.commit()
     await session.refresh(run)
-    return {"status": "accepted", "run_id": run_id}
+    return FeedbackAcceptedResponse(run_id=run_id)

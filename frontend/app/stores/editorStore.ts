@@ -8,6 +8,7 @@ import type {
 	ProjectProviderSettings,
 	RecoveryControlRead,
 	RecoverySummaryRead,
+	ProjectUpdatedPayload,
 	RunAwaitingConfirmEventData,
 	Shot,
 	StoryOutline,
@@ -15,6 +16,47 @@ import type {
 } from "~/types";
 
 export type RunMode = "manual" | "yolo";
+
+/**
+ * 服务端 project patch：WS `project_updated` 的 payload 形状。
+ *
+ * `id` 是 payload 的必填字段（用于标识项目），但 store 按当前路由项目存状态，
+ * 不需要它，所以 patchProject 显式忽略 id —— 调用方可以整份 payload 直接透传。
+ */
+export type ProjectPatch = ProjectUpdatedPayload;
+
+/**
+ * patch key → store 字段。**必须覆盖 ProjectPatch 的每个可选字段**：
+ * 它是 `Record<...>` 而非 Partial，少一个 key 会编译失败。
+ * 旧实现用 `Partial<Record<...>>` + 运行时 if，新字段加进 payload 后
+ * 没人记得来改这里，字段就被静默丢弃（skill_id 就是这么丢的）。
+ * value 为 undefined 时跳过，保证 patch 的语义是「部分更新」。
+ */
+const PROJECT_PATCH_FIELDS: Record<
+	Exclude<keyof ProjectPatch, "id">,
+	keyof EditorState
+> = {
+	title: "projectTitle",
+	story: "projectStory",
+	style: "projectStyle",
+	summary: "projectSummary",
+	video_url: "projectVideoUrl",
+	status: "projectStatus",
+	target_shot_count: "projectTargetShotCount",
+	character_hints: "projectCharacterHints",
+	creation_mode: "projectCreationMode",
+	reference_images: "projectReferenceImages",
+	exports: "projectExports",
+	provider_settings: "projectProviderSettings",
+	universe_id: "projectUniverseId",
+	chapter_number: "projectChapterNumber",
+	chapter_title: "projectChapterTitle",
+	skill_id: "projectSkillId",
+	story_outline: "projectStoryOutline",
+	visual_bible: "projectVisualBible",
+	outline_approved: "projectOutlineApproved",
+	blocking_clips: "blockingClips",
+};
 
 interface EditorState {
 	selectedShotId: number | null;
@@ -54,6 +96,7 @@ interface EditorState {
 	projectUniverseId: number | null;
 	projectChapterNumber: number | null;
 	projectChapterTitle: string | null;
+	projectSkillId: string | null;
 	blockingClips: BlockingClip[] | null;
 
 	setSelectedShot: (id: number | null) => void;
@@ -71,26 +114,11 @@ interface EditorState {
 	setRecoveryGate: (gate: RunAwaitingConfirmEventData | null) => void;
 	setCharacters: (characters: Character[]) => void;
 	setShots: (shots: Shot[]) => void;
-	setProjectVideoUrl: (url: string | null) => void;
-	setProjectStatus: (status: string | null) => void;
 	setProjectUpdatedAt: (timestamp: number) => void;
-	setProjectTitle: (title: string | null) => void;
-	setProjectSummary: (summary: string | null) => void;
-	setProjectStoryOutline: (outline: StoryOutline | null) => void;
-	setProjectVisualBible: (visualBible: string | null) => void;
-	setProjectOutlineApproved: (approved: boolean) => void;
-	setProjectStory: (story: string | null) => void;
-	setProjectStyle: (style: string | null) => void;
-	setProjectTargetShotCount: (count: number | null) => void;
-	setProjectCharacterHints: (hints: string[] | null) => void;
-	setProjectCreationMode: (mode: string | null) => void;
-	setProjectReferenceImages: (images: string[] | null) => void;
-	setProjectExports: (exports: string[] | null) => void;
-	setProjectProviderSettings: (settings: ProjectProviderSettings | null) => void;
-	setProjectUniverseId: (id: number | null) => void;
-	setProjectChapterNumber: (chapter: number | null) => void;
-	setProjectChapterTitle: (title: string | null) => void;
-	setBlockingClips: (clips: BlockingClip[] | null) => void;
+	/** 用一份 project patch 更新所有项目字段。
+	 *  单一映射点：WS 的 project_updated 与页面水合都走它，
+	 *  避免字段映射散落三处（曾漏掉 skill_id 导致静默丢字段）。 */
+	patchProject: (patch: ProjectPatch) => void;
 	setAwaitingConfirm: (
 		awaiting: boolean,
 		agent?: string | null,
@@ -150,6 +178,7 @@ const initialState = {
 	projectUniverseId: null,
 	projectChapterNumber: null,
 	projectChapterTitle: null,
+	projectSkillId: null,
 	blockingClips: null,
 	...initialRunState,
 };
@@ -194,66 +223,23 @@ export const useEditorStore = create<EditorState>()(
 			setCharacters: (characters) =>
 				set({ characters }, false, "setCharacters"),
 			setShots: (shots) => set({ shots }, false, "setShots"),
-			setProjectVideoUrl: (url) =>
-				set({ projectVideoUrl: url }, false, "setProjectVideoUrl"),
-			setProjectStatus: (status) =>
-				set({ projectStatus: status }, false, "setProjectStatus"),
 			setProjectUpdatedAt: (timestamp) =>
 				set({ projectUpdatedAt: timestamp }, false, "setProjectUpdatedAt"),
-			setProjectTitle: (title) =>
-				set({ projectTitle: title }, false, "setProjectTitle"),
-			setProjectSummary: (summary) =>
-				set({ projectSummary: summary }, false, "setProjectSummary"),
-			setProjectStoryOutline: (outline) =>
-				set({ projectStoryOutline: outline }, false, "setProjectStoryOutline"),
-			setProjectVisualBible: (visualBible) =>
-				set({ projectVisualBible: visualBible }, false, "setProjectVisualBible"),
-			setProjectOutlineApproved: (approved) =>
-				set({ projectOutlineApproved: approved }, false, "setProjectOutlineApproved"),
-			setProjectStory: (story) =>
-				set({ projectStory: story }, false, "setProjectStory"),
-			setProjectStyle: (style) =>
-				set({ projectStyle: style }, false, "setProjectStyle"),
-			setProjectTargetShotCount: (count) =>
-				set(
-					{ projectTargetShotCount: count },
-					false,
-					"setProjectTargetShotCount",
-				),
-			setProjectCharacterHints: (hints) =>
-				set(
-					{ projectCharacterHints: hints },
-					false,
-					"setProjectCharacterHints",
-				),
-			setProjectCreationMode: (mode) =>
-				set({ projectCreationMode: mode }, false, "setProjectCreationMode"),
-			setProjectReferenceImages: (images) =>
-				set(
-					{ projectReferenceImages: images },
-					false,
-					"setProjectReferenceImages",
-				),
-			setProjectExports: (exports) =>
-				set({ projectExports: exports }, false, "setProjectExports"),
-			setProjectProviderSettings: (settings) =>
-				set(
-					{ projectProviderSettings: settings },
-					false,
-					"setProjectProviderSettings",
-				),
-			setProjectUniverseId: (id) =>
-				set({ projectUniverseId: id }, false, "setProjectUniverseId"),
-			setProjectChapterNumber: (chapter) =>
-				set(
-					{ projectChapterNumber: chapter },
-					false,
-					"setProjectChapterNumber",
-				),
-			setProjectChapterTitle: (title) =>
-				set({ projectChapterTitle: title }, false, "setProjectChapterTitle"),
-			setBlockingClips: (clips) =>
-				set({ blockingClips: clips }, false, "setBlockingClips"),
+			patchProject: (patch) => {
+				const next: Partial<EditorState> = {};
+				for (const [key, value] of Object.entries(patch)) {
+					if (key === "id") continue;
+					const field =
+						PROJECT_PATCH_FIELDS[key as Exclude<keyof ProjectPatch, "id">];
+					if (field && value !== undefined) {
+						(next as Record<string, unknown>)[field] =
+							key === "outline_approved" ? Boolean(value) : value;
+					}
+				}
+				if (Object.keys(next).length > 0) {
+					set(next, false, "patchProject");
+				}
+			},
 			setAwaitingConfirm: (awaiting, agent = null, runId) =>
 				set(
 					(state) => ({

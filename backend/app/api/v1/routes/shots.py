@@ -10,9 +10,8 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.agents.base import TargetIds
 from app.agents.render import RenderAgent
 from app.agents.compose import ComposeAgent
-from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404, require_run_id
+from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404
 from app.config import Settings
-from app.models.agent_run import AgentRun
 from app.models.project import Character, Project, Shot, ShotCharacterBinding
 from app.schemas.project import AgentRunRead, RegenerateRequest, ShotRead, ShotUpdate
 from app.services.run_lifecycle import (
@@ -30,10 +29,6 @@ from app.services.file_cleaner import delete_file
 from app.ws.manager import ConnectionManager
 
 router = APIRouter()
-
-
-def _require_run_id(run: AgentRun) -> int:
-    return require_run_id(run)
 
 
 def _shot_read(shot: Shot) -> dict[str, Any]:

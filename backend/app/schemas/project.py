@@ -278,6 +278,21 @@ class RegenerateRequest(BaseModel):
     image_url: str | None = None
 
 
+class CancelRunResponse(BaseModel):
+    """取消结果。no_active_run 说明没有可取消的运行（不是错误）。"""
+
+    status: Literal["cancelled", "no_active_run"]
+    cancelled: int = 0
+    run_ids: list[int] = Field(default_factory=list)
+
+
+class FeedbackAcceptedResponse(BaseModel):
+    """反馈已受理；run_id 是本次反馈触发的 run。"""
+
+    status: Literal["accepted"] = "accepted"
+    run_id: int
+
+
 class GenerateRequest(BaseModel):
     seed: int | None = None
     notes: str | None = None

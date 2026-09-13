@@ -136,21 +136,6 @@ const storeState: {
   setSelectedShot: ReturnType<typeof vi.fn>;
   setSelectedCharacter: ReturnType<typeof vi.fn>;
   setHighlightedMessage: ReturnType<typeof vi.fn>;
-  setProjectVideoUrl: ReturnType<typeof vi.fn>;
-  setProjectStatus: ReturnType<typeof vi.fn>;
-  setProjectTitle: ReturnType<typeof vi.fn>;
-  setProjectSummary: ReturnType<typeof vi.fn>;
-  setProjectStory: ReturnType<typeof vi.fn>;
-  setProjectStyle: ReturnType<typeof vi.fn>;
-  setProjectTargetShotCount: ReturnType<typeof vi.fn>;
-  setProjectCharacterHints: ReturnType<typeof vi.fn>;
-  setProjectCreationMode: ReturnType<typeof vi.fn>;
-  setProjectReferenceImages: ReturnType<typeof vi.fn>;
-  setProjectExports: ReturnType<typeof vi.fn>;
-  setProjectProviderSettings: ReturnType<typeof vi.fn>;
-  setProjectUniverseId: ReturnType<typeof vi.fn>;
-  setProjectChapterNumber: ReturnType<typeof vi.fn>;
-  setProjectChapterTitle: ReturnType<typeof vi.fn>;
   setCharacters: ReturnType<typeof vi.fn>;
   setShots: ReturnType<typeof vi.fn>;
   setRecoveryControl: ReturnType<typeof vi.fn>;
@@ -161,10 +146,8 @@ const storeState: {
   resetRunState: ReturnType<typeof vi.fn>;
   runMode: string;
   setRunMode: ReturnType<typeof vi.fn>;
-  setProjectStoryOutline: ReturnType<typeof vi.fn>;
-  setProjectVisualBible: ReturnType<typeof vi.fn>;
-  setProjectOutlineApproved: ReturnType<typeof vi.fn>;
   setBlockingClips: ReturnType<typeof vi.fn>;
+  patchProject: ReturnType<typeof vi.fn>;
 } = {
   isGenerating: false,
   progress: 0,
@@ -198,21 +181,6 @@ const storeState: {
   setSelectedShot: vi.fn(),
   setSelectedCharacter: vi.fn(),
   setHighlightedMessage: vi.fn(),
-  setProjectVideoUrl: vi.fn(),
-  setProjectStatus: vi.fn(),
-  setProjectTitle: vi.fn(),
-  setProjectSummary: vi.fn(),
-  setProjectStory: vi.fn(),
-  setProjectStyle: vi.fn(),
-  setProjectTargetShotCount: vi.fn(),
-  setProjectCharacterHints: vi.fn(),
-  setProjectCreationMode: vi.fn(),
-  setProjectReferenceImages: vi.fn(),
-  setProjectExports: vi.fn(),
-  setProjectProviderSettings: vi.fn(),
-  setProjectUniverseId: vi.fn(),
-  setProjectChapterNumber: vi.fn(),
-  setProjectChapterTitle: vi.fn(),
   setCharacters: vi.fn(),
   setShots: vi.fn(),
   setRecoveryControl: vi.fn(),
@@ -221,13 +189,30 @@ const storeState: {
   setProjectUpdatedAt: vi.fn((timestamp: number) => {
     storeState.projectUpdatedAt = timestamp;
   }),
+  // 真实映射表在 store 里；测试替身只需把 patch 落到 storeState，
+  // 让「水合/WS 后字段确实进了 store」这类断言仍然有效。
+  patchProject: vi.fn((patch: Record<string, unknown>) => {
+    const map: Record<string, string> = {
+      video_url: 'projectVideoUrl', status: 'projectStatus', title: 'projectTitle',
+      summary: 'projectSummary', story: 'projectStory', style: 'projectStyle',
+      target_shot_count: 'projectTargetShotCount', character_hints: 'projectCharacterHints',
+      creation_mode: 'projectCreationMode', reference_images: 'projectReferenceImages',
+      exports: 'projectExports', provider_settings: 'projectProviderSettings',
+      universe_id: 'projectUniverseId', chapter_number: 'projectChapterNumber',
+      chapter_title: 'projectChapterTitle', skill_id: 'projectSkillId',
+      story_outline: 'projectStoryOutline', visual_bible: 'projectVisualBible',
+      outline_approved: 'projectOutlineApproved', blocking_clips: 'blockingClips',
+    };
+    for (const [k, v] of Object.entries(patch)) {
+      if (k === 'id' || v === undefined) continue;
+      const field = map[k];
+      if (field) (storeState as Record<string, unknown>)[field] = v;
+    }
+  }),
   addMessage: vi.fn(),
   resetRunState: vi.fn(),
   runMode: 'manual' as string,
   setRunMode: vi.fn(),
-  setProjectStoryOutline: vi.fn(),
-  setProjectVisualBible: vi.fn(),
-  setProjectOutlineApproved: vi.fn(),
   setBlockingClips: vi.fn(),
 };
 const mutateSpy = vi.fn();
@@ -535,7 +520,7 @@ describe('ProjectPage live hydration', () => {
     render(<ProjectPage />);
 
     await waitFor(() => {
-      expect(storeState.setProjectVideoUrl).toHaveBeenCalledWith(null);
+      expect(storeState.projectVideoUrl).toBeNull();
     });
   });
 
@@ -735,7 +720,7 @@ describe('ProjectPage live hydration', () => {
     const { rerender } = render(<ProjectPage />);
 
     await waitFor(() => {
-      expect(storeState.setProjectTitle).toHaveBeenCalledWith('Realtime Story');
+      expect(storeState.projectTitle).toBe('Realtime Story');
     });
 
     vi.clearAllMocks();
@@ -754,22 +739,19 @@ describe('ProjectPage live hydration', () => {
     expect(storeState.setShots).toHaveBeenCalledWith([]);
     expect(storeState.clearMessages).toHaveBeenCalled();
     expect(storeState.resetRunState).toHaveBeenCalled();
-    expect(storeState.setProjectTitle).toHaveBeenCalledWith(null);
-    expect(storeState.setProjectStoryOutline).toHaveBeenCalledWith(null);
-    expect(storeState.setProjectVisualBible).toHaveBeenCalledWith(null);
-    expect(storeState.setBlockingClips).toHaveBeenCalledWith(null);
-
     await waitFor(() => {
-      expect(storeState.setProjectTitle).toHaveBeenCalledWith('Next Story');
+      expect(storeState.projectTitle).toBe('Next Story');
     });
-    const clearedTitleCallIndex = storeState.setProjectTitle.mock.calls.findIndex(
-      ([title]) => title === null,
+
+    // 顺序断言：先清空（切项目），再落到新项目标题
+    const titlePatches = storeState.patchProject.mock.calls
+      .map(([patch]) => (patch as { title?: string | null }).title)
+      .filter((t) => t !== undefined);
+    expect(titlePatches).toContain(null);
+    expect(titlePatches).toContain('Next Story');
+    expect(titlePatches.lastIndexOf('Next Story')).toBeGreaterThan(
+      titlePatches.indexOf(null),
     );
-    const nextTitleCallIndex = storeState.setProjectTitle.mock.calls.findIndex(
-      ([title]) => title === 'Next Story',
-    );
-    expect(clearedTitleCallIndex).toBeGreaterThanOrEqual(0);
-    expect(nextTitleCallIndex).toBeGreaterThan(clearedTitleCallIndex);
   });
 
   it('renders the not found page when the project query resolves empty', () => {

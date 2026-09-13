@@ -247,24 +247,30 @@ export function ProjectPage() {
 	useEffect(() => {
 		if (project) {
 			const editorStore = useEditorStore.getState();
-			editorStore.setProjectVideoUrl(project.video_url ?? null);
-			editorStore.setProjectStatus(project.status ?? null);
-			editorStore.setProjectTitle(project.title ?? null);
-			editorStore.setProjectSummary(project.summary ?? null);
-			editorStore.setProjectStory(project.story ?? null);
-			editorStore.setProjectStyle(project.style ?? null);
-			editorStore.setProjectTargetShotCount(project.target_shot_count ?? null);
-			editorStore.setProjectCharacterHints(project.character_hints ?? null);
-			editorStore.setProjectCreationMode(project.creation_mode ?? null);
-			editorStore.setProjectReferenceImages(project.reference_images ?? null);
-			editorStore.setProjectExports(project.exports ?? null);
-			editorStore.setProjectProviderSettings(project.provider_settings ?? null);
-			editorStore.setProjectUniverseId(project.universe_id ?? null);
-			editorStore.setProjectChapterNumber(project.chapter_number ?? null);
-			editorStore.setProjectChapterTitle(project.chapter_title ?? null);
-			editorStore.setProjectStoryOutline(project.story_outline ?? null);
-			editorStore.setProjectVisualBible(project.visual_bible ?? null);
-			editorStore.setProjectOutlineApproved(project.outline_approved ?? false);
+			// 单一映射点：这里与 WS 的 project_updated 都走 patchProject，
+			// 不再逐字段手抄（曾漏掉 skill_id 导致字段静默丢失）。
+			editorStore.patchProject({
+				id: project.id,
+				title: project.title,
+				story: project.story,
+				style: project.style,
+				summary: project.summary,
+				video_url: project.video_url,
+				status: project.status,
+				target_shot_count: project.target_shot_count,
+				character_hints: project.character_hints,
+				creation_mode: project.creation_mode,
+				reference_images: project.reference_images,
+				exports: project.exports,
+				provider_settings: project.provider_settings,
+				universe_id: project.universe_id,
+				chapter_number: project.chapter_number,
+				chapter_title: project.chapter_title,
+				skill_id: project.skill_id,
+				story_outline: project.story_outline,
+				visual_bible: project.visual_bible,
+				outline_approved: project.outline_approved,
+			});
 			if (runModeInitializedRef.current !== project.id) {
 				editorStore.setRunMode(
 					project.creation_mode === "quick" ? "yolo" : "manual",
@@ -298,25 +304,31 @@ export function ProjectPage() {
 		editorStore.setHighlightedMessage(null);
 		editorStore.setCharacters([]);
 		editorStore.setShots([]);
-		editorStore.setProjectVideoUrl(null);
-		editorStore.setProjectStatus(null);
-		editorStore.setProjectTitle(null);
-		editorStore.setProjectSummary(null);
-		editorStore.setProjectStory(null);
-		editorStore.setProjectStyle(null);
-		editorStore.setProjectTargetShotCount(null);
-		editorStore.setProjectCharacterHints(null);
-		editorStore.setProjectCreationMode(null);
-		editorStore.setProjectReferenceImages(null);
-		editorStore.setProjectExports(null);
-		editorStore.setProjectProviderSettings(null);
-		editorStore.setProjectUniverseId(null);
-		editorStore.setProjectChapterNumber(null);
-		editorStore.setProjectChapterTitle(null);
-		editorStore.setProjectStoryOutline(null);
-		editorStore.setProjectVisualBible(null);
-		editorStore.setProjectOutlineApproved(false);
-		editorStore.setBlockingClips(null);
+		// 清空项目字段也用同一映射点（全 null 就是「不保留」）。
+		// 逐字段手写列表曾三次与 payload 不同步。
+		editorStore.patchProject({
+			id: projectId,
+			title: null,
+			story: null,
+			style: null,
+			summary: null,
+			video_url: null,
+			status: null,
+			target_shot_count: null,
+			character_hints: null,
+			creation_mode: null,
+			reference_images: null,
+			exports: null,
+			provider_settings: null,
+			universe_id: null,
+			chapter_number: null,
+			chapter_title: null,
+			skill_id: null,
+			story_outline: null,
+			visual_bible: null,
+			outline_approved: false,
+			blocking_clips: null,
+		});
 		setLastRunStatus(null);
 		setSelectedNodeId(null);
 		setSelectedNodeIds([]);

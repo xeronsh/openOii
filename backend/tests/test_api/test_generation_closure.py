@@ -13,7 +13,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import get_app_settings, get_db_session, get_ws_manager
+from app.api.deps import get_app_settings, get_db_session, get_ws_manager, require_run_id
 from app.api.v1.routes import generation as generation_routes
 from app.main import create_app
 from app.models.agent_run import AgentRun
@@ -378,12 +378,12 @@ async def test_feedback_returns_409_when_run_active(closure_client):
 def test_require_run_id_raises_when_missing():
     run = AgentRun(project_id=1, status="queued")
     with pytest.raises(RuntimeError, match="missing an id"):
-        generation_routes._require_run_id(run)
+        require_run_id(run)
 
 
 def test_require_run_id_returns_id_when_present():
     run = AgentRun(id=42, project_id=1, status="queued")
-    assert generation_routes._require_run_id(run) == 42
+    assert require_run_id(run) == 42
 
 
 def test_thread_id_for_run_handles_missing_id():

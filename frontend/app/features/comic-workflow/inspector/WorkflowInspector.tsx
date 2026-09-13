@@ -288,8 +288,7 @@ function ProjectDraftForm({
 				story: story.trim() || null,
 			});
 			const store = useEditorStore.getState();
-			store.setProjectTitle(updated.title ?? null);
-			store.setProjectStory(updated.story ?? null);
+			store.patchProject({ id: 0, title: updated.title ?? null, story: updated.story ?? null });
 			queryClient.invalidateQueries({ queryKey: ["project", projectId] });
 			queryClient.invalidateQueries({ queryKey: ["projects"] });
 			toast.success({ title: "Brief", message: "已保存" });

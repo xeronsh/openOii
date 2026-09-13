@@ -388,8 +388,11 @@ export function applyWsEvent(
 			store.setRecoveryGate(gate);
 			store.setRecoverySummary(gate.recovery_summary);
 			if (gate.agent === "outline") {
-				store.setProjectStoryOutline(gate.story_outline ?? null);
-				store.setProjectVisualBible(gate.visual_bible ?? null);
+				store.patchProject({
+					id: 0,
+					story_outline: gate.story_outline ?? null,
+					visual_bible: gate.visual_bible ?? null,
+				});
 			}
 			applyStage(store, event.data);
 			store.addMessage({
@@ -531,50 +534,25 @@ export function applyWsEvent(
 				if (clearedTypes.includes("characters")) store.setCharacters([]);
 				if (clearedTypes.includes("shots")) store.setShots([]);
 			}
-			store.setProjectVideoUrl(null);
+			store.patchProject({ id: 0, video_url: null });
 			break;
 		}
 
 		case "outline_updated": {
 			const od = event.data as unknown as OutlineUpdatedEventData;
-			store.setProjectStoryOutline(od.story_outline ?? null);
-			store.setProjectVisualBible(od.visual_bible ?? null);
-			store.setProjectOutlineApproved(od.outline_approved);
+			store.patchProject({
+				id: 0,
+				story_outline: od.story_outline ?? null,
+				visual_bible: od.visual_bible ?? null,
+				outline_approved: od.outline_approved,
+			});
 			store.setProjectUpdatedAt(Date.now());
 			break;
 		}
 
 		case "project_updated": {
 			const pd = event.data.project as ProjectUpdatedPayload | undefined;
-			if (pd) {
-				const fieldSetters: Partial<
-					Record<keyof ProjectUpdatedPayload, (v: never) => void>
-				> = {
-					video_url: (v) => store.setProjectVideoUrl(v || null),
-					status: (v) => store.setProjectStatus(v),
-					title: (v) => store.setProjectTitle(v),
-					summary: (v) => store.setProjectSummary(v),
-					story: (v) => store.setProjectStory(v),
-					style: (v) => store.setProjectStyle(v),
-					target_shot_count: (v) => store.setProjectTargetShotCount(v),
-					character_hints: (v) => store.setProjectCharacterHints(v),
-					creation_mode: (v) => store.setProjectCreationMode(v),
-					reference_images: (v) => store.setProjectReferenceImages(v),
-					exports: (v) => store.setProjectExports(v),
-					provider_settings: (v) => store.setProjectProviderSettings(v),
-					universe_id: (v) => store.setProjectUniverseId(v),
-					chapter_number: (v) => store.setProjectChapterNumber(v),
-					chapter_title: (v) => store.setProjectChapterTitle(v),
-					story_outline: (v) => store.setProjectStoryOutline(v),
-					visual_bible: (v) => store.setProjectVisualBible(v),
-					outline_approved: (v) => store.setProjectOutlineApproved(Boolean(v)),
-					blocking_clips: (v) => store.setBlockingClips(v),
-				};
-				for (const [key, setter] of Object.entries(fieldSetters)) {
-					const val = pd[key as keyof ProjectUpdatedPayload];
-					if (val !== undefined) setter!(val as never);
-				}
-			}
+			if (pd) store.patchProject(pd);
 			store.setProjectUpdatedAt(Date.now());
 			break;
 		}

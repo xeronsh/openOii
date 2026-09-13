@@ -1058,7 +1058,7 @@ describe("useProjectWebSocket", () => {
   it("clears projectVideoUrl on data_cleared", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.setProjectVideoUrl("http://cdn/old.mp4");
+    store.patchProject({ id: 0, video_url: "http://cdn/old.mp4" });
 
     applyWsEvent(
       {
@@ -1075,7 +1075,7 @@ describe("useProjectWebSocket", () => {
   it("handles project_updated with video_url null and undefined", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.setProjectVideoUrl("http://cdn/old.mp4");
+    store.patchProject({ id: 0, video_url: "http://cdn/old.mp4" });
 
     applyWsEvent(
       {
@@ -1088,7 +1088,7 @@ describe("useProjectWebSocket", () => {
 
     expect(useEditorStore.getState().projectVideoUrl).toBeNull();
 
-    store.setProjectVideoUrl("http://cdn/new.mp4");
+    store.patchProject({ id: 0, video_url: "http://cdn/new.mp4" });
 
     applyWsEvent(
       {
@@ -1105,7 +1105,7 @@ describe("useProjectWebSocket", () => {
   it("handles project_updated with status", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.setProjectStatus(null);
+    store.patchProject({ id: 0, status: null });
 
     applyWsEvent(
       {
@@ -1180,7 +1180,7 @@ describe("useProjectWebSocket", () => {
   it("ignores project_updated status when project data is undefined", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.setProjectStatus("idle");
+    store.patchProject({ id: 0, status: "idle" });
 
     applyWsEvent(
       {
@@ -1266,7 +1266,7 @@ describe("useProjectWebSocket", () => {
     const store = useEditorStore.getState();
     store.reset();
     store.setCharacters([{ id: 1, name: "A" }] as never);
-    store.setProjectVideoUrl("http://cdn/old.mp4");
+    store.patchProject({ id: 0, video_url: "http://cdn/old.mp4" });
 
     applyWsEvent(
       {
@@ -1522,5 +1522,67 @@ describe("useProjectWebSocket", () => {
         title: "导出完成",
       })
     );
+  });
+});
+
+describe("project_updated patch coverage", () => {
+  /**
+   * 回归守卫：project_updated 曾用一个手写的 19 项映射表，
+   * 而 payload 有 21 个字段 —— 没被列出的字段会被静默丢弃（skill_id 就是）。
+   * 现在映射表是 Record<...>（编译器强制全覆盖），这里再断言运行时确实写入。
+   */
+  it("applies every payload field it is given", () => {
+    const store = useEditorStore.getState();
+    store.patchProject({
+      id: 7,
+      title: "标题",
+      story: "故事",
+      style: "anime",
+      summary: "摘要",
+      video_url: "/static/videos/a.mp4",
+      status: "ready",
+      target_shot_count: 6,
+      character_hints: ["a"],
+      creation_mode: "quick",
+      reference_images: ["/static/r.png"],
+      exports: ["/static/e.pdf"],
+      universe_id: 3,
+      chapter_number: 2,
+      chapter_title: "第二章",
+      skill_id: "quick-short",
+      visual_bible: "visual",
+      outline_approved: true,
+    });
+
+    const s = useEditorStore.getState();
+    expect(s.projectTitle).toBe("标题");
+    expect(s.projectStory).toBe("故事");
+    expect(s.projectStyle).toBe("anime");
+    expect(s.projectSummary).toBe("摘要");
+    expect(s.projectVideoUrl).toBe("/static/videos/a.mp4");
+    expect(s.projectStatus).toBe("ready");
+    expect(s.projectTargetShotCount).toBe(6);
+    expect(s.projectCharacterHints).toEqual(["a"]);
+    expect(s.projectCreationMode).toBe("quick");
+    expect(s.projectReferenceImages).toEqual(["/static/r.png"]);
+    expect(s.projectExports).toEqual(["/static/e.pdf"]);
+    expect(s.projectUniverseId).toBe(3);
+    expect(s.projectChapterNumber).toBe(2);
+    expect(s.projectChapterTitle).toBe("第二章");
+    // 曾被静默丢弃的字段
+    expect(s.projectSkillId).toBe("quick-short");
+    expect(s.projectVisualBible).toBe("visual");
+    expect(s.projectOutlineApproved).toBe(true);
+  });
+
+  it("leaves untouched fields alone (patch semantics, not replace)", () => {
+    const store = useEditorStore.getState();
+    store.patchProject({ id: 1, title: "A", status: "draft" });
+    store.patchProject({ id: 1, summary: "只改摘要" });
+
+    const s = useEditorStore.getState();
+    expect(s.projectTitle).toBe("A");
+    expect(s.projectStatus).toBe("draft");
+    expect(s.projectSummary).toBe("只改摘要");
   });
 });
