@@ -98,6 +98,32 @@ export class EngineDatabase {
       .run(runId, stage, JSON.stringify(state));
   }
 
+  checkpointStages(runId: number): string[] {
+    return (
+      this.db
+        .prepare("SELECT stage FROM engine_checkpoints WHERE run_id = ?")
+        .all(runId) as Array<{ stage: string }>
+    ).map((row) => row.stage);
+  }
+
+  deleteCheckpoints(runId: number, stages: readonly string[]): number {
+    if (stages.length === 0) return 0;
+    const placeholders = stages.map(() => "?").join(", ");
+    const info = this.db
+      .prepare(
+        `DELETE FROM engine_checkpoints WHERE run_id = ? AND stage IN (${placeholders})`,
+      )
+      .run(runId, ...stages);
+    return Number(info.changes);
+  }
+
+  clearCheckpoints(runId: number): number {
+    const info = this.db
+      .prepare("DELETE FROM engine_checkpoints WHERE run_id = ?")
+      .run(runId);
+    return Number(info.changes);
+  }
+
   latestCheckpoint(runId: number): { stage: string; state: unknown } | null {
     const row = this.db
       .prepare(
