@@ -3,8 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
+import SqliteDatabase from "better-sqlite3";
 import { createEngineApp } from "../src/index.js";
 import type { PipelineRunner } from "../src/pipeline/runner.js";
+import { installEngineRuntimeSchema } from "./test-db.js";
 
 describe("engine sidecar", () => {
   let cleanupDir: string;
@@ -15,7 +17,11 @@ describe("engine sidecar", () => {
   beforeEach(async () => {
     process.env.TEXT_PROVIDER = "fake";
     cleanupDir = mkdtempSync(join(tmpdir(), "openoii-engine-"));
-    app = createEngineApp(join(cleanupDir, "test.db"));
+    const dbFile = join(cleanupDir, "test.db");
+    const migrated = new SqliteDatabase(dbFile);
+    installEngineRuntimeSchema(migrated);
+    migrated.close();
+    app = createEngineApp(dbFile);
     server = app.server;
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
     port = (server.address() as { port: number }).port;
@@ -27,12 +33,17 @@ describe("engine sidecar", () => {
     rmSync(cleanupDir, { recursive: true, force: true });
   });
 
-  it("health reports ok with fake provider", async () => {
+  it("health reports ok with fake provider and workflow version", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/health`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; provider: string };
+    const body = (await res.json()) as {
+      status: string;
+      provider: string;
+      workflow_version: number;
+    };
     expect(body.status).toBe("ok");
     expect(body.provider).toBe("fake");
+    expect(body.workflow_version).toBe(1);
   });
 
   it("returns 400 when project_id/run_id are missing", async () => {
@@ -45,9 +56,8 @@ describe("engine sidecar", () => {
   });
 
   it("rejects a second executor for the same run id", async () => {
-    // Seed the active-execution registry directly so the test does not depend
-    // on a project fixture or provider timing. The HTTP contract must reject a
-    // duplicate start before it can create another writer for this run.
+    // Seed the active-execution registry directly so this test isolates the
+    // HTTP duplicate guard from project fixtures/provider timing.
     app.pipelines.set(77, {} as PipelineRunner);
     const res = await fetch(`http://127.0.0.1:${port}/runs`, {
       method: "POST",
@@ -55,7 +65,9 @@ describe("engine sidecar", () => {
       body: JSON.stringify({ project_id: 1, run_id: 77 }),
     });
     expect(res.status).toBe(409);
-    const body = (await res.json()) as { error: { code: string; details: { run_id: number } } };
+    const body = (await res.json()) as {
+      error: { code: string; details: { run_id: number } };
+    };
     expect(body.error.code).toBe("RUN_ALREADY_ACTIVE");
     expect(body.error.details.run_id).toBe(77);
   });
@@ -63,6 +75,19 @@ describe("engine sidecar", () => {
   it("returns 404 for unknown routes", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe("schema ownership", () => {
+  it("fails fast when Alembic runtime tables are missing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "openoii-unmigrated-"));
+    try {
+      expect(() => createEngineApp(join(dir, "empty.db"))).toThrow(
+        /engine database schema is not migrated/,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
