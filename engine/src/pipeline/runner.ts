@@ -1,9 +1,7 @@
 /**
- * Pipeline runner: the 17-stage linear state machine with 6 approval gates,
- * stage checkpoints, and critique regeneration routing (phase 4).
- *
- * Cross-process confirm: polls agentrun.confirm_requested (phase 1 column),
- * mirroring Python's wait_for_confirm_signal.
+ * Pipeline runner: the generated linear workflow with approval gates,
+ * stage checkpoints, critique regeneration routing, durable cancellation and
+ * execution fencing.
  */
 import {
   AGENT_COMPLETION_INFO,
@@ -63,11 +61,16 @@ export class PipelineRunner {
     this.cancelRequested = true;
   }
 
+  private shouldCancel(runId: number): boolean {
+    return this.cancelRequested || this.shared.runCancelRequested(runId);
+  }
+
   /**
    * Resume after an engine restart: rebuild completed stages from
    * engine_checkpoints and continue from the next pending stage.
    */
   async resume(request: PipelineRequest): Promise<PipelineOutcome> {
+    this.shared.assertExecutionFence();
     const completed = new Set<string>();
     for (const stage of PRODUCTION_STAGE_SEQUENCE) {
       const row = this.db.db
@@ -83,11 +86,11 @@ export class PipelineRunner {
     const resumeStage = NEXT_STAGE[lastCompleted];
     if (!resumeStage) return { status: "completed" };
 
-    const outcome = await this.runFromStage(request, resumeStage, completed);
-    return outcome;
+    return this.runFromStage(request, resumeStage, completed);
   }
 
   async run(request: PipelineRequest): Promise<PipelineOutcome> {
+    this.shared.assertExecutionFence();
     const startStage = request.startStage ?? "plan_outline";
     // 中途起跑（用户反馈重跑）时，把起点之前的生产阶段标记为已完成，
     // 使这些阶段对应的闸门自动放行、不重复生成。
@@ -99,11 +102,28 @@ export class PipelineRunner {
     return this.runFromStage(request, startStage, completed);
   }
 
+  private async finishCancelled(
+    request: PipelineRequest,
+    emitter: PipelineEmitter,
+  ): Promise<PipelineOutcome> {
+    this.shared.assertExecutionFence();
+    this.shared.setAwaitingPayload(request.runId, null);
+    this.shared.updateRun(request.runId, { status: "cancelled" });
+    emitter.emit("run_cancelled", {
+      run_id: request.runId,
+      project_id: request.projectId,
+      cancelled_count: 1,
+      run_ids: [request.runId],
+    });
+    return { status: "cancelled" };
+  }
+
   private async runFromStage(
     request: PipelineRequest,
     startStage: StageId,
     completedStages: Set<string>,
   ): Promise<PipelineOutcome> {
+    this.shared.assertExecutionFence();
     const project = this.shared.getProject(request.projectId);
     if (!project) return { status: "failed", error: `project ${request.projectId} not found` };
 
@@ -111,7 +131,7 @@ export class PipelineRunner {
     const media = new MediaService(mediaSettings);
     const emitter = new PipelineEmitter(this.db, this.shared, request.projectId, request.runId, {
       thinkingChainEnabled:
-        (this.db.configValue("THINKING_CHAIN_ENABLED", "THINKING_CHAIN_ENABLED", "true") === "true"),
+        this.db.configValue("THINKING_CHAIN_ENABLED", "THINKING_CHAIN_ENABLED", "true") === "true",
       thinkingDetailLevel: (this.db.configValue(
         "THINKING_CHAIN_DETAIL_LEVEL",
         "THINKING_CHAIN_DETAIL_LEVEL",
@@ -136,7 +156,9 @@ export class PipelineRunner {
       next_stage: NEXT_STAGE[startStage],
       progress: progressForStage(startStage),
       current_agent: startAgent,
-      preserved_stages: fullRun ? [] : PRODUCTION_STAGE_SEQUENCE.filter((s) => completedStages.has(s)),
+      preserved_stages: fullRun
+        ? []
+        : PRODUCTION_STAGE_SEQUENCE.filter((s) => completedStages.has(s)),
     });
     if (fullRun) {
       emitter.emit("data_cleared", {
@@ -157,7 +179,7 @@ export class PipelineRunner {
       userFeedback: request.userFeedback,
       critiqueRounds: { characters: 0, shots: 0 },
       critiqueEnabled:
-        (this.db.configValue("CRITIQUE_ENABLED", "CRITIQUE_ENABLED", "true") === "true"),
+        this.db.configValue("CRITIQUE_ENABLED", "CRITIQUE_ENABLED", "true") === "true",
       critiqueScoreThreshold: Number(
         this.db.configValue("CRITIQUE_SCORE_THRESHOLD", "CRITIQUE_SCORE_THRESHOLD", "6") ?? 6,
       ),
@@ -174,14 +196,9 @@ export class PipelineRunner {
     try {
       while (stage !== null && guard < 64) {
         guard += 1;
-        if (this.cancelRequested) {
-          emitter.emit("run_cancelled", {
-            run_id: request.runId,
-            project_id: request.projectId,
-            cancelled_count: 1,
-          });
-          this.shared.updateRun(request.runId, { status: "cancelled" });
-          return { status: "cancelled" };
+        this.shared.assertExecutionFence();
+        if (this.shouldCancel(request.runId)) {
+          return await this.finishCancelled(request, emitter);
         }
 
         if (stage === "review") {
@@ -189,13 +206,15 @@ export class PipelineRunner {
         }
 
         if (isGate(stage)) {
-          // gates whose production stage already completed are auto-approved
           const produced = APPROVAL_TO_PRODUCED_STAGE[stage];
           if (produced && completedSet.has(produced)) {
             stage = NEXT_STAGE[stage] as StageId;
             continue;
           }
           await this.runGate(stage, request, ctx);
+          if (this.shouldCancel(request.runId)) {
+            return await this.finishCancelled(request, emitter);
+          }
           stage = NEXT_STAGE[stage] as StageId;
           continue;
         }
@@ -203,11 +222,14 @@ export class PipelineRunner {
         if (isCritique(stage)) {
           const entityType = stage === "critique_character_images" ? "character" : "shot";
           const outcome = await runCritique(ctx, entityType);
+          this.shared.assertExecutionFence();
+          if (this.shouldCancel(request.runId)) {
+            return await this.finishCancelled(request, emitter);
+          }
           const roundsKey: "characters" | "shots" =
             entityType === "character" ? "characters" : "shots";
           ctx.critiqueRounds[roundsKey] += 1;
           if (outcome.willRegenerate) {
-            // route back to the production render stage (max rounds enforced)
             stage = entityType === "character" ? "render_characters" : "render_shots";
             continue;
           }
@@ -216,16 +238,25 @@ export class PipelineRunner {
         }
 
         await this.runProduction(stage, ctx, request);
+        // External calls are at-least-once. Before recording completion, verify
+        // this runner still owns the fencing token and that cancellation was not
+        // requested while the provider call was in flight.
+        this.shared.assertExecutionFence();
+        if (this.shouldCancel(request.runId)) {
+          return await this.finishCancelled(request, emitter);
+        }
         this.db.saveCheckpoint(request.runId, stage, {
           completed_at: new Date().toISOString(),
         });
-        if (stage === "compose_merge") {
-          // compose_approval guards add_audio per APPROVAL_TO_PRODUCED_STAGE
-        }
+        completedSet.add(stage);
         stage = NEXT_STAGE[stage] as StageId;
       }
 
-      // post-graph compose validation (orchestrator parity)
+      this.shared.assertExecutionFence();
+      if (this.shouldCancel(request.runId)) {
+        return await this.finishCancelled(request, emitter);
+      }
+
       const finalProject = this.shared.getProject(request.projectId);
       if (!finalProject?.video_url && !videoSkippedFor(this.db, request.runId)) {
         throw new Error(
@@ -233,6 +264,13 @@ export class PipelineRunner {
         );
       }
       this.shared.updateProject(request.projectId, { status: "ready" });
+      // Persist terminal projection before publishing the terminal event so a
+      // reconnect hydration can never observe running after seeing completion.
+      this.shared.updateRun(request.runId, {
+        status: "succeeded",
+        progress: 1,
+        awaiting_payload: null,
+      });
       emitter.emit("run_completed", {
         run_id: request.runId,
         project_id: request.projectId,
@@ -241,12 +279,23 @@ export class PipelineRunner {
         message: null,
         video_generation_pending: null,
       });
-      // flip status AFTER the terminal event row exists (WS bridge tailing)
-      this.shared.updateRun(request.runId, { status: "succeeded", progress: 1 });
       return { status: "completed" };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+
+      // A stale executor must stop silently: its fencing token no longer gives
+      // it authority to mutate the run or project.
+      if (message.startsWith("execution lease lost for run")) {
+        return { status: "failed", error: message };
+      }
+
+      if (this.shouldCancel(request.runId)) {
+        return await this.finishCancelled(request, emitter);
+      }
+
+      this.shared.assertExecutionFence();
       this.shared.updateProject(request.projectId, { status: "failed" });
+      this.shared.updateRun(request.runId, { status: "failed", error: message });
       emitter.emit("project_updated", { project: { id: request.projectId, status: "failed" } });
       emitter.emit("run_failed", {
         run_id: request.runId,
@@ -255,15 +304,19 @@ export class PipelineRunner {
         agent: null,
         current_stage: null,
       });
-      this.shared.updateRun(request.runId, { status: "failed", error: message });
       return { status: "failed", error: message };
     }
   }
 
-  private async runProduction(stage: StageId, ctx: StageContext, request: PipelineRequest): Promise<void> {
+  private async runProduction(
+    stage: StageId,
+    ctx: StageContext,
+    request: PipelineRequest,
+  ): Promise<void> {
     const agent = agentForStage(stage);
     ctx.completionInfo = null;
     this.shared.updateRun(request.runId, {
+      status: "running",
       current_agent: agent,
       progress: progressForStage(stage, 0),
     });
@@ -303,15 +356,16 @@ export class PipelineRunner {
       case "critique_character_images":
       case "critique_shot_images":
       case "review":
-        // gates and critique stages are handled by dedicated branches
         throw new Error(`stage ${stage} reached runProduction`);
     }
-    void request;
   }
 
-  private async runGate(stage: StageId, request: PipelineRequest, ctx: StageContext): Promise<void> {
+  private async runGate(
+    stage: StageId,
+    request: PipelineRequest,
+    ctx: StageContext,
+  ): Promise<void> {
     const gateAgent = GATE_AGENT[stage] ?? agentForStage(stage);
-    const produced = APPROVAL_TO_PRODUCED_STAGE[stage];
     const currentStage = stage;
     const nextStage = NEXT_STAGE[stage];
 
@@ -327,7 +381,6 @@ export class PipelineRunner {
       .filter((part) => part && part.trim())
       .join("\n");
 
-    // 清理上一轮遗留的 confirm（避免误触直接跳过等待）
     this.shared.clearConfirmSignal(request.runId);
 
     const awaitingPayload: Record<string, unknown> = {
@@ -358,11 +411,16 @@ export class PipelineRunner {
       }
     }
 
+    this.shared.updateRun(request.runId, {
+      status: "waiting_for_approval",
+      current_agent: gateAgent,
+    });
     this.shared.setAwaitingPayload(request.runId, awaitingPayload);
     ctx.emitter.emit("run_awaiting_confirm", awaitingPayload);
 
     if (request.autoMode) {
       this.shared.setAwaitingPayload(request.runId, null);
+      this.shared.updateRun(request.runId, { status: "running" });
       const postStage = nextStage ?? currentStage;
       ctx.emitter.emit("run_confirmed", {
         run_id: request.runId,
@@ -384,9 +442,11 @@ export class PipelineRunner {
 
     const approved = await this.waitForConfirm(request.runId);
     if (!approved) {
+      if (this.shouldCancel(request.runId)) return;
       throw new Error(`等待确认超时（agent: ${gateAgent}）`);
     }
     this.shared.setAwaitingPayload(request.runId, null);
+    this.shared.updateRun(request.runId, { status: "running" });
 
     const postStage = nextStage ?? currentStage;
     ctx.emitter.emit("run_confirmed", {
@@ -404,13 +464,13 @@ export class PipelineRunner {
         current_stage: postStage,
       },
     });
-    // 提交当前事务语义：noop for better-sqlite3 (autocommit per statement)
   }
 
   private async waitForConfirm(runId: number): Promise<boolean> {
     const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      if (this.cancelRequested) return false;
+      this.shared.assertExecutionFence();
+      if (this.shouldCancel(runId)) return false;
       if (this.shared.consumeConfirmSignal(runId)) return true;
       await sleep(CONFIRM_POLL_MS);
     }
@@ -429,7 +489,10 @@ function isCritique(stage: StageId): boolean {
 function videoSkippedFor(db: EngineDatabase, runId: number): boolean {
   const cp = db.latestCheckpoint(runId);
   return Boolean(
-    cp && typeof cp.state === "object" && cp.state !== null && (cp.state as { videoSkipped?: boolean }).videoSkipped,
+    cp &&
+      typeof cp.state === "object" &&
+      cp.state !== null &&
+      (cp.state as { videoSkipped?: boolean }).videoSkipped,
   );
 }
 
