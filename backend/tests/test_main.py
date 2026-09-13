@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from app import main as main_module
@@ -601,3 +604,55 @@ async def test_ws_projects_message_exception_sends_error(monkeypatch):
         if e[1].get("type") == "error" and e[1].get("data", {}).get("code") == "WS_MESSAGE_ERROR"
     ]
     assert len(msg_errors) >= 1
+
+
+@pytest.mark.asyncio
+async def test_http_exception_handler_uses_error_envelope(monkeypatch):
+    """HTTPException 必须转成 {"error":{code,message}}。
+
+    回归守卫：FastAPI 默认回 {"detail": ...}，而前端只解析 {"error": {...}}，
+    所以 4xx 的用户文案会静默退化成 statusText（例如把
+    "This character is already being regenerated" 变成 "Conflict"）。
+    """
+    settings = SimpleNamespace(
+        app_name="openOii",
+        cors_origins=[],
+        api_v1_prefix="/api/v1",
+        environment="development",
+    )
+    monkeypatch.setattr(main_module, "get_settings", lambda: settings)
+    app = main_module.create_app()
+    handler = app.exception_handlers[HTTPException]
+
+    for status_code, expected_code in ((409, "CONFLICT"), (404, "NOT_FOUND"), (400, "BAD_REQUEST")):
+        exc = HTTPException(status_code=status_code, detail="具体原因")
+        response = await handler(
+            SimpleNamespace(url=SimpleNamespace(path="/x"), method="GET"), exc
+        )
+        assert response.status_code == status_code
+        body = json.loads(response.body)
+        assert body == {
+            "error": {"code": expected_code, "message": "具体原因", "details": {}}
+        }, f"{status_code} 的错误体形状不对"
+
+
+@pytest.mark.asyncio
+async def test_validation_error_handler_uses_error_envelope(monkeypatch):
+    settings = SimpleNamespace(
+        app_name="openOii",
+        cors_origins=[],
+        api_v1_prefix="/api/v1",
+        environment="development",
+    )
+    monkeypatch.setattr(main_module, "get_settings", lambda: settings)
+    app = main_module.create_app()
+    handler = app.exception_handlers[RequestValidationError]
+
+    exc = RequestValidationError([{"type": "missing", "loc": ("query", "x"), "msg": "Field required"}])
+    response = await handler(
+        SimpleNamespace(url=SimpleNamespace(path="/x"), method="GET"), exc
+    )
+    assert response.status_code == 422
+    body = json.loads(response.body)
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert body["error"]["details"]["errors"]

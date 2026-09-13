@@ -240,7 +240,7 @@ async def test_import_character_rejects_cross_universe_project(async_client, tes
             f"/api/v1/universes/projects/{pid}/import-character/{shared.id}"
         )
         assert res.status_code == 400
-        assert "universe" in res.json()["detail"].lower()
+        assert "universe" in res.json()["error"]["message"].lower()
 
     # 跨宇宙导入被拒后，目标项目不应出现该角色
     chars = await test_session.execute(

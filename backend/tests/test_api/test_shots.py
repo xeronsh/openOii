@@ -686,4 +686,4 @@ async def test_validate_shot_unknown_character_ids(async_client, test_session):
 
     res = await async_client.post(f"/api/v1/shots/{shot.id}/approve")
     assert res.status_code == 400
-    assert "Unknown character_ids" in res.json()["detail"]
+    assert "Unknown character_ids" in res.json()["error"]["message"]

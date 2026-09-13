@@ -474,7 +474,7 @@ async def test_resume_run_mismatched_project_id(async_client, test_session):
         json={"run_id": run.id},
     )
     assert res.status_code == 404
-    assert "Run not found" in res.json()["detail"]
+    assert "Run not found" in res.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

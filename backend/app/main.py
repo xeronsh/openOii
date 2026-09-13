@@ -6,8 +6,10 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect, WebSocketState
@@ -47,6 +49,24 @@ async def lifespan(_: FastAPI):
     yield
 
 
+# HTTP 状态码 → 稳定机器码：前端可以依赖这些 code 分支，而不必解析中文文案。
+_HTTP_STATUS_CODES: dict[int, str] = {
+    400: "BAD_REQUEST",
+    403: "FORBIDDEN",
+    404: "NOT_FOUND",
+    405: "METHOD_NOT_ALLOWED",
+    409: "CONFLICT",
+    413: "PAYLOAD_TOO_LARGE",
+    415: "UNSUPPORTED_MEDIA_TYPE",
+    422: "UNPROCESSABLE_ENTITY",
+    429: "TOO_MANY_REQUESTS",
+    500: "INTERNAL_ERROR",
+    502: "BAD_GATEWAY",
+    503: "SERVICE_UNAVAILABLE",
+    504: "GATEWAY_TIMEOUT",
+}
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -66,6 +86,50 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     # 全局异常处理器
+    #
+    # 统一错误体：{"error": {"code", "message", "details"}}。
+    # 关键：HTTPException 与 RequestValidationError 也要转成这个形状 ——
+    # FastAPI 默认回 {"detail": ...}，而前端只解析 {"error": {...}}，
+    # 于是所有 4xx 的用户可见文案都会静默退化成 statusText（例如 "Conflict"）。
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        detail = exc.detail
+        fallback_code = _HTTP_STATUS_CODES.get(exc.status_code, f"HTTP_{exc.status_code}")
+        if isinstance(detail, dict):
+            code = str(detail.get("code") or fallback_code)
+            message = str(detail.get("message") or detail.get("detail") or fallback_code)
+            details = detail.get("details") or {
+                k: v for k, v in detail.items() if k not in ("code", "message", "details")
+            }
+        else:
+            code = fallback_code
+            message = str(detail)
+            details = {}
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": {
+                    "code": code,
+                    "message": message,
+                    "details": details,
+                }
+            },
+            headers=getattr(exc, "headers", None),
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "请求参数校验失败",
+                    "details": {"errors": jsonable_encoder(exc.errors())},
+                }
+            },
+        )
+
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException):
         """处理自定义应用异常"""
