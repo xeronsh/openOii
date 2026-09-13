@@ -189,11 +189,10 @@ class CharacterRead(BaseModel):
             if "has_embedding" not in data and "face_embedding" in data:
                 data["has_embedding"] = bool(data.get("face_embedding"))
         elif hasattr(data, "face_embedding"):
-            if not isinstance(data, dict):
-                try:
-                    data.__dict__["has_embedding"] = bool(getattr(data, "face_embedding", None))
-                except (AttributeError, TypeError):
-                    pass
+            try:
+                data.__dict__["has_embedding"] = bool(getattr(data, "face_embedding", None))
+            except (AttributeError, TypeError):
+                pass
         return data
 
 
@@ -366,4 +365,87 @@ class FeedbackRequest(BaseModel):
     feedback_type: str | None = None
     entity_type: str | None = None
     entity_id: int | None = None
+    """Primary selected entity (back-compat)."""
     entity_ids: list[int] | None = None
+    """Multi-select 九宫格 / cast binding — all targeted entity ids."""
+
+
+class FillEmptyShotsRequest(BaseModel):
+    """补齐九宫格空格：只生成缺少首帧或视频的分镜。"""
+
+    type: Literal["image", "video"] = "image"
+
+
+class MessageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    run_id: int | None
+    agent: str
+    role: str
+    content: str
+    summary: str | None
+    progress: float | None
+    is_loading: bool
+    created_at: datetime
+
+
+class AssetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    asset_type: Literal["character", "scene"]
+    description: str | None = None
+    image_url: str | None = None
+    metadata_json: str | None = None
+    source_project_id: int | None = None
+    tags: str | None = None
+
+
+class UseAssetInProjectRequest(BaseModel):
+    project_id: int
+
+
+class AssetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    asset_type: str
+    description: str | None
+    image_url: str | None
+    metadata_json: str | None
+    source_project_id: int | None
+    tags: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AssetListRead(BaseModel):
+    items: list[AssetRead]
+    total: int
+
+
+class CharacterBibleRead(BaseModel):
+    """角色圣经 — visual_notes + reference_images + embedding 状态 + 相似度"""
+
+    character_id: int
+    name: str
+    description: str | None
+    visual_notes: str | None
+    reference_images: list[str] = Field(default_factory=list)
+    has_embedding: bool = False
+    similarity_scores: list[dict[str, object]] = Field(default_factory=list)
+
+
+class CharacterBibleUpdate(BaseModel):
+    """更新角色圣经"""
+
+    visual_notes: str | None = None
+    reference_images: list[str] | None = None
+
+
+class ReferenceImageCreate(BaseModel):
+    """添加参考图 URL"""
+
+    image_url: str = Field(min_length=1)
+    label: str | None = None
