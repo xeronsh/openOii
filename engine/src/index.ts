@@ -7,14 +7,19 @@
  * GET  /runs/:id/events?after=N
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { Database as SqliteDatabase } from "better-sqlite3";
 import { EngineDatabase } from "./db.js";
 import { TextLlmService } from "./llm.js";
 import { RunManager } from "./runner.js";
+import { SharedDb } from "./shared-db.js";
+import { PipelineRunner } from "./pipeline/runner.js";
 
 export function createEngineApp(dbPath: string) {
   const db = new EngineDatabase(dbPath);
   const llm = new TextLlmService(db);
   const runs = new RunManager(db, llm);
+  const shared = new SharedDb(db.db);
+  const pipelines = new Map<number, PipelineRunner>();
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -37,19 +42,32 @@ export function createEngineApp(dbPath: string) {
         send(400, { error: "project_id and run_id are required" });
         return;
       }
-      const handle = await runs.start({
-        projectId,
-        runId,
-        stage: typeof body.stage === "string" ? body.stage : undefined,
-        autoMode: Boolean(body.auto_mode),
-      });
-      send(202, { status: handle.phase, run_id: runId, project_id: projectId });
+      const stage = typeof body.stage === "string" ? body.stage : "full";
+      if (stage === "smoke") {
+        const handle = await runs.start({ projectId, runId, stage, autoMode: Boolean(body.auto_mode) });
+        send(202, { status: handle.phase, run_id: runId, project_id: projectId });
+        return;
+      }
+      // full pipeline (phase 4 state machine)
+      const runner = new PipelineRunner(db, shared, llm);
+      pipelines.set(runId, runner);
+      void runner
+        .run({
+          projectId,
+          runId,
+          autoMode: Boolean(body.auto_mode),
+          userFeedback: typeof body.user_feedback === "string" ? body.user_feedback : "",
+        })
+        .finally(() => pipelines.delete(runId));
+      send(202, { status: "running", run_id: runId, project_id: projectId });
       return;
     }
 
     if (runMatch && req.method === "POST" && runMatch[2] === "/cancel") {
-      const ok = runs.cancel(Number(runMatch[1]));
-      send(ok ? 200 : 404, { status: ok ? "cancelling" : "unknown_run" });
+      const runId = Number(runMatch[1]);
+      const okSmoke = runs.cancel(runId);
+      pipelines.get(runId)?.requestCancel();
+      send(okSmoke ? 200 : 202, { status: "cancelling" });
       return;
     }
 
@@ -80,7 +98,7 @@ export function createEngineApp(dbPath: string) {
     });
   });
 
-  return { server, db, runs, llm };
+  return { server, db, runs, llm, shared, pipelines };
 }
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
