@@ -10,14 +10,8 @@ from app.agents.orchestrator import (
     _resume_agent_for_stage,
     _video_generation_skipped_in_result,
     clear_awaiting_payload,
-    clear_confirm_event_redis,
     get_awaiting_payload,
-    get_awaiting_payload_key,
-    get_confirm_channel,
-    get_confirm_event_key,
     store_awaiting_payload,
-    trigger_confirm_redis,
-    wait_for_confirm_redis,
 )
 from app.config import Settings
 
@@ -167,174 +161,6 @@ def test_stage_helpers_and_state_building():
     )
     assert state["current_stage"] == "plan"
     assert state["route_stage"] == "plan"
-
-
-@pytest.mark.asyncio
-async def test_redis_helpers_round_trip(monkeypatch):
-    class FakePubSub:
-        async def subscribe(self, channel):
-            self.channel = channel
-
-        async def unsubscribe(self, channel):
-            self.unsubscribed = channel
-
-        async def close(self):
-            self.closed = True
-
-        async def get_message(self, ignore_subscribe_messages=True, timeout=1.0):
-            return {"type": "message"}
-
-    class FakeRedis:
-        def __init__(self):
-            self.values = {}
-            self.published = []
-
-        async def set(self, key, value, ex=None):
-            self.values[key] = value
-
-        async def get(self, key):
-            return self.values.get(key)
-
-        async def delete(self, key):
-            self.values.pop(key, None)
-
-        async def publish(self, channel, message):
-            self.published.append((channel, message))
-
-        def pubsub(self):
-            return FakePubSub()
-
-    fake = FakeRedis()
-
-    async def _get_fake_redis():
-        return fake
-
-    monkeypatch.setattr("app.agents.orchestrator.get_redis", _get_fake_redis)
-
-    payload = {"run_id": 1, "project_id": 2}
-    await store_awaiting_payload(1, payload)
-    assert await get_awaiting_payload(1) == payload
-    assert get_awaiting_payload_key(1) == "openoii:awaiting:1"
-    assert get_confirm_event_key(1) == "openoii:confirm:1"
-    assert get_confirm_channel(1) == "openoii:confirm_channel:1"
-
-    await trigger_confirm_redis(1)
-    assert fake.published == [("openoii:confirm_channel:1", "confirm")]
-
-    await clear_confirm_event_redis(1)
-    await clear_awaiting_payload(1)
-
-
-@pytest.mark.asyncio
-async def test_wait_for_confirm_redis_returns_true_from_key_and_timeout(monkeypatch):
-    class FakePubSub:
-        async def subscribe(self, channel):
-            self.channel = channel
-
-        async def unsubscribe(self, channel):
-            self.unsubscribed = channel
-
-        async def close(self):
-            self.closed = True
-
-        async def get_message(self, ignore_subscribe_messages=True, timeout=1.0):
-            return None
-
-    class FakeRedis:
-        def __init__(self):
-            self.values = {get_confirm_event_key(1): "1"}
-
-        async def get(self, key):
-            return self.values.get(key)
-
-        async def delete(self, key):
-            self.values.pop(key, None)
-
-        def pubsub(self):
-            return FakePubSub()
-
-    fake = FakeRedis()
-
-    async def _get_fake_redis():
-        return fake
-
-    monkeypatch.setattr("app.agents.orchestrator.get_redis", _get_fake_redis)
-    assert await wait_for_confirm_redis(1, timeout=1) is True
-
-
-@pytest.mark.asyncio
-async def test_wait_for_confirm_redis_returns_true_from_pubsub_message(monkeypatch):
-    class FakePubSub:
-        def __init__(self):
-            self.calls = 0
-
-        async def subscribe(self, channel):
-            self.channel = channel
-
-        async def unsubscribe(self, channel):
-            self.unsubscribed = channel
-
-        async def close(self):
-            self.closed = True
-
-        async def get_message(self, ignore_subscribe_messages=True, timeout=1.0):
-            self.calls += 1
-            return {"type": "message"} if self.calls == 1 else None
-
-    class FakeRedis:
-        def __init__(self):
-            self.values = {}
-
-        async def get(self, key):
-            return self.values.get(key)
-
-        async def delete(self, key):
-            self.values.pop(key, None)
-
-        def pubsub(self):
-            return FakePubSub()
-
-    fake = FakeRedis()
-
-    async def _get_fake_redis():
-        return fake
-
-    monkeypatch.setattr("app.agents.orchestrator.get_redis", _get_fake_redis)
-    assert await wait_for_confirm_redis(1, timeout=1) is True
-
-
-@pytest.mark.asyncio
-async def test_wait_for_confirm_redis_times_out(monkeypatch):
-    class FakePubSub:
-        async def subscribe(self, channel):
-            self.channel = channel
-
-        async def unsubscribe(self, channel):
-            self.unsubscribed = channel
-
-        async def close(self):
-            self.closed = True
-
-        async def get_message(self, ignore_subscribe_messages=True, timeout=1.0):
-            return None
-
-    class FakeRedis:
-        async def get(self, key):
-            return None
-
-        async def delete(self, key):
-            return None
-
-        def pubsub(self):
-            return FakePubSub()
-
-    fake = FakeRedis()
-
-    async def _get_fake_redis():
-        return fake
-
-    monkeypatch.setattr("app.agents.orchestrator.get_redis", _get_fake_redis)
-    assert await wait_for_confirm_redis(1, timeout=0) is False
 
 
 @pytest.mark.asyncio
@@ -596,7 +422,7 @@ async def test_run_from_agent_handles_failure_and_sends_failed(monkeypatch):
 
     monkeypatch.setattr(orchestrator, "_cleanup_for_rerun", boom)
     monkeypatch.setattr(orchestrator, "_agent_index", lambda name: 0)
-    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_event_redis", noop_async)
+    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_signal", noop_async)
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", noop_async)
 
     await orchestrator.run_from_agent(
@@ -670,7 +496,7 @@ async def test_resume_from_recovery_happy_path(monkeypatch):
     monkeypatch.setattr(orchestrator, "_log", fake_log)
     monkeypatch.setattr(orchestrator, "_agent_index", lambda name: 0)
     monkeypatch.setattr(
-        "app.agents.orchestrator.clear_confirm_event_redis", lambda run_id: fake_log()
+        "app.agents.orchestrator.clear_confirm_signal", lambda run_id: fake_log()
     )
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", lambda run_id: fake_log())
 
@@ -728,7 +554,7 @@ async def test_run_from_agent_happy_path(monkeypatch):
     monkeypatch.setattr(orchestrator, "_set_run", set_run)
     monkeypatch.setattr(orchestrator, "_log", noop_async)
     monkeypatch.setattr(orchestrator, "_agent_index", lambda name: 0)
-    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_event_redis", noop_async)
+    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_signal", noop_async)
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", noop_async)
 
     await orchestrator.run_from_agent(
@@ -796,7 +622,7 @@ async def test_run_from_agent_review_branch(monkeypatch):
     monkeypatch.setattr(orchestrator, "_agent_index", lambda name: 0)
     # _agent_index is mocked to 0, so review_agent resolves to agents[0]
     monkeypatch.setattr(orchestrator.agents[0], "run", fake_review_run)
-    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_event_redis", noop_async)
+    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_signal", noop_async)
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", noop_async)
 
     await orchestrator.run_from_agent(
@@ -1341,9 +1167,9 @@ async def test_wait_for_confirm_timeout(monkeypatch):
         return False
 
     monkeypatch.setattr("app.agents.orchestrator.build_recovery_summary", fake_recovery)
-    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_event_redis", noop)
+    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_signal", noop)
     monkeypatch.setattr("app.agents.orchestrator.store_awaiting_payload", noop)
-    monkeypatch.setattr("app.agents.orchestrator.wait_for_confirm_redis", fake_wait_confirm)
+    monkeypatch.setattr("app.agents.orchestrator.wait_for_confirm_signal", fake_wait_confirm)
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", noop)
 
     with pytest.raises(RuntimeError, match="等待确认超时"):
@@ -1381,9 +1207,9 @@ async def test_wait_for_confirm_with_user_feedback(monkeypatch):
         return True
 
     monkeypatch.setattr("app.agents.orchestrator.build_recovery_summary", fake_recovery)
-    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_event_redis", noop)
+    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_signal", noop)
     monkeypatch.setattr("app.agents.orchestrator.store_awaiting_payload", noop)
-    monkeypatch.setattr("app.agents.orchestrator.wait_for_confirm_redis", fake_wait_confirm)
+    monkeypatch.setattr("app.agents.orchestrator.wait_for_confirm_signal", fake_wait_confirm)
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", noop)
 
     result = await orchestrator._wait_for_confirm(1, run, "director")
@@ -1419,9 +1245,9 @@ async def test_wait_for_confirm_no_feedback_returns_none(monkeypatch):
         return True
 
     monkeypatch.setattr("app.agents.orchestrator.build_recovery_summary", fake_recovery)
-    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_event_redis", noop)
+    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_signal", noop)
     monkeypatch.setattr("app.agents.orchestrator.store_awaiting_payload", noop)
-    monkeypatch.setattr("app.agents.orchestrator.wait_for_confirm_redis", fake_wait_confirm)
+    monkeypatch.setattr("app.agents.orchestrator.wait_for_confirm_signal", fake_wait_confirm)
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", noop)
 
     result = await orchestrator._wait_for_confirm(1, run, "director")
@@ -1464,9 +1290,9 @@ async def test_wait_for_confirm_confirmed_uses_refreshed_recovery(monkeypatch):
         return True
 
     monkeypatch.setattr("app.agents.orchestrator.build_recovery_summary", fake_recovery)
-    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_event_redis", noop)
+    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_signal", noop)
     monkeypatch.setattr("app.agents.orchestrator.store_awaiting_payload", noop)
-    monkeypatch.setattr("app.agents.orchestrator.wait_for_confirm_redis", fake_wait_confirm)
+    monkeypatch.setattr("app.agents.orchestrator.wait_for_confirm_signal", fake_wait_confirm)
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", noop)
 
     await orchestrator._wait_for_confirm(

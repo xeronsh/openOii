@@ -1,9 +1,8 @@
-"""Targeted unit tests for orchestrator helpers, redis utilities and cleanup logic."""
+"""Targeted unit tests for orchestrator helpers, run confirm signal and cleanup logic."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,12 +14,11 @@ from app.agents.orchestrator import (
     _resume_agent_for_stage,
     _video_generation_skipped_in_result,
     clear_awaiting_payload,
-    clear_confirm_event_redis,
+    clear_confirm_signal,
     get_awaiting_payload,
-    get_redis,
     store_awaiting_payload,
-    trigger_confirm_redis,
-    wait_for_confirm_redis,
+    trigger_confirm_signal,
+    wait_for_confirm_signal,
 )
 from app.config import Settings
 from app.models.project import Character, Shot
@@ -65,191 +63,82 @@ class TestPureHelpers:
 
 
 # ---------------------------------------------------------------------------
-# Redis helpers (using fake redis client)
+# Confirm signal + awaiting payload（agentrun 列的 DB 实现）
 # ---------------------------------------------------------------------------
 
 
-class _FakeRedis:
-    """Minimal in-memory async redis stub that supports the ops the helpers use."""
-
-    def __init__(self) -> None:
-        self.store: dict[str, str] = {}
-        self.published: list[tuple[str, str]] = []
-
-    async def set(self, key: str, value: str, ex: int | None = None) -> None:
-        self.store[key] = value
-
-    async def get(self, key: str) -> str | None:
-        return self.store.get(key)
-
-    async def delete(self, key: str) -> int:
-        return 1 if self.store.pop(key, None) is not None else 0
-
-    async def publish(self, channel: str, message: str) -> int:
-        self.published.append((channel, message))
-        return 1
-
-    async def expire(self, key: str, ttl: int) -> None:
-        # no-op for tests
-        return None
-
-    def pubsub(self):
-        return _FakePubSub(self)
-
-
-class _FakePubSub:
-    def __init__(self, redis: _FakeRedis) -> None:
-        self.redis = redis
-        self._subscribed: set[str] = set()
-
-    async def subscribe(self, *channels: str) -> None:
-        self._subscribed.update(channels)
-
-    async def unsubscribe(self, *channels: str) -> None:
-        for c in channels:
-            self._subscribed.discard(c)
-
-    async def get_message(self, ignore_subscribe_messages: bool = True, timeout: float = 1.0):
-        await asyncio.sleep(0)
-        return None
-
-    async def close(self) -> None:
-        return None
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_exc):
-        return None
-
-
 @pytest.fixture
-async def fake_redis(monkeypatch):
-    fake = _FakeRedis()
-
-    async def _factory():
-        return fake
-
-    monkeypatch.setattr("app.agents.orchestrator.get_redis", _factory)
-    return fake
+async def signal_db(test_db_engine_sessionmaker, monkeypatch):
+    """Patch app.db.session.async_session_maker to the test sessionmaker."""
+    _, session_maker = test_db_engine_sessionmaker
+    monkeypatch.setattr("app.db.session.async_session_maker", session_maker)
+    return session_maker
 
 
 @pytest.mark.asyncio
-async def test_get_redis_returns_singleton(monkeypatch):
-    """get_redis() module-level should reuse one client instance."""
-    import app.agents.orchestrator as orch
+async def test_trigger_confirm_signal_sets_flag(signal_db, test_session):
+    from tests.factories import create_project, create_run
 
-    monkeypatch.setattr(orch, "_redis_client", None)
-
-    created: list[Any] = []
-
-    class _Client:
-        async def ping(self):
-            return True
-
-    def _from_url(*_a, **_kw):
-        c = _Client()
-        created.append(c)
-        return c
-
-    fake_redis_module = SimpleNamespace(from_url=_from_url, Redis=object)
-    monkeypatch.setattr(orch, "redis", fake_redis_module)
-
-    a = await get_redis()
-    b = await get_redis()
-    assert a is b
-    assert len(created) == 1
+    project = await create_project(test_session)
+    run = await create_run(test_session, project.id)
+    ok = await trigger_confirm_signal(run.id)
+    assert ok is True
+    await test_session.refresh(run)
+    assert run.confirm_requested is True
 
 
 @pytest.mark.asyncio
-async def test_store_awaiting_payload_writes_json(fake_redis):
-    payload = {"foo": "bar", "n": 1}
-    await store_awaiting_payload(123, payload)
-    raw = fake_redis.store["openoii:awaiting:123"]
-    assert json.loads(raw) == payload
+async def test_trigger_confirm_signal_missing_run_is_noop(signal_db):
+    ok = await trigger_confirm_signal(424242)
+    assert ok is True
 
 
 @pytest.mark.asyncio
-async def test_store_awaiting_payload_swallow_redis_error(monkeypatch):
-    async def _raising():
-        raise RuntimeError("redis down")
+async def test_wait_for_confirm_signal_consumes_flag(signal_db, test_session):
+    from tests.factories import create_project, create_run
 
-    monkeypatch.setattr("app.agents.orchestrator.get_redis", _raising)
-
-    # Should not raise even when redis is unreachable.
-    await store_awaiting_payload(1, {"a": 1})
-
-
-@pytest.mark.asyncio
-async def test_clear_awaiting_payload_swallow_redis_error(monkeypatch):
-    async def _raising():
-        raise RuntimeError("redis down")
-
-    monkeypatch.setattr("app.agents.orchestrator.get_redis", _raising)
-    await clear_awaiting_payload(1)
+    project = await create_project(test_session)
+    run = await create_run(test_session, project.id)
+    await trigger_confirm_signal(run.id)
+    ok = await wait_for_confirm_signal(run.id, timeout=2)
+    assert ok is True
+    await test_session.refresh(run)
+    assert run.confirm_requested is False
 
 
 @pytest.mark.asyncio
-async def test_get_awaiting_payload_returns_dict(fake_redis):
-    fake_redis.store["openoii:awaiting:7"] = json.dumps({"x": 9})
-    out = await get_awaiting_payload(7)
-    assert out == {"x": 9}
+async def test_wait_for_confirm_signal_timeout(signal_db, test_session):
+    from tests.factories import create_project, create_run
+
+    project = await create_project(test_session)
+    run = await create_run(test_session, project.id)
+    ok = await wait_for_confirm_signal(run.id, timeout=1)
+    assert ok is False
 
 
 @pytest.mark.asyncio
-async def test_get_awaiting_payload_redis_error_returns_none(monkeypatch):
-    async def _raising():
-        raise RuntimeError("redis down")
+async def test_awaiting_payload_roundtrip(signal_db, test_session):
+    from tests.factories import create_project, create_run
 
-    monkeypatch.setattr("app.agents.orchestrator.get_redis", _raising)
-    assert await get_awaiting_payload(1) is None
+    project = await create_project(test_session)
+    run = await create_run(test_session, project.id)
+
+    assert await get_awaiting_payload(run.id) is None
+    payload = {"gate": "outline", "run_id": run.id, "message": "确认大纲"}
+    await store_awaiting_payload(run.id, payload)
+    assert await get_awaiting_payload(run.id) == payload
+    await clear_awaiting_payload(run.id)
+    assert await get_awaiting_payload(run.id) is None
 
 
 @pytest.mark.asyncio
-async def test_get_awaiting_payload_missing_key_returns_none(fake_redis):
+async def test_get_awaiting_payload_missing_run_returns_none(signal_db):
     assert await get_awaiting_payload(404) is None
 
 
 @pytest.mark.asyncio
-async def test_get_awaiting_payload_invalid_json_returns_none(fake_redis):
-    fake_redis.store["openoii:awaiting:42"] = "not-json"
-    assert await get_awaiting_payload(42) is None
-
-
-@pytest.mark.asyncio
-async def test_clear_awaiting_payload_removes_key(fake_redis):
-    fake_redis.store["openoii:awaiting:5"] = "{}"
-    await clear_awaiting_payload(5)
-    assert "openoii:awaiting:5" not in fake_redis.store
-
-
-@pytest.mark.asyncio
-async def test_clear_confirm_event_redis_removes_key(fake_redis):
-    fake_redis.store["openoii:confirm:9"] = "1"
-    await clear_confirm_event_redis(9)
-    assert "openoii:confirm:9" not in fake_redis.store
-
-
-@pytest.mark.asyncio
-async def test_trigger_confirm_redis_publishes(fake_redis):
-    ok = await trigger_confirm_redis(11)
-    assert ok is True
-    assert fake_redis.store["openoii:confirm:11"] == "1"
-    assert fake_redis.published == [("openoii:confirm_channel:11", "confirm")]
-
-
-@pytest.mark.asyncio
-async def test_wait_for_confirm_redis_returns_true_when_already_set(fake_redis):
-    fake_redis.store["openoii:confirm:33"] = "1"
-    ok = await wait_for_confirm_redis(33, timeout=1)
-    assert ok is True
-
-
-@pytest.mark.asyncio
-async def test_wait_for_confirm_redis_returns_false_on_timeout(monkeypatch, fake_redis):
-    """Timeout path: no confirm key set, no published message, finishes within budget."""
-    ok = await wait_for_confirm_redis(99, timeout=1)
-    assert ok is False
+async def test_clear_confirm_signal_missing_run_is_noop(signal_db):
+    await clear_confirm_signal(424242)
 
 
 # ---------------------------------------------------------------------------

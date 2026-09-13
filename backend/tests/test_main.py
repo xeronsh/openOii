@@ -363,7 +363,7 @@ async def test_ws_projects_confirm_invalid_run_sends_error(monkeypatch):
     async def fake_trigger(_run_id):
         return True
 
-    monkeypatch.setattr("app.agents.orchestrator.trigger_confirm_redis", fake_trigger)
+    monkeypatch.setattr("app.agents.orchestrator.trigger_confirm_signal", fake_trigger)
 
     fake_ws = _FakeWebSocket(
         [
@@ -440,7 +440,7 @@ async def test_ws_projects_confirm_valid_run_saves_feedback_and_triggers_confirm
     )
     monkeypatch.setattr(main_module, "init_db", lambda: None)
     monkeypatch.setattr("app.db.session.async_session_maker", FakeAsyncSessionMaker())
-    monkeypatch.setattr("app.agents.orchestrator.trigger_confirm_redis", fake_trigger)
+    monkeypatch.setattr("app.agents.orchestrator.trigger_confirm_signal", fake_trigger)
 
     fake_ws = _FakeWebSocket(
         [
@@ -512,7 +512,7 @@ async def test_ws_projects_feedback_save_error_sends_ws_error(monkeypatch):
     async def fake_trigger(_run_id):
         return True
 
-    monkeypatch.setattr("app.agents.orchestrator.trigger_confirm_redis", fake_trigger)
+    monkeypatch.setattr("app.agents.orchestrator.trigger_confirm_signal", fake_trigger)
 
     fake_ws = _FakeWebSocket(
         [

@@ -29,9 +29,6 @@ class Settings(BaseSettings):
     )
     db_echo: bool = False
 
-    # Redis（用于 confirm 信号共享）
-    redis_url: str = Field(default="redis://localhost:6379/0")
-
     # ============================================
     # LLM 服务 (Anthropic 兼容接口)
     # ============================================

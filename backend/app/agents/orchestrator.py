@@ -4,8 +4,7 @@ import asyncio
 import logging
 from typing import Any, cast
 
-import redis.asyncio as redis
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.utils import utcnow
@@ -129,119 +128,69 @@ AGENT_COMPLETION_INFO = {
 }
 
 
-_redis_client: redis.Redis | None = None
+# ---------------------------------------------------------------------------
+# Run confirm signal + awaiting payload（agentrun 列；替代原 Redis 实现）
+# 信号位跨进程可见，编排侧轮询消费；payload 用于 WS 重连补发。
+# ---------------------------------------------------------------------------
+
+_CONFIRM_POLL_INTERVAL_S = 0.3
 
 
-async def get_redis() -> redis.Redis:
-    global _redis_client
-    if _redis_client is None:
-        from app.config import get_settings
+async def _update_run_columns(run_id: int, **values: Any) -> None:
+    from app.db.session import async_session_maker
 
-        settings = get_settings()
-        _redis_client = redis.from_url(settings.redis_url)
-    return _redis_client
+    async with async_session_maker() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run_id).values(**values))
+        await session.commit()
 
 
-def get_confirm_event_key(run_id: int) -> str:
-    return f"openoii:confirm:{run_id}"
+async def trigger_confirm_signal(run_id: int) -> bool:
+    """设置 run 的审批信号位（替代原 Redis confirm key）。"""
+    await _update_run_columns(run_id, confirm_requested=True)
+    return True
 
 
-def get_confirm_channel(run_id: int) -> str:
-    return f"openoii:confirm_channel:{run_id}"
+async def clear_confirm_signal(run_id: int) -> None:
+    await _update_run_columns(run_id, confirm_requested=False)
 
 
-def get_awaiting_payload_key(run_id: int) -> str:
-    """Redis 缓存 run 当前 gate 的 awaiting payload，用于 WS 重连补发"""
-    return f"openoii:awaiting:{run_id}"
+async def wait_for_confirm_signal(run_id: int, timeout: int = 1800) -> bool:
+    """轮询等待审批信号；使用独立 session，不复用编排会话。"""
+    from app.db.session import async_session_maker
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        async with async_session_maker() as session:
+            res = await session.execute(
+                select(AgentRun.confirm_requested).where(AgentRun.id == run_id)
+            )
+            requested = res.scalar()
+        if requested:
+            await _update_run_columns(run_id, confirm_requested=False)
+            return True
+        await asyncio.sleep(_CONFIRM_POLL_INTERVAL_S)
+    return False
 
 
 async def store_awaiting_payload(run_id: int, payload: dict) -> None:
     """记录当前 run 在 gate 等待，附带 run_awaiting_confirm 事件 payload"""
-    import json as _json
-
-    try:
-        r = await get_redis()
-        await r.set(get_awaiting_payload_key(run_id), _json.dumps(payload), ex=7200)
-    except Exception:  # noqa: BLE001 - redis unreachable is non-fatal for orchestration flow
-        logger.exception("store_awaiting_payload failed run_id=%s", run_id)
+    await _update_run_columns(run_id, awaiting_payload=payload)
 
 
 async def clear_awaiting_payload(run_id: int) -> None:
-    try:
-        r = await get_redis()
-        await r.delete(get_awaiting_payload_key(run_id))
-    except Exception:  # noqa: BLE001
-        logger.exception("clear_awaiting_payload failed run_id=%s", run_id)
+    await _update_run_columns(run_id, awaiting_payload=None)
 
 
 async def get_awaiting_payload(run_id: int) -> dict | None:
-    import json as _json
+    from app.db.session import async_session_maker
 
-    try:
-        r = await get_redis()
-        raw = await r.get(get_awaiting_payload_key(run_id))
-    except Exception:  # noqa: BLE001
-        logger.exception("get_awaiting_payload failed run_id=%s", run_id)
-        return None
-    if not raw:
-        return None
-    try:
-        return _json.loads(raw)  # type: ignore[no-any-return]
-    except Exception:
-        return None
-
-
-async def clear_confirm_event_redis(run_id: int) -> None:
-    r = await get_redis()
-    await r.delete(get_confirm_event_key(run_id))
-
-
-async def trigger_confirm_redis(run_id: int) -> bool:
-    """通过 Redis 发布 confirm 信号（用于多 worker 共享）"""
-    r = await get_redis()
-    await r.set(get_confirm_event_key(run_id), "1", ex=3600)  # 1 小时过期
-    await r.publish(get_confirm_channel(run_id), "confirm")
-    return True
-
-
-async def wait_for_confirm_redis(run_id: int, timeout: int = 1800) -> bool:
-    """通过 Redis 订阅等待 confirm 信号"""
-    r = await get_redis()
-    key = get_confirm_event_key(run_id)
-    channel = get_confirm_channel(run_id)
-
-    pubsub = r.pubsub()
-    await pubsub.subscribe(channel)
-    try:
-        # 订阅前 confirm 先到的情况：用 key 兜底
-        if await r.get(key):
-            await r.delete(key)
-            return True
-
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
-        while True:
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                return False
-
-            msg = await pubsub.get_message(
-                ignore_subscribe_messages=True,
-                timeout=min(1.0, remaining),
-            )
-            if msg is not None:
-                await r.delete(key)
-                return True
-
-            # publish 丢失时，用 key 再兜底一次
-            if await r.get(key):
-                await r.delete(key)
-                return True
-    finally:
-        try:
-            await pubsub.unsubscribe(channel)
-        finally:
-            await pubsub.close()
+    async with async_session_maker() as session:
+        res = await session.execute(
+            select(AgentRun.awaiting_payload).where(AgentRun.id == run_id)
+        )
+        payload = res.scalar()
+    return payload if isinstance(payload, dict) else None
 
 
 class GenerationOrchestrator:
@@ -497,7 +446,7 @@ class GenerationOrchestrator:
         await self.ws.send_event(project_id, {"type": "run_completed", "data": completed_data})
 
     async def _cleanup_run(self, run_id: int) -> None:
-        await clear_confirm_event_redis(run_id)
+        await clear_confirm_signal(run_id)
         await clear_awaiting_payload(run_id)
 
     async def _wait_for_confirm(
@@ -534,7 +483,7 @@ class GenerationOrchestrator:
         full_message = "\n".join(message_parts)
 
         # 清理上一轮遗留的 confirm（避免误触导致直接跳过等待）
-        await clear_confirm_event_redis(run_pk)
+        await clear_confirm_signal(run_pk)
 
         awaiting_payload = {
             "run_id": run_pk,
@@ -569,7 +518,7 @@ class GenerationOrchestrator:
         )
 
         try:
-            ok = await wait_for_confirm_redis(run_pk, timeout=1800)
+            ok = await wait_for_confirm_signal(run_pk, timeout=1800)
             if not ok:
                 raise asyncio.TimeoutError()
         except asyncio.TimeoutError:

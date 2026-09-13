@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from sqlalchemy import select
@@ -21,38 +21,57 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# 内存导出状态缓存（如果 Redis 不可用时的降级方案）
+# 内存导出状态缓存（DB 不可用时的降级方案）
 _export_status_cache: dict[str, ExportResponse] = {}
 
 # 全局 ExportService 实例
 _export_service = ExportService()
 
-
-def _get_redis_export_key(export_id: str) -> str:
-    return f"openoii:export:{export_id}"
+_EXPORT_TTL_S = 3600
 
 
 async def _store_export_status(export_resp: ExportResponse) -> None:
-    """存储导出状态到 Redis（降级到内存缓存）"""
-    data = export_resp.model_dump_json()
+    """存储导出状态到 exportcache 表（TTL 1 小时，降级到内存缓存）"""
+    from app.db.session import async_session_maker
+    from app.db.utils import utcnow
+    from app.models.export_cache import ExportCache
+
     try:
-        from app.agents.orchestrator import get_redis
-        r = await get_redis()
-        await r.set(_get_redis_export_key(export_resp.export_id), data, ex=3600)
+        async with async_session_maker() as session:
+            session.add(
+                ExportCache(
+                    export_id=export_resp.export_id,
+                    payload=export_resp.model_dump_json(),
+                    expires_at=utcnow() + timedelta(seconds=_EXPORT_TTL_S),
+                )
+            )
+            await session.commit()
     except Exception:
+        logger.exception("export cache write failed, falling back to memory")
         _export_status_cache[export_resp.export_id] = export_resp
 
 
 async def _get_export_status(export_id: str) -> ExportResponse | None:
-    """从 Redis 获取导出状态（降级到内存缓存）"""
+    """从 exportcache 表获取导出状态（惰性清理过期行，降级到内存缓存）"""
+    from sqlalchemy import delete as _delete
+
+    from app.db.session import async_session_maker
+    from app.db.utils import utcnow
+    from app.models.export_cache import ExportCache
+
     try:
-        from app.agents.orchestrator import get_redis
-        r = await get_redis()
-        data = await r.get(_get_redis_export_key(export_id))
-        if data:
-            return ExportResponse.model_validate_json(data)
+        async with async_session_maker() as session:
+            row = await session.get(ExportCache, export_id)
+            if row is not None:
+                if row.expires_at <= utcnow():
+                    await session.execute(
+                        _delete(ExportCache).where(ExportCache.export_id == export_id)
+                    )
+                    await session.commit()
+                else:
+                    return ExportResponse.model_validate_json(row.payload)
     except Exception:
-        pass
+        logger.exception("export cache read failed, falling back to memory")
     return _export_status_cache.get(export_id)
 
 

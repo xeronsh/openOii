@@ -6,7 +6,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-import pytest
+# Must run before any app.db.session import: the global engine/maker is built
+# from Settings(.env) at import time. Without this, unpatched production paths
+# (WS replay, export cache, run confirm signal) would open real asyncpg
+# connections from tests and leak them (PytestUnraisableExceptionWarning).
+_TEST_GLOBAL_DB = Path(__file__).resolve().parent / "test-global-sandbox.db"
+os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_GLOBAL_DB}")
+
+import pytest  # noqa: E402
 import pytest_asyncio
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
@@ -24,6 +31,12 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_global_sandbox_db():
+    yield
+    _TEST_GLOBAL_DB.unlink(missing_ok=True)
 
 
 @pytest.fixture(scope="session")

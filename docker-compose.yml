@@ -15,31 +15,16 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   backend:
     image: ghcr.io/xeronsh/openoii-backend:latest
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     env_file:
       - ./backend/.env
     environment:
       # 覆盖 .env 中的数据库和 Redis 配置，使用 Docker 内部服务名
       DATABASE_URL: postgresql+asyncpg://openoii:openoii_dev@postgres:5432/openoii
-      REDIS_URL: redis://redis:6379/0
       # task_manager / confirm 依赖进程内状态，当前实现默认单 worker 才安全
       WEB_CONCURRENCY: "1"
       # 如果图像/视频服务也在 Docker 中，取消注释并修改为实际的容器名和端口
@@ -65,7 +50,6 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
 
 # 如果需要连接到外部 Docker 网络，取消注释并修改网络名
 # networks:

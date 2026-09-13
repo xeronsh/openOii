@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import os
+
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect
@@ -13,6 +16,13 @@ from app.models.universe import Universe, SharedCharacter, UniverseProjectLink  
 
 def _backend_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def _explicit_alembic_url(monkeypatch):
+    """These tests pass explicit URLs via sqlalchemy.url; conftest's global
+    DATABASE_URL sandbox must not shadow them (alembic/env.py prefers env)."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
 
 def _alembic_config(db_url: str) -> Config:
@@ -45,6 +55,7 @@ def test_alembic_upgrade_head_rebuilds_blank_database(tmp_path: Path) -> None:
         "character",
         "configitem",
         "consistency_report",
+        "exportcache",
         "message",
         "project",
         "run",

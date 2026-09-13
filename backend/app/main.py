@@ -119,7 +119,7 @@ def create_app() -> FastAPI:
     async def ws_projects(websocket: WebSocket, project_id: int):
         from app.agents.orchestrator import (
             get_awaiting_payload,
-            trigger_confirm_redis,
+            trigger_confirm_signal,
         )
 
         try:
@@ -225,7 +225,7 @@ def create_app() -> FastAPI:
                                             await session.commit()
                                 except Exception as e:
                                     logger.error(f"Failed to save feedback for run {run_id}: {e}")
-                            await trigger_confirm_redis(run_id)
+                            await trigger_confirm_signal(run_id)
                 except WebSocketDisconnect:
                     logger.info(f"WebSocket disconnected for project {project_id}")
                     break

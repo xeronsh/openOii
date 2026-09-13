@@ -25,6 +25,12 @@ class AgentRun(SQLModel, table=True):
     provider_snapshot: dict[str, object] | None = Field(
         default=None, sa_column=Column(JSON, nullable=True)
     )
+    # 审批闸门信号（替代原 Redis confirm key）：API 侧置 True，编排侧消费后复位
+    confirm_requested: bool = Field(default=False)
+    # 当前闸门的 run_awaiting_confirm payload，用于 WS 重连补发（替代原 Redis key）
+    awaiting_payload: dict[str, object] | None = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

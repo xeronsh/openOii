@@ -24,7 +24,6 @@ SENSITIVE_KEY_PARTS = (
     "apikey",
     "private",
     "database_url",
-    "redis_url",
 )
 RESTART_REQUIRED_KEYS = {
     "APP_NAME",
@@ -34,10 +33,9 @@ RESTART_REQUIRED_KEYS = {
     "CORS_ORIGINS",
     "DATABASE_URL",
     "DB_ECHO",
-    "REDIS_URL",
     "PUBLIC_BASE_URL",
 }
-RESTART_REQUIRED_PREFIXES = ("DATABASE_", "REDIS_")
+RESTART_REQUIRED_PREFIXES = ("DATABASE_",)
 
 SETTINGS_ENV_FIELD_MAP = {name.upper(): name for name in Settings.model_fields}
 SETTINGS_DEFAULTS = Settings()
@@ -221,7 +219,9 @@ class ConfigService:
         self.session = session
 
     async def ensure_initialized(self) -> int:
-        env_values = _load_env_file()
+        # Process env wins over .env file (mirrors pydantic-settings precedence
+        # in get_settings), so runtime overrides are what gets seeded/persisted.
+        env_values = _load_effective_env_values()
         if not env_values:
             return 0
         res = await self.session.execute(select(ConfigItem))

@@ -104,7 +104,7 @@ async def test_resume_from_recovery_uses_run_provider_snapshot(test_session, tes
     async def _noop_clear_awaiting(_: int) -> None:
         return None
 
-    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_event_redis", _noop_clear_confirm_event)
+    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_signal", _noop_clear_confirm_event)
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", _noop_clear_awaiting)
 
     orchestrator = GenerationOrchestrator(settings=test_settings, ws=_StubWs(), session=test_session)
@@ -182,7 +182,7 @@ async def test_resume_from_recovery_reports_no_video_completion_message(test_ses
     monkeypatch.setattr("app.agents.orchestrator.build_postgres_checkpointer", lambda _database_url: _DummyCheckpointer())
     monkeypatch.setattr("app.agents.orchestrator.build_recovery_summary", _noop_recovery_summary)
     monkeypatch.setattr(GenerationOrchestrator, "_invoke_phase2_graph", _fake_invoke_phase2_graph)
-    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_event_redis", _noop_clear_confirm_event)
+    monkeypatch.setattr("app.agents.orchestrator.clear_confirm_signal", _noop_clear_confirm_event)
     monkeypatch.setattr("app.agents.orchestrator.clear_awaiting_payload", _noop_clear_confirm_event)
 
     orchestrator = GenerationOrchestrator(settings=test_settings, ws=_StubWs(), session=test_session)
