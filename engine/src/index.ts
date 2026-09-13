@@ -21,12 +21,12 @@ export function createEngineApp(dbPath: string) {
   const pipelines = new Map<number, PipelineRunner>();
   const ownerId = `engine-${process.pid}-${randomUUID()}`;
 
-  function runScopedLlm(runId: number): TextLlmService {
+  function runContext(runId: number): RunCreativeContext {
     const row = shared.getRun(runId);
-    const context = parseJsonColumn(
-      row?.context_snapshot,
-      {} as RunCreativeContext,
-    );
+    return parseJsonColumn(row?.context_snapshot, {} as RunCreativeContext);
+  }
+
+  function runScopedLlm(context: RunCreativeContext): TextLlmService {
     const providers =
       typeof context.providers === "object" && context.providers !== null
         ? (context.providers as Record<string, unknown>)
@@ -58,8 +58,9 @@ export function createEngineApp(dbPath: string) {
       return false;
     }
 
+    const context = runContext(runId);
     const fencedShared = shared.fenced(runId, leaseToken);
-    const runner = new PipelineRunner(db, fencedShared, runScopedLlm(runId));
+    const runner = new PipelineRunner(db, fencedShared, runScopedLlm(context), context);
     pipelines.set(runId, runner);
 
     const heartbeat = setInterval(() => {
@@ -177,6 +178,7 @@ export function createEngineApp(dbPath: string) {
       send(200, {
         events: rows.map((r) => ({
           seq: r.seq,
+          event_id: r.seq,
           run_id: r.run_id,
           project_id: r.project_id,
           type: r.type,
