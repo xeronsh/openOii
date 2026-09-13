@@ -14,7 +14,9 @@ from app.agents.base import AgentContext
 from app.agents.review_rules import ReviewAgent
 from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404, require_run_id
 from app.config import Settings
+from app.db.utils import utcnow
 from app.exceptions import BusinessError
+from app.generated.workflow_contract import WORKFLOW_VERSION
 from app.models.agent_run import AgentMessage, AgentRun
 from app.models.message import Message
 from app.models.project import Project
@@ -29,6 +31,7 @@ from app.schemas.project import (
     RecoveryControlRead,
 )
 from app.services.engine_client import (
+    EngineConflictError,
     EngineUnavailableError,
     engine_active_run_ids,
     engine_cancel_run,
@@ -39,6 +42,7 @@ from app.services.engine_client import (
 from app.services.generation_entry import decide_generation_entry
 from app.services.image_factory import create_image_service
 from app.services.provider_resolution import resolve_project_provider_settings_async
+from app.services.run_context import build_run_context_snapshot
 from app.services.run_recovery import build_recovery_control_surface
 from app.services.task_manager import task_manager
 from app.services.text_factory import create_text_service
@@ -48,6 +52,10 @@ from app.ws.manager import ConnectionManager
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+_ACTIVE_RUN_STATUSES = ("queued", "running", "waiting_for_approval", "cancelling")
+_RECOVERABLE_RUN_STATUSES = ("failed", "cancelled")
+_TERMINAL_RUN_STATUSES = {"cancelled", "succeeded", "failed"}
+
 # ReviewAgent 的 start_agent → 引擎可从该阶段起跑
 _AGENT_TO_START_STAGE: dict[str, str] = {
     "outline": "plan_outline",
@@ -55,6 +63,14 @@ _AGENT_TO_START_STAGE: dict[str, str] = {
     "render": "render_characters",
     "compose": "compose_videos",
 }
+
+
+def _has_live_lease(run: AgentRun) -> bool:
+    return bool(
+        run.lease_token
+        and run.lease_expires_at is not None
+        and run.lease_expires_at > utcnow()
+    )
 
 
 async def _dispatch_to_engine(
@@ -67,7 +83,7 @@ async def _dispatch_to_engine(
     user_feedback: str = "",
     resume: bool = False,
 ) -> None:
-    """保证引擎在跑并发起 run；引擎不可用时回 503。"""
+    """Ensure a compatible engine owns this run or return a stable API error."""
     from app.main import STATIC_DIR
 
     try:
@@ -83,6 +99,15 @@ async def _dispatch_to_engine(
                 auto_mode=auto_mode,
                 user_feedback=user_feedback,
             )
+    except EngineConflictError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "code": exc.code,
+                "message": str(exc),
+                "details": {"run_id": run_id},
+            },
+        ) from exc
     except EngineUnavailableError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
@@ -100,10 +125,7 @@ async def _route_feedback_to_stage(
     entity_id: int | None,
     entity_ids: list[int] | None,
 ) -> str:
-    """用 ReviewAgent 把用户反馈路由到具体重跑阶段（含画布选区优先级）。
-
-    路由失败回退到全量重跑，不让反馈丢失。
-    """
+    """Use ReviewAgent only to classify the deterministic rerun boundary."""
     ctx = AgentContext(
         settings=settings,
         session=session,
@@ -121,7 +143,7 @@ async def _route_feedback_to_stage(
     )
     try:
         routing = await ReviewAgent().run(ctx)
-    except Exception:  # noqa: BLE001 - 路由是尽力而为，失败退回全量
+    except Exception:  # noqa: BLE001 - routing is best-effort, feedback must not disappear
         logger.warning("ReviewAgent routing failed; falling back to full re-plan", exc_info=True)
         return PRODUCTION_STAGE_SEQUENCE[0]
 
@@ -148,31 +170,92 @@ async def _latest_run_for_project(
     return res.scalars().first()
 
 
+async def _reconcile_active_candidate(
+    *,
+    session: AsyncSession,
+    settings: Settings,
+    run: AgentRun | None,
+) -> tuple[AgentRun | None, AgentRun | None]:
+    """Return (active, recoverable) for an active-status candidate.
+
+    A durable unexpired lease counts as active even if the HTTP health probe is
+    momentarily unavailable. Without a live lease or process-local runner, the
+    row is converted to failed/recoverable instead of blocking the project
+    forever as a zombie queued/running row.
+    """
+    if run is None:
+        return None, None
+
+    engine_ids = await engine_active_run_ids(settings.engine_url)
+    if run.id in engine_ids or _has_live_lease(run):
+        return run, None
+
+    run.status = "failed"
+    run.error = "Execution lease missing or expired; run is safe to resume"
+    run.lease_owner = None
+    run.lease_token = None
+    run.lease_expires_at = None
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    return None, run
+
+
+async def _new_run(
+    *,
+    session: AsyncSession,
+    settings: Settings,
+    project: Project,
+    provider_resolution: ProviderResolution,
+    current_agent: str,
+) -> AgentRun:
+    provider_snapshot = provider_resolution.as_project_provider_settings().model_dump(mode="json")
+    context_snapshot = await build_run_context_snapshot(
+        session=session,
+        settings=settings,
+        project=project,
+        provider_resolution=provider_resolution,
+    )
+    run = AgentRun(
+        project_id=project.id or 0,
+        status="queued",
+        current_agent=current_agent,
+        progress=0.0,
+        provider_snapshot=provider_snapshot,
+        workflow_version=WORKFLOW_VERSION,
+        context_snapshot=context_snapshot,
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
 @router.get("/projects/{project_id}/runs/current", response_model=RecoveryControlRead | None)
 async def get_current_run(
     project_id: int,
     session: AsyncSession = SessionDep,
     settings: Settings = SettingsDep,
 ) -> RecoveryControlRead | None:
-    """当前运行态（页面水合的入口）。
-
-    与创建 run 时的 409 分支返回同一份 RecoveryControlRead，
-    让前端不必先撞一次冲突才能发现可恢复的运行。
-    无活跃/可恢复 run 时返回 null。
-    """
     await get_or_404(session, Project, project_id)
 
-    active_run = await _latest_run_for_project(session, project_id, ("queued", "running"))
+    candidate = await _latest_run_for_project(session, project_id, _ACTIVE_RUN_STATUSES)
+    active_run, newly_recoverable = await _reconcile_active_candidate(
+        session=session,
+        settings=settings,
+        run=candidate,
+    )
     if active_run is not None:
-        running = await engine_active_run_ids(settings.engine_url)
         return await build_recovery_control_surface(
             session=session,
             database_url=settings.database_url,
             run=active_run,
-            state="active" if active_run.id in running else "recoverable",
+            state="active",
         )
 
-    resumable_run = await _latest_run_for_project(session, project_id, ("failed", "cancelled"))
+    resumable_run = newly_recoverable or await _latest_run_for_project(
+        session, project_id, _RECOVERABLE_RUN_STATUSES
+    )
     if resumable_run is not None:
         return await build_recovery_control_surface(
             session=session,
@@ -180,7 +263,6 @@ async def get_current_run(
             run=resumable_run,
             state="recoverable",
         )
-
     return None
 
 
@@ -196,10 +278,18 @@ async def start_run(
     settings: Settings = SettingsDep,
     ws: ConnectionManager = WsManagerDep,
 ):
+    del ws  # creation is command-only; realtime delivery is event-log driven
     project = await get_or_404(session, Project, project_id)
 
-    active_run = await _latest_run_for_project(session, project_id, ("queued", "running"))
-    resumable_run = await _latest_run_for_project(session, project_id, ("failed", "cancelled"))
+    candidate = await _latest_run_for_project(session, project_id, _ACTIVE_RUN_STATUSES)
+    active_run, stale_run = await _reconcile_active_candidate(
+        session=session,
+        settings=settings,
+        run=candidate,
+    )
+    resumable_run = stale_run or await _latest_run_for_project(
+        session, project_id, _RECOVERABLE_RUN_STATUSES
+    )
 
     provider_resolution: ProviderResolution = await resolve_project_provider_settings_async(
         project, settings
@@ -218,10 +308,7 @@ async def start_run(
             run=decision.run,
             state="active",
         )
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content=control.model_dump(mode="json"),
-        )
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content=control.model_dump(mode="json"))
 
     if decision.kind == "recoverable_conflict":
         assert decision.run is not None
@@ -231,10 +318,8 @@ async def start_run(
             run=decision.run,
             state="recoverable",
         )
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content=control.model_dump(mode="json"),
-        )
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content=control.model_dump(mode="json"))
+
     if decision.kind == "provider_blocked":
         raise BusinessError(
             message="项目 Provider 配置无效，无法启动生成",
@@ -242,17 +327,13 @@ async def start_run(
             details={"provider_resolution": provider_resolution.as_error_details()},
         )
 
-    provider_snapshot = provider_resolution.as_project_provider_settings().model_dump(mode="json")
-    run = AgentRun(
-        project_id=project_id,
-        status="running",
+    run = await _new_run(
+        session=session,
+        settings=settings,
+        project=project,
+        provider_resolution=provider_resolution,
         current_agent="orchestrator",
-        progress=0.0,
-        provider_snapshot=provider_snapshot,
     )
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
     run_id = require_run_id(run)
 
     await _dispatch_to_engine(
@@ -262,9 +343,6 @@ async def start_run(
         stage="full",
         auto_mode=bool(payload.auto_mode),
     )
-    run.status = "running"
-    session.add(run)
-    await session.commit()
     await session.refresh(run)
     return AgentRunRead.model_validate(run)
 
@@ -276,23 +354,33 @@ async def resume_run(
     settings: Settings = SettingsDep,
     ws: ConnectionManager = WsManagerDep,
 ):
-    """从上次完成的阶段继续这个 run。
-
-    按 run id 寻址：旧接口是 POST /projects/{id}/resume + body.run_id，
-    但取消/恢复都靠「找该项目最新活跃 run」，同项目存在多个 run 时目标不确定。
-    """
+    del ws
     run = await get_or_404(session, AgentRun, run_id)
-    project_id = run.project_id
+    if run.status == "succeeded":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "code": "RUN_NOT_RESUMABLE",
+                "message": "已完成的 run 不能恢复",
+                "details": {"run_id": run_id},
+            },
+        )
+    if _has_live_lease(run):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "code": "RUN_ALREADY_ACTIVE",
+                "message": "该 run 已有活跃执行器",
+                "details": {"run_id": run_id},
+            },
+        )
 
     await _dispatch_to_engine(
         settings=settings,
-        project_id=project_id,
+        project_id=run.project_id,
         run_id=run_id,
         resume=True,
     )
-    run.status = "running"
-    session.add(run)
-    await session.commit()
     await session.refresh(run)
     return AgentRunRead.model_validate(run)
 
@@ -308,40 +396,49 @@ async def cancel_run(
     settings: Settings = SettingsDep,
     ws: ConnectionManager = WsManagerDep,
 ):
-    """取消指定的 run（只影响这一个）。"""
+    """Persist cancellation intent; terminal state belongs to the executor."""
     run = await get_or_404(session, AgentRun, run_id)
-    project_id = run.project_id
-
-    # 执行体有两处：引擎里的编排 run，或 Python 进程内的局部 run（单体重绘/合成
-    # 仍走本地 agent，见 characters/shots 的 regenerate 路由）。两边都发一次取消，
-    # 没有对应执行体时是无副作用的空操作。
-    task_cancelled = task_manager.cancel(run_id)
-    await engine_cancel_run(settings.engine_url, run_id)
-
-    if run.status in ("queued", "running"):
-        run.status = "cancelled"
-        session.add(run)
-        await session.commit()
-    else:
-        await session.refresh(run)
-
-    cancelled = 1 if (task_cancelled or run.status == "cancelled") else 0
-    if cancelled == 0:
+    if run.status in _TERMINAL_RUN_STATUSES:
         return CancelRunResponse(status="no_active_run")
 
-    await ws.send_event(
-        project_id,
-        {
-            "type": "run_cancelled",
-            "data": {
-                "project_id": project_id,
-                "cancelled_count": cancelled,
-                "run_ids": [run_id],
-            },
-        },
-    )
+    project_id = run.project_id
+    live_lease = _has_live_lease(run)
+    run.cancel_requested_at = utcnow()
+    run.status = "cancelling"
+    session.add(run)
+    await session.commit()
 
-    return CancelRunResponse(status="cancelled", cancelled=cancelled, run_ids=[run_id])
+    # Python-local regenerate runs still exist during the migration. They have
+    # no engine lease and can acknowledge cancellation synchronously.
+    task_cancelled = task_manager.cancel(run_id)
+    if task_cancelled or not live_lease:
+        run.status = "cancelled"
+        run.awaiting_payload = None
+        session.add(run)
+        await session.commit()
+        await ws.send_event(
+            project_id,
+            {
+                "type": "run_cancelled",
+                "data": {
+                    "run_id": run_id,
+                    "project_id": project_id,
+                    "cancelled_count": 1,
+                    "run_ids": [run_id],
+                },
+            },
+        )
+        return CancelRunResponse(status="cancelled", cancelled=1, run_ids=[run_id])
+
+    # The DB cancellation flag is authoritative, so a transient control-plane
+    # HTTP failure does not lose the user's request. The runner will observe the
+    # flag after the current provider call/poll boundary.
+    try:
+        await engine_cancel_run(settings.engine_url, run_id)
+    except EngineUnavailableError:
+        logger.warning("engine cancel signal failed for run %s; DB intent is durable", run_id)
+
+    return CancelRunResponse(status="cancelling", run_ids=[run_id])
 
 
 @router.post(
@@ -358,7 +455,12 @@ async def feedback_project(
 ):
     project = await get_or_404(session, Project, project_id)
 
-    active_run = await _latest_run_for_project(session, project_id, ("queued", "running"))
+    candidate = await _latest_run_for_project(session, project_id, _ACTIVE_RUN_STATUSES)
+    active_run, _ = await _reconcile_active_candidate(
+        session=session,
+        settings=settings,
+        run=candidate,
+    )
     if active_run is not None:
         control = await build_recovery_control_surface(
             session=session,
@@ -366,53 +468,47 @@ async def feedback_project(
             run=active_run,
             state="active",
         )
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content=control.model_dump(mode="json"),
-        )
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content=control.model_dump(mode="json"))
 
     provider_resolution: ProviderResolution = await resolve_project_provider_settings_async(
         project, settings
     )
-    provider_snapshot = provider_resolution.as_project_provider_settings().model_dump(mode="json")
+    if not provider_resolution.valid:
+        raise BusinessError(
+            message="项目 Provider 配置无效，无法处理反馈",
+            code="PROVIDER_PRECHECK_FAILED",
+            details={"provider_resolution": provider_resolution.as_error_details()},
+        )
 
-    run = AgentRun(
-        project_id=project_id,
-        status="queued",
+    run = await _new_run(
+        session=session,
+        settings=settings,
+        project=project,
+        provider_resolution=provider_resolution,
         current_agent="review",
-        progress=0.0,
-        provider_snapshot=provider_snapshot,
     )
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
     run_id = require_run_id(run)
 
-    msg = AgentMessage(run_id=run_id, agent="user", role="user", content=payload.content)
-    session.add(msg)
-    await session.commit()
-
-    # 同步写入聊天消息表，方便前端展示反馈内容
+    content = payload.content.strip()
+    session.add(AgentMessage(run_id=run_id, agent="user", role="user", content=content))
     session.add(
         Message(
             project_id=project_id,
             run_id=run_id,
             agent="user",
             role="user",
-            content=payload.content,
+            content=content,
         )
     )
     await session.commit()
 
-    # 反馈语义：先由 ReviewAgent 决定从哪个阶段重跑，再让引擎从该阶段起跑。
-    user_feedback = payload.content.strip()
     start_stage = await _route_feedback_to_stage(
         settings=settings,
         ws=ws,
         session=session,
         project=project,
         run=run,
-        content=user_feedback,
+        content=content,
         feedback_type=payload.feedback_type,
         entity_type=payload.entity_type,
         entity_id=payload.entity_id,
@@ -424,10 +520,7 @@ async def feedback_project(
         run_id=run_id,
         stage=start_stage,
         auto_mode=False,
-        user_feedback=user_feedback,
+        user_feedback=content,
     )
-    run.status = "running"
-    session.add(run)
-    await session.commit()
     await session.refresh(run)
     return FeedbackAcceptedResponse(run_id=run_id)
