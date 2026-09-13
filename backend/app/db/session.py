@@ -3,21 +3,21 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from sqlalchemy import func, inspect, text, update
+from sqlalchemy import func, or_, update
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlmodel import SQLModel
 
 from app.config import get_settings
+from app.db.utils import redact_credentials, utcnow
+# Import model modules so application metadata/relationships are registered for
+# normal ORM use. Schema creation itself belongs exclusively to Alembic.
 from app.models import agent_run, artifact, artifact_version, config_item, message, project, run, stage  # noqa: F401
-from app.db.utils import redact_credentials
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
-ALEMBIC_DIR = Path(__file__).resolve().parents[2] / "alembic"
 
 
 def _build_engine() -> AsyncEngine:
@@ -53,95 +53,18 @@ async_session_maker: async_sessionmaker[AsyncSession] = async_sessionmaker(
 )
 
 
-async def _sync_missing_metadata_columns() -> None:
-    """Add columns that exist in SQLModel metadata but are missing in an existing DB.
-
-    Alembic is still the source of truth for normal migrations. This is a local/dev
-    safety net for partially migrated databases: create_all() creates missing tables
-    but does not alter existing tables, so new model fields like project.story_outline
-    can otherwise crash API requests with UndefinedColumnError.
-    """
-    import logging
-
-    log = logging.getLogger("openOii.init_db")
-
-    async with engine.begin() as conn:
-        def _missing_columns(sync_conn):
-            inspector = inspect(sync_conn)
-            existing_tables = set(inspector.get_table_names())
-            dialect = sync_conn.dialect
-            preparer = dialect.identifier_preparer
-            operations: list[tuple[str, str, str]] = []
-
-            for table in SQLModel.metadata.sorted_tables:
-                if table.name not in existing_tables:
-                    continue
-                existing_cols = {col["name"] for col in inspector.get_columns(table.name)}
-                for column in table.columns:
-                    if column.name in existing_cols:
-                        continue
-                    col_type = column.type.compile(dialect=dialect)
-                    table_name = preparer.quote(table.name)
-                    column_name = preparer.quote(column.name)
-                    sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {col_type}"
-                    if column.server_default is not None:
-                        compiled_default = column.server_default.arg.compile(dialect=dialect)
-                        sql += f" DEFAULT {compiled_default}"
-                    # Keep backfilled columns nullable to avoid failing on existing rows.
-                    operations.append((table.name, column.name, sql))
-            return operations
-
-        operations = await conn.run_sync(_missing_columns)
-        for table_name, column_name, sql in operations:
-            try:
-                await conn.execute(text(sql))
-                log.warning("init_db: added missing column %s.%s", table_name, column_name)
-            except Exception as exc:
-                message = str(exc).lower()
-                if "duplicatecolumn" in message or "already exists" in message:
-                    log.info(
-                        "init_db: missing-column sync skipped existing column %s.%s",
-                        table_name,
-                        column_name,
-                    )
-                    continue
-                raise
-
-        def _legacy_not_null_columns(sync_conn):
-            inspector = inspect(sync_conn)
-            if "artifactversion" not in set(inspector.get_table_names()):
-                return []
-            legacy_columns = {"target_type", "target_id", "version_number", "asset_type"}
-            return [
-                col["name"]
-                for col in inspector.get_columns("artifactversion")
-                if col["name"] in legacy_columns and not col["nullable"]
-            ]
-
-        legacy_not_null_columns = await conn.run_sync(_legacy_not_null_columns)
-        if legacy_not_null_columns and conn.dialect.name == "sqlite":
-            # SQLite cannot ALTER COLUMN; fresh SQLite databases already get the
-            # nullable columns from create_all/alembic, so the legacy relax is a
-            # no-op there by construction.
-            log.info(
-                "init_db: skipped legacy NOT NULL relax on sqlite (columns: %s)",
-                legacy_not_null_columns,
-            )
-            return
-        for column_name in legacy_not_null_columns:
-            await conn.execute(
-                text(f"ALTER TABLE artifactversion ALTER COLUMN {column_name} DROP NOT NULL")
-            )
-            log.warning(
-                "init_db: relaxed legacy artifactversion.%s NOT NULL constraint",
-                column_name,
-            )
-
-
 def _run_alembic_upgrade() -> None:
+    """Upgrade to the one canonical schema or fail application startup.
+
+    The former create_all / missing-column repair fallbacks allowed a process to
+    continue on a half-migrated database, while the Node engine independently
+    created two other tables. That produced multiple schema authorities. v2 has
+    exactly one: Alembic.
+    """
+    import os
     import subprocess
     import sys
-    import os
+
     settings = get_settings()
     env = os.environ.copy()
     env["DATABASE_URL"] = settings.database_url
@@ -150,71 +73,73 @@ def _run_alembic_upgrade() -> None:
         cwd=str(ALEMBIC_INI.parent),
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=60,
         env=env,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"alembic upgrade failed: {result.stderr}")
+        details = (result.stderr or result.stdout or "unknown migration error").strip()
+        raise RuntimeError(f"alembic upgrade failed: {details}")
 
 
 async def init_db() -> None:
-    """Initialize database tables and cleanup stale runs."""
+    """Migrate the database, initialize configuration, and reconcile stale runs."""
     import logging
+
+    from app.models.agent_run import AgentRun
+    from app.models.project import Project
+    from app.services.config_service import ConfigService
+    from app.services.style_template_seeds import ensure_builtin_templates
+
     log = logging.getLogger("openOii.init_db")
     settings = get_settings()
-    agent_run_table = SQLModel.metadata.tables["agentrun"]
-    project_table = SQLModel.metadata.tables["project"]
 
-    alembic_ok = False
-    try:
-        _run_alembic_upgrade()
-        alembic_ok = True
-        log.info("init_db: alembic upgrade done")
-    except Exception as e:
-        log.warning("init_db: alembic upgrade failed (%s), falling back to create_all", e)
+    log.info("init_db: upgrading Alembic schema")
+    _run_alembic_upgrade()
+    log.info("init_db: alembic upgrade done")
 
-    if not alembic_ok:
-        try:
-            async with engine.begin() as conn:
-                await conn.run_sync(SQLModel.metadata.create_all)
-            log.info("init_db: create_all fallback done")
-        except Exception as e2:
-            log.warning("init_db: create_all also failed (%s), continuing", e2)
+    now = utcnow()
+    active_statuses = ("queued", "running", "waiting_for_approval", "cancelling")
 
-    try:
-        await _sync_missing_metadata_columns()
-    except Exception as e3:
-        log.warning("init_db: metadata column sync failed (%s), continuing", e3)
-
-    log.info("init_db: starting DB session cleanup")
     async with async_session_maker() as session:
-        from app.services.config_service import ConfigService
-        from app.models.agent_run import AgentRun
-        from app.models.project import Project
-        from app.services.style_template_seeds import ensure_builtin_templates
-
         config_service = ConfigService(session)
         await config_service.ensure_initialized()
         await config_service.ensure_provider_configs_initialized()
         await config_service.apply_settings_overrides()
-
         await ensure_builtin_templates(session)
 
         await session.execute(
             update(Project)
-            .where(project_table.c.outline_approved.is_(None))
+            .where(Project.outline_approved.is_(None))  # type: ignore[union-attr]
             .values(outline_approved=False)
         )
 
-        await session.execute(
-            update(AgentRun)
-            .where(agent_run_table.c.status.in_(["queued", "running"]))
-            .values(status="cancelled", error="Service restarted")
+        # Do not blindly cancel every active run on backend restart. A live
+        # engine may still own a valid execution lease. Only executions without
+        # a lease (legacy/crashed-before-dispatch) or with an expired lease are
+        # made recoverable.
+        stale_execution = or_(
+            AgentRun.lease_token.is_(None),  # type: ignore[union-attr]
+            AgentRun.lease_expires_at.is_(None),  # type: ignore[union-attr]
+            AgentRun.lease_expires_at <= now,  # type: ignore[operator]
         )
+        result = await session.execute(
+            update(AgentRun)
+            .where(AgentRun.status.in_(active_statuses))  # type: ignore[union-attr]
+            .where(stale_execution)
+            .values(
+                status="failed",
+                error="Execution lease expired; run is safe to resume",
+                lease_owner=None,
+                lease_token=None,
+                lease_expires_at=None,
+            )
+        )
+        if result.rowcount:
+            log.warning("init_db: reconciled %s stale workflow run(s)", result.rowcount)
 
         await session.execute(
             update(Project)
-            .where((project_table.c.style.is_(None)) | (func.trim(project_table.c.style) == ""))
+            .where((Project.style.is_(None)) | (func.trim(Project.style) == ""))  # type: ignore[union-attr]
             .values(style="anime")
         )
         await session.commit()
