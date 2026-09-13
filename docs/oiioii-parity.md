@@ -1,6 +1,6 @@
 # OiiOii ↔ openOii 功能差距与复刻路线
 
-> 状态：Phase 0–5a + LangGraph + redesign **已完成**；**仅保留 3 个常用简单 Skill**（厚 directives/template/pipeline），拉片等复杂流下线；Review 局部重做已修目标推断与清理范围
+> 状态：Phase 0–5a + redesign **已完成**（编排已由 LangGraph 迁至 pi 引擎，见 ADR 0004/0005）；**仅保留 3 个常用简单 Skill**（厚 directives/template/pipeline），拉片等复杂流下线；Review 局部重做已修目标推断与清理范围
 > 原则：复刻 **产品原语**，不 1:1 抄 UI / 不追闭源模型护城河；复杂实验流不做。
 
 ## 产品原语对照
@@ -28,11 +28,11 @@
 | 宇宙 | IP 宇宙章节 + 共享角色 | ✅ **深度**：自动导入共享卡司、outline/render 宇宙上下文、提升/导入/编辑 UI |
 | 5b | 场景 Agent / 真视频上传多模态 / 画布图编 | 默认不做 |
 
-### LangGraph 架构（2026 对齐）
+### 编排架构（2026 对齐；原 LangGraph 段已随 ADR 0005 删除）
 
-- HITL：`interrupt()` in approval nodes + `Command(resume=…)` only
-- Driver：`app/orchestration/driver.py` 抽出 interrupt 循环
-- State：`skill_id` / `focus_entity_*` 写入 Phase2State
+- 编排只在 pi 引擎：`engine/src/pipeline/runner.ts` 的 17 阶段状态机
+- HITL：闸门写 `agentrun.awaiting_payload`，确认经 `agentrun.confirm_requested` 列
+- 断点续跑：每阶段完成写 `engine_checkpoints`，`/resume` 从下一阶段继续
 - Skills（仅 3 个常用简单流）：`story-anime` / `character-design` / `quick-short`  
   - 每 skill：`directives` + `story_template` + `pipeline_hints` + 入口 stage/agent  
   - 注入 outline/plan system prompt；创建 时回填默认 style/镜头数/模式  

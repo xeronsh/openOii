@@ -6,7 +6,7 @@ interface StageViewProps {
   onSelectedNodeIdsChange?: (nodeIds: string[]) => void;
 }
 
-const InfiniteCanvas = lazy(() =>
+const WorkflowCanvas = lazy(() =>
   import("~/features/comic-workflow/canvas/ComicWorkflowCanvas").then((m) => ({
     default: m.ComicWorkflowCanvas,
   })),
@@ -25,7 +25,7 @@ export function StageView({
         </div>
       }
     >
-      <InfiniteCanvas
+      <WorkflowCanvas
         key={projectId}
         projectId={projectId}
         onSelectedNodeIdChange={onSelectedNodeIdChange}

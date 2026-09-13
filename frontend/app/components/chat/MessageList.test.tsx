@@ -6,12 +6,6 @@ vi.mock("~/components/ui/TypewriterText", () => ({
   TypewriterText: ({ text }: { text: string }) => <span>{text}</span>,
 }));
 
-vi.mock("./CollapsibleMessage", () => ({
-  CollapsibleMessage: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-}));
-
 const baseMsg = {
   id: "m1",
   project_id: 1,

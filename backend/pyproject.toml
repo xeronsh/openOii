@@ -79,9 +79,8 @@ module = [
 ]
 ignore_missing_imports = true
 
-# SQLAlchemy/LangGraph stubs are incomplete — column expressions
+# SQLAlchemy stubs are incomplete — column expressions
 # (.desc, .is_) are typed as Python primitives, not SQL expression types.
-# LangGraph add_node overloads don't cover our patterns.
 # These are known false positives; we suppress them in our source packages.
 [[tool.mypy.overrides]]
 module = [

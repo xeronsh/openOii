@@ -5,6 +5,11 @@
 > 决策记录:docs/adr/0004-pi-engine-sqlite.md
 > 关联:AGENTS.md(resumability 原则)、ADR 0002/0003、`docs/oiioii-parity.md`
 
+> **阅读提示**:本文是迁移当时的执行记录,第 5 节起保留的是**原始计划**文字。
+> 其中凡提到 `AGENT_ENGINE=langgraph`、PG checkpointer、`langgraph-checkpoint-sqlite`
+> 桥接的条目,均已被 **ADR 0005(2026-02-14)** 删除 —— 那些开关与依赖已不存在,
+> 不再作为回滚手段。当前唯一编排路径是 pi 引擎(`engine/src/pipeline/runner.ts`)。
+
 ## 0. 一句话目标
 
 把生成编排从「LangGraph StateGraph + Postgres checkpointer + Redis confirm 信号」迁移为「pi-agent-core(Node sidecar)+ 单文件 SQLite(WAL)」,使本地开发零容器、run 状态可断点续跑,且前端 WS 契约不变。
@@ -134,9 +139,9 @@
 |---|---|---|---|
 | 1 | 零容器全功能(含断点续跑) | ✅ | 裸 `uv run uvicorn`(无 DB/引擎 env)→ 生成 run_completed(3 角色/6 分镜/成片);引擎闸门处被杀 → API `/resume` → 新进程续跑至完成 |
 | 2 | Parity(事件序列 + 产物结构) | ✅ | 事件词表 16/16 一致、闸门序列一致、terminal 一致、领域产物一致;话术量差异见附录 B(已记录) |
-| 3 | Resumability | ✅ | 双进程集成路径 "RESUME VERIFIED";langgraph 回滚模式有一处迁移前即存在的闸门循环怪癖(附录 A 已记录) |
+| 3 | Resumability | ✅ | 双进程集成路径 "RESUME VERIFIED";`engine_checkpoints` 驱动的 `/resume`(langgraph 回滚模式已随 ADR 0005 删除) |
 | 4 | 前端零改动、E2E 全绿 | ⚠️ 部分 | 前端零改动 ✅;E2E 6 个失败均为**存量过期 spec**(期望重构前首页文案,该文案已不存在于代码库;本分支前端零改动,main 上同样失败)。浏览器缓存已 bootstrap(playwright 1.57 → chromium-1200)。修复过期 spec 是独立的前端测试维护任务 |
-| 5 | 回滚开关 | ✅ | `AGENT_ENGINE=langgraph`(+可选 PG URL)恢复原编排路径;闭包测试 24 个专测该路径;Redis 不参与回滚(confirm 信号已列化) |
+| 5 | 回滚开关 | ❌ 已废弃 | ADR 0005(2026-02-14)删除 `AGENT_ENGINE=langgraph` 与整条 PG 路径,该开关不再存在;回滚需从 git 历史恢复 |
 
 ## 6. 风险与对策
 
