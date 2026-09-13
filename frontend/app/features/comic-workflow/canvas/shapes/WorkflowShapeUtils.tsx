@@ -117,7 +117,7 @@ function InlineEditableText({
 					setDraft(value ?? "");
 					setEditing(true);
 				}}
-				className={`block w-full cursor-text rounded-[var(--radius-sm)] text-left transition-colors hover:bg-base-content/5 ${displayClassName}`}
+				className={`block w-full cursor-text rounded-sm text-left transition-colors hover:bg-base-content/5 ${displayClassName}`}
 			>
 				{value ? (
 					value
@@ -147,7 +147,7 @@ function InlineEditableText({
 				if (e.key === "Escape") setEditing(false);
 			}}
 			onBlur={() => void commit()}
-			className="w-full resize-none rounded-[var(--radius-sm)] border-2 border-primary bg-base-100 p-1.5 text-xs leading-relaxed text-base-content focus:outline-none"
+			className="w-full resize-none rounded-sm border-2 border-primary bg-base-100 p-1.5 text-xs leading-relaxed text-base-content focus:outline-none"
 		/>
 	);
 }
@@ -177,7 +177,7 @@ function ReviewActions({
 					stopAll(e);
 					void run("approve", onApprove);
 				}}
-				className="btn btn-success btn-xs h-6 min-h-6 flex-1 gap-1 px-1.5 text-[11px]"
+				className="btn btn-success btn-xs h-6 min-h-6 flex-1 gap-1 px-1.5 text-xs"
 			>
 				{busy === "approve" ? (
 					<span className="loading loading-spinner loading-xs" />
@@ -193,7 +193,7 @@ function ReviewActions({
 					stopAll(e);
 					void run("redo", onRedo);
 				}}
-				className="btn btn-ghost btn-xs h-6 min-h-6 flex-1 gap-1 border-base-content/20 px-1.5 text-[11px]"
+				className="btn btn-ghost btn-xs h-6 min-h-6 flex-1 gap-1 border-base-content/20 px-1.5 text-xs"
 			>
 				{busy === "redo" ? (
 					<span className="loading loading-spinner loading-xs" />
@@ -312,7 +312,7 @@ function CharacterRefStrip({
 
 	return (
 		<div className="mt-1.5 flex items-center gap-1" onPointerDown={stopAll}>
-			<span className="shrink-0 font-mono text-[10px] uppercase text-bc-muted">
+			<span className="shrink-0 font-mono text-2xs uppercase text-bc-muted">
 				参考 {refs.length}
 			</span>
 			<div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
@@ -321,7 +321,7 @@ function CharacterRefStrip({
 						<img
 							src={getStaticUrl(url) ?? url}
 							alt={`参考图 ${index + 1}`}
-							className="h-7 w-7 rounded-[var(--radius-sm)] border border-base-content/20 object-cover"
+							className="h-7 w-7 rounded-sm border border-base-content/20 object-cover"
 							draggable={false}
 						/>
 						<button
@@ -355,7 +355,7 @@ function CharacterRefStrip({
 						stopAll(e);
 						fileRef.current?.click();
 					}}
-					className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-dashed border-base-content/25 text-bc-muted transition-colors hover:border-primary/50 hover:text-primary-ink"
+					className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-dashed border-base-content/25 text-bc-muted transition-colors hover:border-primary/50 hover:text-primary-ink"
 				>
 					{busy === "upload" ? (
 						<span className="loading loading-spinner loading-xs" />
@@ -377,7 +377,7 @@ function CharacterRefStrip({
 							setBusy(null),
 						);
 					}}
-					className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-bc-muted transition-colors hover:bg-base-content/10 hover:text-base-content"
+					className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-bc-muted transition-colors hover:bg-base-content/10 hover:text-base-content"
 				>
 					{busy === "embed" ? (
 						<span className="loading loading-spinner loading-xs" />
@@ -479,7 +479,7 @@ function ShotCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "shot" }>
 					<EmptyMedia label="等待分镜图" />
 				)}
 				{/* 九宫格 cell index */}
-				<span className="absolute left-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-sm)] border-2 border-base-content/20 bg-accent px-1 font-mono text-[length:var(--text-2xs)] font-bold text-accent-content shadow-brutal-sm">
+				<span className="absolute left-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-sm border-2 border-base-content/20 bg-accent px-1 font-mono text-2xs font-bold text-accent-content shadow-brutal-sm">
 					{cell}
 				</span>
 				<span className="absolute bottom-1.5 left-1.5 badge badge-xs bg-base-100/90 tabular-nums">
@@ -495,7 +495,7 @@ function ShotCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "shot" }>
 			</div>
 			<div className="flex min-h-0 flex-1 flex-col p-3">
 				<CardHeader node={node} icon="clapperboard" accentClass="bg-accent" compact />
-				<p className="m-0 mt-1 font-mono text-[10px] uppercase tracking-wide text-bc-muted">
+				<p className="m-0 mt-1 font-mono text-2xs uppercase tracking-wide text-bc-muted">
 					格 {cell}
 				</p>
 				<div className="mt-1.5">
@@ -586,7 +586,7 @@ function OutputCard({
 							href={videoUrl}
 							download
 							onClick={stopAll}
-							className="btn btn-primary btn-xs h-7 min-h-7 flex-1 gap-1 text-[11px]"
+							className="btn btn-primary btn-xs h-7 min-h-7 flex-1 gap-1 text-xs"
 						>
 							<SvgIcon name="download" size={12} />
 							下载成片
@@ -601,7 +601,7 @@ function OutputCard({
 									source: "output-card",
 								});
 							}}
-							className="btn btn-ghost btn-xs h-7 min-h-7 flex-1 gap-1 border-base-content/20 text-[11px]"
+							className="btn btn-ghost btn-xs h-7 min-h-7 flex-1 gap-1 border-base-content/20 text-xs"
 						>
 							<SvgIcon name="refresh-cw" size={11} />
 							重新合成
@@ -612,7 +612,7 @@ function OutputCard({
 
 			{node.blockingClips.length > 0 ? (
 				<div className="mt-2 min-h-0 overflow-y-auto rounded-lg border border-warning/25 bg-warning/10 p-2">
-					<p className="m-0 font-mono text-[10px] uppercase text-warning">
+					<p className="m-0 font-mono text-2xs uppercase text-warning">
 						阻塞项 {node.blockingClips.length}
 					</p>
 					<ul className="m-0 mt-1 list-none space-y-0.5 p-0 text-xs leading-relaxed text-base-content">
@@ -629,7 +629,7 @@ function OutputCard({
 
 			{node.exports.length > 0 ? (
 				<div className="mt-auto pt-2" onPointerDown={stopAll}>
-					<p className="m-0 font-mono text-[10px] uppercase text-bc-muted">
+					<p className="m-0 font-mono text-2xs uppercase text-bc-muted">
 						导出记录 {node.exports.length}
 					</p>
 					<div className="mt-1 flex flex-col gap-0.5">
@@ -664,7 +664,7 @@ function outputStateLabel(state: Extract<ComicWorkflowNode, { kind: "output" }>[
 function Metric({ label, value }: { label: string; value: string | number }) {
 	return (
 		<div className="rounded-lg border border-base-content/10 bg-base-200/50 p-2">
-			<p className="m-0 text-[10px] font-mono uppercase text-bc-muted">
+			<p className="m-0 text-2xs font-mono uppercase text-bc-muted">
 				{label}
 			</p>
 			<p className="m-0 truncate font-heading text-lg font-bold">{value}</p>
@@ -686,7 +686,7 @@ function CardHeader({
 	return (
 		<div className="flex items-start gap-2">
 			<div
-				className={`flex shrink-0 items-center justify-center rounded-[var(--radius-md)] text-primary-content shadow-brutal-sm ${accentClass} ${
+				className={`flex shrink-0 items-center justify-center rounded-md text-primary-content shadow-brutal-sm ${accentClass} ${
 					compact ? "h-7 w-7" : "h-8 w-8"
 				}`}
 			>
@@ -694,12 +694,12 @@ function CardHeader({
 			</div>
 			<div className="min-w-0 flex-1">
 				<div className="flex min-w-0 items-center gap-1.5">
-					<p className="m-0 truncate font-heading text-[length:var(--text-sm)] font-bold">
+					<p className="m-0 truncate font-heading text-sm font-bold">
 						{node.title}
 					</p>
 					{statusBadge(node.status)}
 				</div>
-				<p className="m-0 truncate font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted">
+				<p className="m-0 truncate font-mono text-2xs uppercase text-bc-muted">
 					{node.subtitle}
 				</p>
 			</div>
@@ -760,7 +760,7 @@ export class WorkflowFrameShapeUtil extends ShapeUtil<WorkflowFrameShape> {
 				    否则暗色主题下未显式着色的文字会停留在 tldraw 的亮色近黑（1.3:1） */}
 				<section
 					aria-label={title}
-					className={`h-full w-full rounded-[var(--radius-xl)] border-3 border-base-content/15 p-3 text-base-content shadow-brutal-sm ${
+					className={`h-full w-full rounded-xl border-3 border-base-content/15 p-3 text-base-content shadow-brutal-sm ${
 						draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
 					} ${style.surface}`}
 					onPointerDown={draggable ? undefined : stopCanvasPointer}
@@ -768,16 +768,16 @@ export class WorkflowFrameShapeUtil extends ShapeUtil<WorkflowFrameShape> {
 					<div className="flex items-center gap-2">
 						<span className={`h-7 w-1 rounded-full ${style.accent}`} />
 						<div className="min-w-0">
-							<p className="m-0 font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted">
+							<p className="m-0 font-mono text-2xs uppercase text-bc-muted">
 								{eyebrow}
 							</p>
 							{/* countLabel 并入标题行尾：头部固定两行，layout 侧 frameHeader=56 才装得下 */}
 							<div className="flex min-w-0 items-baseline gap-2">
-								<p className="m-0 truncate font-heading text-[length:var(--text-md)] font-bold leading-tight">
+								<p className="m-0 truncate font-heading text-md font-bold leading-tight">
 									{title}
 								</p>
 								{countLabel ? (
-									<p className="m-0 shrink-0 font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted">
+									<p className="m-0 shrink-0 font-mono text-2xs uppercase text-bc-muted">
 										{countLabel}
 									</p>
 								) : null}

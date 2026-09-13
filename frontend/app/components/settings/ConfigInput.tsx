@@ -42,7 +42,7 @@ export function ConfigInput({ item, value, onChange }: ConfigInputProps) {
 	};
 
 	const fieldClass =
-		"input input-bordered h-9 min-h-9 w-full border-2 border-base-content/25 bg-base-100 px-2.5 font-mono text-[length:var(--text-xs)]";
+		"input input-bordered h-9 min-h-9 w-full border-2 border-base-content/25 bg-base-100 px-2.5 font-mono text-xs";
 
 	if (isSensitive) {
 		const displayValue = isRevealed ? value : isMasked ? value : "••••••••";
@@ -77,12 +77,12 @@ export function ConfigInput({ item, value, onChange }: ConfigInputProps) {
 					</button>
 				</div>
 				{!isRevealed && isMasked && (
-					<p className="m-0 text-[length:var(--text-2xs)] text-bc-muted">
+					<p className="m-0 text-2xs text-bc-muted">
 						已配置（显示脱敏值），点击眼睛图标可查看真实值
 					</p>
 				)}
 				{isRevealed && (
-					<p className="m-0 inline-flex items-center gap-1 text-[length:var(--text-2xs)] text-warning">
+					<p className="m-0 inline-flex items-center gap-1 text-2xs text-warning">
 						<SvgIcon name="triangle-alert" size={12} />
 						真实值已显示，请注意保护隐私
 					</p>

@@ -54,14 +54,14 @@ export class ErrorBoundary extends Component<Props, State> {
                 />
               </svg>
             </div>
-            <h2 className="mb-1 font-heading text-[length:var(--text-lg)] font-bold">
+            <h2 className="mb-1 font-heading text-lg font-bold">
               出错了
             </h2>
-            <p className="mb-3 text-[length:var(--text-sm)] text-base-content/75">
+            <p className="mb-3 text-sm text-base-content/75">
               应用遇到了意外错误，请尝试刷新页面。
             </p>
             {this.state.error && (
-              <details className="mb-3 rounded-[var(--radius-md)] bg-base-200 p-2 text-left text-[length:var(--text-2xs)]">
+              <details className="mb-3 rounded-md bg-base-200 p-2 text-left text-2xs">
                 <summary className="mb-1 cursor-pointer font-medium">
                   错误详情
                 </summary>

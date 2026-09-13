@@ -44,7 +44,7 @@ export function SkillWall({
 
 	return (
 		<ul
-			className="m-0 grid list-none grid-cols-1 gap-[var(--rhythm-item)] p-0 sm:grid-cols-3"
+			className="m-0 grid list-none grid-cols-1 gap-2 p-0 sm:grid-cols-3"
 			data-shell="skill-wall"
 			aria-label="选择工作流"
 		>
@@ -58,9 +58,9 @@ export function SkillWall({
 							onClick={() => onSelect(skill)}
 							aria-pressed={active}
 							className={clsx(
-								"flex h-full w-full flex-col gap-0.5 rounded-[var(--radius-md)] border-2 px-2 py-1.5 text-left",
-								"transition-[border-color,background-color] duration-[var(--duration-fast)]",
-								"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+								"flex h-full w-full flex-col gap-0.5 rounded-md border-2 px-2 py-1.5 text-left",
+								"transition-[border-color,background-color] duration-fast",
+								"",
 								active
 									? "halftone-bg-accent border-primary bg-primary/5"
 									: "border-base-content/10 bg-base-100 hover:border-primary/40",
@@ -68,17 +68,17 @@ export function SkillWall({
 						>
 							<span className="flex items-center justify-between gap-1">
 								<span className="flex min-w-0 items-center gap-1">
-									<span className="truncate font-heading text-[length:var(--text-sm)] font-bold leading-snug">
+									<span className="truncate font-heading text-sm font-bold leading-snug">
 										{skill.title}
 									</span>
 									{/* fallback 目录三张全是 core，逐张标「核心」是噪声——只标 new */}
 									{skill.badge === "new" ? (
-										<span className="shrink-0 rounded bg-primary/15 px-1 font-mono text-[length:var(--text-2xs)] font-bold uppercase leading-4 text-primary-ink">
+										<span className="shrink-0 rounded bg-primary/15 px-1 font-mono text-2xs font-bold uppercase leading-tight text-primary-ink">
 											NEW
 										</span>
 									) : null}
 									{lastUsedId === skill.id ? (
-										<span className="shrink-0 rounded bg-base-content/8 px-1 text-[length:var(--text-2xs)] leading-4 text-bc-muted">
+										<span className="shrink-0 rounded bg-base-content/10 px-1 text-2xs leading-tight text-bc-muted">
 											上次使用
 										</span>
 									) : null}
@@ -91,11 +91,11 @@ export function SkillWall({
 									/>
 								) : null}
 							</span>
-							<span className="block truncate text-[length:var(--text-2xs)] leading-snug text-bc-muted">
+							<span className="block truncate text-2xs leading-snug text-bc-muted">
 								{skill.description}
 							</span>
 							{/* 旅程线：选这条路会经过哪些阶段、停几次——选择前就该知道 */}
-							<span className="mt-0.5 block truncate font-mono text-[10px] leading-snug text-bc-muted">
+							<span className="mt-0.5 block truncate font-mono text-2xs leading-snug text-bc-muted">
 								{journey.stages.join(" → ")}
 								<span className="text-bc-subtle"> · </span>
 								{journey.pace}

@@ -31,11 +31,11 @@ export function EmptyState({
 					{icon}
 				</div>
 			) : null}
-			<p className="m-0 font-heading text-[length:var(--text-sm)] font-bold text-bc-muted">
+			<p className="m-0 font-heading text-sm font-bold text-bc-muted">
 				{title}
 			</p>
 			{description ? (
-				<p className="m-0 mt-1 max-w-sm text-[length:var(--text-xs)] text-bc-muted text-pretty">
+				<p className="m-0 mt-1 max-w-sm text-xs text-bc-muted text-pretty">
 					{description}
 				</p>
 			) : null}

@@ -31,14 +31,6 @@
     --space-10: 2.5rem; /* 40 */
     --space-12: 3rem; /* 48 */
 
-    /* Legacy aliases (keep call sites working) */
-    --space-xs: var(--space-1);
-    --space-sm: var(--space-2);
-    --space-md: var(--space-4);
-    --space-lg: var(--space-6);
-    --space-xl: var(--space-8);
-    --space-2xl: var(--space-12);
-
     /* —— Type scale (dense desk; display stays splash-only) —— */
     --text-2xs: 0.625rem; /* 10 — mono labels */
     --text-xs: 0.75rem; /* 12 */
@@ -47,7 +39,6 @@
     --text-md: 1rem; /* 16 */
     --text-lg: 1.125rem; /* 18 */
     --text-xl: 1.25rem; /* 20 */
-    --text-display: clamp(1.5rem, 4vw, 2.5rem);
 
     --leading-tight: 1.15;
     --leading-snug: 1.35;
@@ -59,21 +50,9 @@
     --radius-lg: 12px;
     --radius-xl: 16px;
 
-    /* —— Borders —— */
-    --border-thin: 1px;
-    --border-medium: 2px;
-    --border-thick: 3px;
-
     /* —— Touch —— */
     --touch-target-min: 44px; /* primary actions, WCAG-friendly */
     --touch-target-dense: 32px; /* chrome chips only; not sole target for critical ops */
-
-    /* —— Vertical rhythm（页面纵向节奏三档：区块间 > 块间 > 条目间）——
-     * 单一 gap 铺到底没有节奏；相关元素紧凑、独立区块宽松。
-     */
-    --rhythm-zone: 1.25rem; /* 20 — DeskSection 之间 */
-    --rhythm-block: var(--space-3); /* 12 — 区块内部块间 */
-    --rhythm-item: var(--space-2); /* 8 — 兄弟条目间 */
 
     /* —— Motion —— */
     --duration-fast: 150ms;
@@ -85,18 +64,8 @@
     --workbench-toolbar: 2.75rem; /* StagePipeline */
     --workbench-sidebar: 18rem; /* Agent Column */
     --workbench-sidebar-collapsed: 2.75rem;
-    --workbench-chrome-total: calc(
-      var(--workbench-header) + var(--workbench-toolbar)
-    );
-
-    /* —— Canvas / Shot Grid density —— */
-    --canvas-gap-section: 3rem;
-    --canvas-gap-card: 0.875rem;
-    --canvas-frame-pad: 1.25rem;
-    --canvas-frame-header: 3.5rem;
-    --shot-card-w: 13.75rem; /* 220 */
-    --shot-card-h: 18.75rem; /* 300 */
-    --shot-grid-columns: 3;
+    /* 画布几何（卡片/九宫格/frame 内距）的 SSOT 是 layoutComicWorkflow.ts：
+     * tldraw 消费 px 数值，这里不保留 rem 副本以免两套数字漂移。 */
 
     /* —— Z-Index —— */
     --z-dropdown: 10;
@@ -106,6 +75,8 @@
     --z-modal: 50;
     --z-popover: 60;
     --z-tooltip: 70;
+    /* tldraw 宿主层：第三方画布内部 z-index 上限为 10，其上层浮层从 80 起 */
+    --z-corner: 80;
   }
 
   [data-theme="doodle-dark"] {

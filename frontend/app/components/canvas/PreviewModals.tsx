@@ -9,7 +9,7 @@ interface ImagePreviewModalProps {
 export function ImagePreviewModal({ src, alt, onClose }: ImagePreviewModalProps) {
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-neutral/80 p-4"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-neutral/80 p-4"
       onClick={onClose}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
@@ -59,7 +59,7 @@ export function VideoPreviewModal({
 }: VideoPreviewModalProps) {
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-neutral/80 p-4"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-neutral/80 p-4"
       onClick={onClose}
       onKeyDown={(e) => {
         if (e.key === "Escape") {

@@ -74,12 +74,12 @@ export function Modal({ isOpen, onClose, title, children, actions }: ModalProps)
         {title && (
           <h3
             id="modal-title"
-            className="mb-2 font-heading text-[length:var(--text-md)] font-bold"
+            className="mb-2 font-heading text-md font-bold"
           >
             {title}
           </h3>
         )}
-        <div className="py-2 text-[length:var(--text-base)]">{children}</div>
+        <div className="py-2 text-base">{children}</div>
         <div className="modal-action mt-3 gap-2">
           {actions}
           <Button variant="ghost" size="sm" onClick={onClose}>

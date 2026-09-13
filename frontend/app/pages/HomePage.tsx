@@ -320,17 +320,17 @@ export function HomePage() {
 
 
 	const navChip =
-		"touch-target-dense inline-flex items-center gap-1.5 rounded-[var(--radius-md)] px-2 text-[length:var(--text-xs)] font-bold transition-colors duration-[var(--duration-fast)] hover:bg-base-200";
+		"touch-target-dense inline-flex items-center gap-1.5 rounded-md px-2 text-xs font-bold transition-colors duration-fast hover:bg-base-200";
 	const settingChip = (active: boolean) =>
-		`touch-target-dense rounded-[var(--radius-md)] border-2 px-2 py-1.5 text-[length:var(--text-xs)] font-bold transition-colors duration-[var(--duration-fast)] ${
+		`touch-target-dense rounded-md border-2 px-2 py-1.5 text-xs font-bold transition-colors duration-fast ${
 			active
 				? "border-primary bg-primary text-primary-content"
 				: "border-base-content/15 bg-base-100 text-bc-muted hover:border-primary/40"
 		}`;
 	const metaChip =
-		"rounded-full border border-base-content/10 bg-base-200 px-2 py-0.5 text-[length:var(--text-2xs)] font-semibold text-base-content/75";
+		"rounded-full border border-base-content/10 bg-base-200 px-2 py-0.5 text-2xs font-semibold text-base-content/75";
 	const sectionLabel =
-		"m-0 font-heading text-[length:var(--text-sm)] font-bold leading-tight";
+		"m-0 font-heading text-sm font-bold leading-tight";
 
 	return (
 		<PageShell data-shell="home">
@@ -355,7 +355,7 @@ export function HomePage() {
 				</Suspense>
 			)}
 			<PageBody className="workbench-surface">
-				<PageContent className="min-h-full sm:py-[var(--space-4)]">
+				<PageContent className="min-h-full sm:py-4">
 					<PageHeader
 						eyebrow="create desk"
 						title="创作台"
@@ -391,17 +391,17 @@ export function HomePage() {
 
 					{/* 桌面双栏：左侧纸面（工作流 + 故事创意），右侧 linen 面板。flex-1 让内容吃满视口，不留半屏空白 */}
 					<div
-						className="grid min-h-0 flex-1 gap-[var(--rhythm-zone)] lg:grid-cols-[minmax(0,1fr)_14rem]"
+						className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[minmax(0,1fr)_14rem]"
 						data-shell="create-desk"
 					>
-						<div className="flex min-w-0 flex-col gap-[var(--rhythm-zone)]">
+						<div className="flex min-w-0 flex-col gap-5">
 							<DeskSection
 								icon={<SvgIcon name="zap" size={16} />}
 								title="工作流"
 								actions={
 									activeSkillId ? (
 										// 预填透明化：选工作流会静默改右侧参数，这里让改动可见
-										<span className="rounded border border-primary/25 bg-primary/10 px-1.5 py-px text-[length:var(--text-2xs)] font-bold text-primary-ink">
+										<span className="rounded border border-primary/25 bg-primary/10 px-1.5 py-px text-2xs font-bold text-primary-ink">
 											已预填 {creationModeLabel} · {selectedStyleLabel} ·{" "}
 											{shotCount ?? "自动"}镜
 										</span>
@@ -426,7 +426,7 @@ export function HomePage() {
 									<textarea
 										id="story-input"
 										ref={storyInputRef}
-										className="input-doodle min-h-24 w-full flex-1 resize-y bg-base-100/85 p-2.5 text-[length:var(--text-sm)] leading-[var(--leading-normal)] sm:min-h-32"
+										className="input-doodle min-h-24 w-full flex-1 resize-y bg-base-100/90 p-2.5 text-sm leading-normal sm:min-h-32"
 										placeholder={storyPlaceholder}
 										value={story}
 										onChange={(e) => setStory(e.target.value)}
@@ -442,13 +442,13 @@ export function HomePage() {
 										spellCheck
 									/>
 									{story.length > 4500 && (
-										<p className="m-0 mt-1 text-[length:var(--text-2xs)] font-bold text-warning">
+										<p className="m-0 mt-1 text-2xs font-bold text-warning">
 											还可输入 {5000 - story.length} 字
 										</p>
 									)}
 								</div>
 
-								<div className="flex flex-col gap-[var(--rhythm-item)] sm:flex-row sm:items-center sm:justify-between">
+								<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 									<div className="flex min-w-0 flex-wrap gap-1.5">
 										<span className={metaChip}>{selectedStyleLabel}</span>
 										<span className={metaChip}>{creationModeLabel}</span>
@@ -487,10 +487,10 @@ export function HomePage() {
 
 						{/* linen 面板：无 brutal 阴影，靠材质（底色）与左侧纸面区分，不做双卡并置 */}
 						<aside
-							className="min-w-0 self-start rounded-[var(--radius-lg)] bg-base-200 p-3"
+							className="min-w-0 self-start rounded-lg bg-base-200 p-3"
 							aria-label="创作设置"
 						>
-							<div className="flex flex-col gap-[var(--rhythm-block)]">
+							<div className="flex flex-col gap-3">
 								<section aria-labelledby="universe-heading">
 									<div className="mb-1 flex items-center justify-between gap-2">
 										<h2 id="universe-heading" className={sectionLabel}>
@@ -498,7 +498,7 @@ export function HomePage() {
 										</h2>
 										<Link
 											to="/universes"
-											className="text-[length:var(--text-2xs)] font-bold text-bc-muted transition-colors hover:text-primary-ink"
+											className="text-2xs font-bold text-bc-muted transition-colors hover:text-primary-ink"
 										>
 											管理
 										</Link>
@@ -506,7 +506,7 @@ export function HomePage() {
 									<select
 										id="home-universe-select"
 										name="universe_id"
-										className="select select-bordered h-9 min-h-9 w-full bg-base-100 text-[length:var(--text-sm)] font-semibold"
+										className="select select-bordered h-9 min-h-9 w-full bg-base-100 text-sm font-semibold"
 										value={selectedUniverseId ?? ""}
 										onChange={(event) => {
 											const value = event.target.value;
@@ -524,7 +524,7 @@ export function HomePage() {
 											</option>
 										))}
 									</select>
-									<p className="m-0 mt-1 text-[length:var(--text-2xs)] leading-snug text-bc-muted">
+									<p className="m-0 mt-1 text-2xs leading-snug text-bc-muted">
 										{selectedUniverse
 											? `第 ${nextChapterNumber} 章 · 沿用世界观与共享角色`
 											: "不选则独立项目"}
@@ -535,7 +535,7 @@ export function HomePage() {
 									<h2 id="mode-heading" className={`${sectionLabel} mb-1`}>
 										生成方式
 									</h2>
-									<div className="grid grid-cols-2 gap-[var(--rhythm-item)]">
+									<div className="grid grid-cols-2 gap-2">
 										{[
 											{ value: "review", label: "审阅", icon: "check" },
 											{ value: "quick", label: "快速", icon: "zap" },
@@ -562,7 +562,7 @@ export function HomePage() {
 									<h2 id="style-heading" className={`${sectionLabel} mb-1`}>
 										常用风格
 									</h2>
-									<div className="grid grid-cols-2 gap-[var(--rhythm-item)]">
+									<div className="grid grid-cols-2 gap-2">
 										{PRIMARY_STYLE_OPTIONS.map((opt) => (
 											<button
 												key={opt.value}
@@ -582,7 +582,7 @@ export function HomePage() {
 										<h2 id="reference-heading" className={sectionLabel}>
 											参考图
 										</h2>
-										<span className="font-mono text-[length:var(--text-2xs)] tabular-nums text-bc-muted">
+										<span className="font-mono text-2xs tabular-nums text-bc-muted">
 											{referenceImages.length}/7
 										</span>
 									</div>
@@ -591,7 +591,7 @@ export function HomePage() {
 											{referenceImages.map((img, i) => (
 												<div
 													key={i}
-													className="group relative h-11 w-11 overflow-hidden rounded-[var(--radius-md)] border-2 border-base-content/10"
+													className="group relative h-11 w-11 overflow-hidden rounded-md border-2 border-base-content/10"
 												>
 													<img
 														src={img}
@@ -602,7 +602,7 @@ export function HomePage() {
 													/>
 													<button
 														type="button"
-														className="absolute inset-0 flex items-center justify-center bg-error/60 opacity-0 transition-opacity duration-[var(--duration-fast)] group-hover:opacity-100 focus:opacity-100"
+														className="absolute inset-0 flex items-center justify-center bg-error/60 opacity-0 transition-opacity duration-fast group-hover:opacity-100 focus:opacity-100"
 														onClick={() => removeReferenceImage(i)}
 														aria-label={`删除参考图 ${i + 1}`}
 													>
@@ -617,7 +617,7 @@ export function HomePage() {
 											{referenceImages.length < 7 && (
 												<button
 													type="button"
-													className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] border-2 border-dashed border-base-content/20 text-bc-muted transition-colors hover:border-primary/50 hover:text-primary-ink"
+													className="flex h-11 w-11 items-center justify-center rounded-md border-2 border-dashed border-base-content/20 text-bc-muted transition-colors hover:border-primary/50 hover:text-primary-ink"
 													onClick={() => fileInputRef.current?.click()}
 													aria-label="添加参考图"
 												>
@@ -628,7 +628,7 @@ export function HomePage() {
 									) : (
 										<button
 											type="button"
-											className="touch-target-dense inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius-md)] border-2 border-dashed border-base-content/20 bg-base-100/70 px-2 py-1.5 text-[length:var(--text-xs)] font-semibold text-bc-muted transition-colors hover:border-primary/50 hover:text-primary-ink"
+											className="touch-target-dense inline-flex w-full items-center justify-center gap-1.5 rounded-md border-2 border-dashed border-base-content/20 bg-base-100/70 px-2 py-1.5 text-xs font-semibold text-bc-muted transition-colors hover:border-primary/50 hover:text-primary-ink"
 											onClick={() => fileInputRef.current?.click()}
 										>
 											<SvgIcon name="image" size={14} />
@@ -652,7 +652,7 @@ export function HomePage() {
 
 								<button
 									type="button"
-									className="touch-target-dense flex w-full items-center justify-between rounded-[var(--radius-md)] border border-base-content/10 bg-base-100 px-2 text-[length:var(--text-xs)] font-bold text-bc-muted transition-colors hover:border-primary/40 hover:text-primary-ink"
+									className="touch-target-dense flex w-full items-center justify-between rounded-md border border-base-content/10 bg-base-100 px-2 text-xs font-bold text-bc-muted transition-colors hover:border-primary/40 hover:text-primary-ink"
 									onClick={() => setShowAdvanced(!showAdvanced)}
 									aria-expanded={showAdvanced}
 								>
@@ -665,15 +665,15 @@ export function HomePage() {
 								</button>
 
 								{showAdvanced && (
-									<div className="flex flex-col gap-[var(--rhythm-item)] border-t border-base-content/10 pt-2">
+									<div className="flex flex-col gap-2 border-t border-base-content/10 pt-2">
 										<label className="form-control">
 											<span className="label px-0 py-0 pb-0.5">
-												<span className="label-text font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted">
+												<span className="label-text font-mono text-2xs uppercase text-bc-muted">
 													完整风格
 												</span>
 											</span>
 											<select
-												className="select select-bordered h-9 min-h-9 bg-base-100 text-[length:var(--text-sm)] font-semibold"
+												className="select select-bordered h-9 min-h-9 bg-base-100 text-sm font-semibold"
 												value={style}
 												onChange={(event) => setStyle(event.target.value)}
 												aria-label="完整风格"
@@ -692,7 +692,7 @@ export function HomePage() {
 
 										<label className="form-control">
 											<span className="label px-0 py-0 pb-0.5">
-												<span className="label-text font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted">
+												<span className="label-text font-mono text-2xs uppercase text-bc-muted">
 													镜头数
 												</span>
 											</span>
@@ -709,13 +709,13 @@ export function HomePage() {
 															e.target.value ? Number(e.target.value) : undefined,
 														)
 													}
-													className="input input-bordered h-9 min-h-9 flex-1 bg-base-100 text-[length:var(--text-sm)] font-semibold"
+													className="input input-bordered h-9 min-h-9 flex-1 bg-base-100 text-sm font-semibold"
 													aria-label="镜头数"
 													autoComplete="off"
 												/>
 												<button
 													type="button"
-													className="btn btn-ghost h-9 min-h-9 px-2 text-[length:var(--text-2xs)]"
+													className="btn btn-ghost h-9 min-h-9 px-2 text-2xs"
 													onClick={() => setShotCount(undefined)}
 												>
 													自动
@@ -725,25 +725,25 @@ export function HomePage() {
 
 										<div>
 											<div className="mb-1 flex items-center justify-between gap-2">
-												<p className="m-0 font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted">
+												<p className="m-0 font-mono text-2xs uppercase text-bc-muted">
 													角色提示
 												</p>
 												{characterHints.length < 6 ? (
 													<button
 														type="button"
-														className="btn btn-ghost btn-sm h-8 min-h-8 px-2 text-[length:var(--text-2xs)] text-bc-muted hover:text-primary-ink"
+														className="btn btn-ghost btn-sm h-8 min-h-8 px-2 text-2xs text-bc-muted hover:text-primary-ink"
 														onClick={addCharacterHint}
 													>
 														添加
 													</button>
 												) : null}
 											</div>
-											<div className="flex flex-col gap-[var(--rhythm-item)]">
+											<div className="flex flex-col gap-2">
 												{characterHints.map((hint, i) => (
 													<div key={i} className="flex gap-1.5">
 														<input
 															type="text"
-															className="input input-bordered input-sm h-8 min-h-8 min-w-0 flex-1 bg-base-100 text-[length:var(--text-sm)]"
+															className="input input-bordered input-sm h-8 min-h-8 min-w-0 flex-1 bg-base-100 text-sm"
 															placeholder={`角色 ${i + 1}`}
 															value={hint}
 															onChange={(e) =>

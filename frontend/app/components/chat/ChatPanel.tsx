@@ -131,7 +131,7 @@ export function ChatPanel({
       <div className="flex items-center justify-between border-b border-base-content/10 px-2 py-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <StageIcon className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-          <span className="truncate font-heading text-[length:var(--text-xs)] font-bold">
+          <span className="truncate font-heading text-xs font-bold">
             {info.title}
           </span>
         </div>
@@ -139,7 +139,7 @@ export function ChatPanel({
         <button
           type="button"
           onClick={handleRunModeToggle}
-          className={`btn h-8 min-h-8 gap-1 border-2 px-2 text-[length:var(--text-2xs)] font-heading font-bold ${isYolo ? "btn-primary" : "btn-ghost"}`}
+          className={`btn h-8 min-h-8 gap-1 border-2 px-2 text-2xs font-heading font-bold ${isYolo ? "btn-primary" : "btn-ghost"}`}
           aria-label={isYolo ? "切换精细审阅模式" : "切换快速生成模式"}
           title={isYolo ? "快速生成：自动确认" : "精细审阅：逐阶段确认"}
         >
@@ -159,7 +159,7 @@ export function ChatPanel({
 
       {isGenerating && !awaitingConfirm && (
         <div className="flex items-center justify-between border-b border-base-content/10 px-2 py-0.5">
-          <div className="flex items-center gap-1.5 text-[length:var(--text-2xs)] text-bc-muted">
+          <div className="flex items-center gap-1.5 text-2xs text-bc-muted">
             <span className="loading loading-dots loading-xs text-primary" />
             {agentNameMap[currentAgent || ""] || currentAgent || "处理中"}…
             {isYolo && (
@@ -189,7 +189,7 @@ export function ChatPanel({
             <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-primary/30 bg-primary/10">
               <StageIcon className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
             </div>
-            <p className="m-0 text-[length:var(--text-2xs)] text-bc-muted">
+            <p className="m-0 text-2xs text-bc-muted">
               当前阶段暂无对话
             </p>
           </div>
@@ -218,7 +218,7 @@ export function ChatPanel({
       {showManualConfirm && !showOutlinePreview && (
         <div className="border-t-2 border-primary/30 bg-primary/5 px-2 py-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-[length:var(--text-2xs)] font-medium text-bc-muted">
+            <span className="min-w-0 truncate text-2xs font-medium text-bc-muted">
               {agentDisplayName} 已完成 — 确认继续？
             </span>
             <Button
@@ -239,7 +239,7 @@ export function ChatPanel({
       )}
 
       {awaitingConfirm && isYolo && isPaused && onPause && (
-        <div className="flex items-center gap-1.5 border-t border-base-content/10 bg-primary/5 px-2 py-0.5 text-[length:var(--text-2xs)] text-bc-muted">
+        <div className="flex items-center gap-1.5 border-t border-base-content/10 bg-primary/5 px-2 py-0.5 text-2xs text-bc-muted">
           <BoltIcon className="h-3.5 w-3.5" aria-hidden="true" />
           快速生成已暂停
           <Button

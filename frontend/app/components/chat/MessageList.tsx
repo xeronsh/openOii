@@ -68,7 +68,7 @@ function ThinkingMessage({ msg }: { msg: AgentMessage }) {
         <AgentIcon className={`w-3 h-3 ${agentColors[msg.agent] || "text-base-content/30"}`} aria-hidden="true" />
         <span className="text-xs font-comic uppercase tracking-wide text-bc-muted">{agentNameMap[msg.agent] || msg.agent}</span>
         {phaseLabel && (
-          <span className={`badge ${phaseBadge} badge-xs ml-1 font-mono text-[10px]`}>{phaseLabel}</span>
+          <span className={`badge ${phaseBadge} badge-xs ml-1 font-mono text-2xs`}>{phaseLabel}</span>
         )}
       </div>
       <div
@@ -105,7 +105,7 @@ function ThinkingMessage({ msg }: { msg: AgentMessage }) {
             ) : (
               <div>
                 <p className="text-xs text-bc-muted leading-relaxed truncate">{firstLine}</p>
-                <span className="text-[10px] text-bc-muted hover:text-base-content transition-colors">
+                <span className="text-2xs text-bc-muted hover:text-base-content transition-colors">
                   查看思考过程
                 </span>
               </div>

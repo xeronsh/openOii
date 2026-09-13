@@ -25,7 +25,7 @@ colors:
   dark-inkwell-content: "#D0D0E0"
   semantic-success: "#4CAF7D"
   semantic-warning: "#E8943A"
-  semantic-error: "#D94848"
+  semantic-error: "#C03A3A"
   semantic-info: "#2AA8B8"
 typography:
   display:
@@ -46,9 +46,9 @@ typography:
     lineHeight: 1.3
   body:
     fontFamily: "Nunito, Comic Neue, sans-serif"
-    fontSize: "1rem"
+    fontSize: "0.875rem"
     fontWeight: 400
-    lineHeight: 1.6
+    lineHeight: 1.5
   label:
     fontFamily: "JetBrains Mono, Menlo, monospace"
     fontSize: "0.75rem"
@@ -64,20 +64,25 @@ rounded:
   md: "8px"
   lg: "12px"
   xl: "16px"
-  sketch: "255px 15px 225px 15px/15px 225px 15px 255px"
 spacing:
-  xs: "4px"
-  sm: "8px"
-  md: "16px"
-  lg: "24px"
-  xl: "32px"
-  2xl: "48px"
+  "1": "4px"
+  "2": "8px"
+  "3": "12px"
+  "4": "16px"
+  "5": "20px"
+  "6": "24px"
+  "8": "32px"
+  "10": "40px"
+  "12": "48px"
+alpha:
+  rule: "5 的倍数；/8 /12 /65 这类随手档已收敛"
+  common: "5 10 15 20 30 40 50 70 90"
 components:
   button-primary:
     backgroundColor: "{colors.inkwell-gold}"
     textColor: "{colors.inkwell-gold-content}"
     rounded: "{rounded.md}"
-    padding: "20px 20px 10px 20px"
+    padding: "6px 14px"
   button-primary-hover:
     backgroundColor: "oklch(78% 0.14 85)"
   button-secondary:
@@ -100,7 +105,7 @@ components:
     rounded: "{rounded.lg}"
   input-doodle:
     backgroundColor: "{colors.workshop-cream}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
 ---
 
 # Design System: openOii
@@ -117,8 +122,27 @@ components:
 |-------|------|
 | `--workbench-header` / `--workbench-toolbar` | TopBar + stage row (each 2.75rem) |
 | `--workbench-sidebar` | Agent Column width (18rem) |
-| `--shot-card-w` / `--shot-card-h` | Shot Grid cell |
-| `--shot-grid-columns` | 3 |
+
+画布几何（卡片尺寸、九宫格列数、frame 内距 gap）的 SSOT 是
+`app/features/comic-workflow/graph/layoutComicWorkflow.ts`——tldraw 消费的是
+px 数值，tokens.css 不保留 rem 副本（避免两套数字漂移）。
+
+**Token → Utility 映射（强制）：**
+
+`tailwind.config.ts` 的 `theme.extend` 把 token 映射成裸类，**源码里必须写裸类**：
+
+| token | 写字 | 禁止写 |
+|-------|------|--------|
+| `--text-sm` | `text-sm` | ~~`text-[length:var(--text-sm)]`~~ |
+| `--radius-md` | `rounded-md` | ~~`rounded-[var(--radius-md)]`~~ |
+| `--z-modal` | `z-modal` | ~~`z-[var(--z-modal)]`~~、~~`z-50`~~ |
+| `--duration-fast` | `duration-fast` | ~~`duration-[var(--duration-fast)]`~~、~~`duration-150`~~ |
+| `--leading-tight` | `leading-tight` | ~~`leading-4`~~ |
+| `--rhythm-zone` | `gap-5` | ~~`gap-[var(--rhythm-zone)]`~~ |
+
+不透明度阶梯只允许 5 的倍数（`base-content/8` 这类随手档已收敛）。
+focus ring 不手写：全局 `:focus-visible` 已是 2px primary outline，别再加 `focus-visible:outline-*` / `ring-*`。
+执行者：`app/styles/designContract.test.ts`（几何）+ `themeContrast.test.ts`（颜色）。
 
 **Layout rules:**
 
@@ -191,7 +215,7 @@ The palette is a CMYK printing system translated to a UI: Cyan for structural el
 - **Display** (400, clamp(1.75rem, 5vw, 3.5rem), line-height 1): Comic book cover titles. Splash text on hero sections. The only place Bangers is used. Letter-spacing 0.04em for optical balance.
 - **Headline** (700, 1.5rem, line-height 1.2): Section titles, sidebar project names, modal headers. Fredoka at its boldest.
 - **Title** (600, 1.125rem, line-height 1.3): Card titles, button text at large sizes, toast messages. Fredoka at medium weight.
-- **Body** (400, 1rem, line-height 1.6): All running text. Paragraphs, descriptions, chat messages. Max line length 65-75ch. Nunito's rounded terminals maintain warmth at reading length.
+- **Body** (400, 0.875rem, line-height 1.5): All running text. Paragraphs, descriptions, chat messages. Max line length 65-75ch. Nunito's rounded terminals maintain warmth at reading length.
 - **Label** (500, 0.75rem, letter-spacing 0.05em): Status indicators, metadata, timestamps, technical data. JetBrains Mono uppercase for registration-mark precision.
 - **Sketch** (400, 1.25rem, line-height 1.4): Decorative hand-lettered text. Tooltips, hint text, personality touches. Caveat only. Used no more than once per screen to preserve impact.
 
@@ -209,9 +233,9 @@ The Comic Workbench uses CMYK offset shadows as structural elevation. Shadows ar
 - **Brutal** (`4px 4px 0px 0px oklch(var(--bc) / 0.3)`): Default card elevation. Single-plate offset shadow in the base-content color. Used on card-doodle, btn-doodle.
 - **Brutal Small** (`2px 2px 0px 0px oklch(var(--bc) / 0.3)`): Subtle elevation for small elements (chips, tags, inline badges).
 - **Brutal Large** (`6px 6px 0px 0px oklch(var(--bc) / 0.3)`): Hover-state elevation. The shadow grows when the card is lifted.
-- **Comic** (`3px 3px 0px 0px #00bcd4, 5px 5px 0px 0px oklch(var(--bc) / 0.25)`): Two-plate CMYK shadow. Cyan first layer (3px offset), content-color second layer (5px offset). Used on card-comic. Signals "this element has a distinct visual identity."
-- **Comic Magenta** (`3px 3px 0px 0px #e91e8c, 5px 5px 0px 0px oklch(var(--bc) / 0.25)`): Magenta first layer. Used for emphasis variants, pressed states, or elements that demand attention.
-- **Comic Pop** (`4px 4px 0px 0px #00bcd4, 7px 7px 0px 0px oklch(var(--bc) / 0.3)`): Larger CMYK shadow. Hover state for comic elements. The expanded offset signals "this plate has shifted during printing."
+- **Comic** (`4px 4px 0px 0px oklch(var(--cmyk-cyan) / 0.7), 7px 7px 0px 0px oklch(var(--cmyk-magenta) / 0.5)`): Two-plate CMYK shadow. Cyan first layer, magenta second layer, both theme-aware via `--cmyk-cyan` / `--cmyk-magenta`. Used on card-comic. Signals "this element has a distinct visual identity."
+- **Comic Magenta** (`4px 4px 0px 0px oklch(var(--cmyk-magenta) / 0.7), 7px 7px 0px 0px oklch(var(--bc) / 0.3)`): Magenta first layer. Used for emphasis variants, pressed states, or elements that demand attention.
+- **Comic Pop** (`5px 5px 0px 0px oklch(var(--cmyk-cyan) / 0.8), 9px 9px 0px 0px oklch(var(--cmyk-magenta) / 0.6)`): Larger CMYK shadow. Hover state for comic elements. The expanded offset signals "this plate has shifted during printing."
 
 ### Tonal Layering
 - **Light theme**: Three cream surfaces (Workshop Cream/Linen/Ecru) form tonal layers without shadow. Panels and sidebars use Linen (#F0EFE6), the canvas uses Cream (#FAFAF5), and elevated inputs use Ecru (#E2E0D4).
@@ -244,7 +268,7 @@ The Comic Workbench uses CMYK offset shadows as structural elevation. Shadows ar
 
 ### Inputs / Fields
 - **input-doodle:** 3px border in `base-content/30`, rounded-lg (8px), Workshop Cream background. Focus: border shifts to primary (Inkwell Gold). No glow, no ring, just a decisive border-color change.
-- **Error state:** Border shifts to error color (#D94848). Error message in error color below.
+- **Error state:** Border shifts to error color (`#C03A3A` light / `#E86868` dark). Error message in error color below.
 - **Label:** font-heading medium weight, sitting above the input.
 
 ### Chips / Tags
@@ -252,8 +276,8 @@ The Comic Workbench uses CMYK offset shadows as structural elevation. Shadows ar
 - **State:** Unselected: base-200 bg, base-content text. Selected: accent/10 bg, accent text with accent border.
 
 ### Navigation
-- **Sidebar:** 240px overlay panel, Pressroom Surface / Workshop Linen background. Active project: left border highlight in Inkwell Gold (3px). Project names in font-heading, compact row layout. Delete button revealed on hover only.
-- **TopBar:** 40px height, 2px thick bottom border, compact dot+icon+label stage indicators. Bold progress dots in stage accent color. Stage labels in font-heading.
+- **Sidebar:** 288px overlay panel (18rem, `--workbench-sidebar`), Pressroom Surface / Workshop Linen background. Active project: left border highlight in Inkwell Gold (3px). Project names in font-heading, compact row layout. Delete button revealed on hover only.
+- **TopBar:** 44px height (2.75rem, `--workbench-header`), 2px thick bottom border, compact dot+icon+label stage indicators. Bold progress dots in stage accent color. Stage labels in font-heading.
 
 ### Speech Bubbles
 - **speech-bubble:** Rounded-xl, base-300/50 background, font-comic type. Left-pointing triangle arrow (6px border-width) for AI messages.
@@ -261,10 +285,9 @@ The Comic Workbench uses CMYK offset shadows as structural elevation. Shadows ar
 - **Use case:** Chat panel messages. The directional arrows follow comic convention (left = incoming, right = outgoing).
 
 ### Halftone Backgrounds
-- **halftone-bg:** Radial gradient dots in `base-content / 0.06`, 8px grid. Standard background texture for sections needing surface identity.
-- **halftone-bg-accent:** Dots in `primary / 0.12`, 8px grid. Accent variant for hero sections and featured areas.
-- **halftone-bg-dense:** Dots in `base-content / 0.08`, 6px grid. Dense variant for focused content areas.
-- **Dark mode:** Opacity increases 2.5x (0.06→0.15, 0.08→0.2, 0.12→0.25) to maintain halftone visibility against dark surfaces.
+- **halftone-bg:** Radial gradient dots in `base-content / 0.08`, 7px grid. Standard background texture for sections needing surface identity.
+- **halftone-bg-accent:** Dots in `primary / 0.16`, 7px grid. Accent variant for hero sections and featured areas.
+- **Dark mode:** Opacity increases (0.08→0.2, 0.16→0.3) to maintain halftone visibility against dark surfaces.
 
 ## 6. Do's and Don'ts
 

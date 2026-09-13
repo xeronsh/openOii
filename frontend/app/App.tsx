@@ -53,7 +53,7 @@ export function App() {
           >
             <Suspense
               fallback={
-                <LoadingOverlay text="加载中…" className="fixed inset-0 z-[var(--z-modal)]" />
+                <LoadingOverlay text="加载中…" className="fixed inset-0 z-modal" />
               }
             >
               <Routes>

@@ -111,7 +111,7 @@ export function ProviderSelectionFields({
         return (
           <fieldset
             key={field.modality}
-            className="rounded-2xl border border-base-300 bg-base-200/60 p-4"
+            className="rounded-xl border border-base-300 bg-base-200/60 p-4"
           >
             <legend className="px-2 text-sm font-semibold text-base-content">
               {field.title}

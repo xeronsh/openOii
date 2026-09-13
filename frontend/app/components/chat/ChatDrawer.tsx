@@ -29,7 +29,7 @@ export function ChatDrawer({
 	if (!isOpen) return null;
 
 	return (
-		<div className="flex h-full w-[var(--workbench-sidebar)] shrink-0 flex-col border-l border-base-content/12 bg-base-100">
+		<div className="flex h-full w-sidebar shrink-0 flex-col border-l border-base-content/10 bg-base-100">
 			<div className="flex items-center justify-end border-b border-base-content/10 px-1.5 py-1">
 				<button
 					type="button"

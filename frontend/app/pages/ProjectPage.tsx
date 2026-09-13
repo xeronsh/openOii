@@ -927,7 +927,7 @@ export function ProjectPage() {
 			<h1 className="sr-only">{project.title || "漫剧工作台"}</h1>
 			<a
 				href="#workbench-main"
-				className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[var(--z-modal)] focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-content"
+				className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-modal rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-content"
 			>
 				跳到工作台
 			</a>

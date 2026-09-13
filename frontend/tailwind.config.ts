@@ -5,6 +5,61 @@ export default {
   content: ["./app/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
+      // —— Design Contract tokens ——
+      // SSOT: app/styles/tokens.css。裸类直接解析到 token，
+      // 因此禁止再写 text-[length:var(--text-sm)] / rounded-[var(--radius-md)] / z-[var(--z-modal)]。
+      borderRadius: {
+        DEFAULT: "var(--radius-sm)",
+        sm: "var(--radius-sm)",
+        md: "var(--radius-md)",
+        lg: "var(--radius-lg)",
+        xl: "var(--radius-xl)",
+      },
+      fontSize: {
+        "2xs": "var(--text-2xs)",
+        xs: "var(--text-xs)",
+        sm: "var(--text-sm)",
+        base: "var(--text-base)",
+        md: "var(--text-md)",
+        lg: "var(--text-lg)",
+        xl: "var(--text-xl)",
+      },
+      lineHeight: {
+        tight: "var(--leading-tight)",
+        snug: "var(--leading-snug)",
+        normal: "var(--leading-normal)",
+      },
+      spacing: {
+        0: "var(--space-0)",
+        1: "var(--space-1)",
+        2: "var(--space-2)",
+        3: "var(--space-3)",
+        4: "var(--space-4)",
+        5: "var(--space-5)",
+        6: "var(--space-6)",
+        8: "var(--space-8)",
+        10: "var(--space-10)",
+        12: "var(--space-12)",
+      },
+      zIndex: {
+        dropdown: "var(--z-dropdown)",
+        sticky: "var(--z-sticky)",
+        fixed: "var(--z-fixed)",
+        "modal-backdrop": "var(--z-modal-backdrop)",
+        modal: "var(--z-modal)",
+        popover: "var(--z-popover)",
+        tooltip: "var(--z-tooltip)",
+        corner: "var(--z-corner)",
+      },
+      transitionDuration: {
+        fast: "var(--duration-fast)",
+        normal: "var(--duration-normal)",
+        slow: "var(--duration-slow)",
+      },
+      width: {
+        sidebar: "var(--workbench-sidebar)",
+        "sidebar-collapsed": "var(--workbench-sidebar-collapsed)",
+      },
       colors: {
         // 语义对比度令牌，按主题在 tokens.css 中取值（见 ADR 0002 注释）
         "bc-muted": "var(--bc-muted)",

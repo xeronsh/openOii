@@ -27,7 +27,7 @@ export function DeskSection({
 	return (
 		<section
 			className={clsx(
-				"flex min-w-0 flex-col gap-[var(--rhythm-block)]",
+				"flex min-w-0 flex-col gap-3",
 				className,
 			)}
 			data-shell="desk-section"
@@ -39,11 +39,11 @@ export function DeskSection({
 							{icon}
 						</span>
 					) : null}
-					<h2 className="m-0 font-heading text-[length:var(--text-md)] font-bold leading-tight">
+					<h2 className="m-0 font-heading text-md font-bold leading-tight">
 						{title}
 					</h2>
 					{meta ? (
-						<span className="font-mono text-[length:var(--text-2xs)] tabular-nums text-bc-muted">
+						<span className="font-mono text-2xs tabular-nums text-bc-muted">
 							{meta}
 						</span>
 					) : null}

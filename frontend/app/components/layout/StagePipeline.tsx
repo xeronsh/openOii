@@ -49,7 +49,7 @@ const STATUS_DOT: Record<WorkbenchStatus["state"], string> = {
 };
 
 const chromeBtn =
-	"touch-target-dense !h-8 !min-h-8 gap-1 !px-2 text-xs transition-colors duration-[var(--duration-fast)]";
+	"touch-target-dense !h-8 !min-h-8 gap-1 !px-2 text-xs transition-colors duration-fast";
 
 // daisyUI dropdown 靠 focus 展开，执行动作后主动收起菜单
 function runMenuAction(action: () => void) {
@@ -89,7 +89,7 @@ export function StagePipeline({
 
 	return (
 		<div
-			className="chrome-toolbar z-[var(--z-sticky)] gap-2 border-b border-base-content/10 bg-base-200/80 px-2 sm:gap-3 sm:px-3"
+			className="chrome-toolbar z-sticky gap-2 border-b border-base-content/10 bg-base-200/80 px-2 sm:gap-3 sm:px-3"
 			data-shell="stage-pipeline"
 		>
 			<span className="sr-only" aria-live="polite">
@@ -105,7 +105,7 @@ export function StagePipeline({
 					aria-hidden="true"
 				/>
 				{/* 状态文案在所有视口可见：<sm 只剩色点时色盲无法区分状态 */}
-				<span className="inline-block max-w-[4.5rem] truncate font-mono text-[length:var(--text-2xs)] font-semibold tabular-nums text-bc-muted sm:max-w-[5.5rem]">
+				<span className="inline-block max-w-[4.5rem] truncate font-mono text-2xs font-semibold tabular-nums text-bc-muted sm:max-w-[5.5rem]">
 					{workbenchStatus.label}
 				</span>
 				<div
@@ -117,11 +117,11 @@ export function StagePipeline({
 					aria-valuenow={progressPercent}
 				>
 					<div
-						className="h-full rounded-full bg-primary transition-[width] duration-[var(--duration-normal)]"
+						className="h-full rounded-full bg-primary transition-[width] duration-normal"
 						style={{ width: `${progressPercent}%` }}
 					/>
 				</div>
-				<span className="w-8 font-mono text-[length:var(--text-2xs)] tabular-nums text-bc-muted">
+				<span className="w-8 font-mono text-2xs tabular-nums text-bc-muted">
 					{progressPercent}%
 				</span>
 			</div>
@@ -137,7 +137,7 @@ export function StagePipeline({
 					return (
 						<div key={stage.key} className="flex shrink-0 items-center">
 							<span
-								className={`inline-flex h-7 items-center gap-1 rounded-[var(--radius-md)] px-2 text-[length:var(--text-2xs)] font-bold uppercase tracking-wide ${
+								className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-2xs font-bold uppercase tracking-wide ${
 									current
 										? "bg-primary text-primary-content"
 										: past
@@ -187,7 +187,7 @@ export function StagePipeline({
 							tabIndex={0}
 							role="menu"
 							aria-label="工作台工具菜单"
-							className="dropdown-content menu z-[var(--z-dropdown)] mt-1 w-44 rounded-[var(--radius-md)] border-2 border-base-content/12 bg-base-100 p-1 shadow-brutal-sm"
+							className="dropdown-content menu z-dropdown mt-1 w-44 rounded-md border-2 border-base-content/10 bg-base-100 p-1 shadow-brutal-sm"
 						>
 							{onOpenVersions ? (
 								<li role="none">

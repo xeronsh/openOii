@@ -79,20 +79,20 @@ export function UniverseTimelinePanel({
 	return (
 		<div className="flex h-full min-h-0 flex-col" data-shell="universe-timeline">
 			<div className="shrink-0 border-b border-base-content/10 px-2 py-1.5">
-				<p className="m-0 font-mono text-[length:var(--text-2xs)] uppercase tracking-wide text-bc-muted">
+				<p className="m-0 font-mono text-2xs uppercase tracking-wide text-bc-muted">
 					universe
 				</p>
 				<div className="mt-0.5 flex items-center gap-1.5">
 					<GlobeAltIcon className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-					<h3 className="m-0 truncate font-heading text-[length:var(--text-sm)] font-bold">
+					<h3 className="m-0 truncate font-heading text-sm font-bold">
 						{data.universe_name}
 					</h3>
 				</div>
-				<p className="m-0 mt-0.5 text-[length:var(--text-2xs)] text-bc-muted">
+				<p className="m-0 mt-0.5 text-2xs text-bc-muted">
 					跨章节时间线 · {data.shared_character_count} 共享角色
 				</p>
 				{data.world_setting ? (
-					<p className="m-0 mt-1 line-clamp-2 text-[length:var(--text-2xs)] text-bc-muted">
+					<p className="m-0 mt-1 line-clamp-2 text-2xs text-bc-muted">
 						{data.world_setting}
 					</p>
 				) : null}
@@ -115,14 +115,14 @@ export function UniverseTimelinePanel({
 					<li key={ch.project_id}>
 						<Link
 							to={`/project/${ch.project_id}`}
-							className={`block rounded-[var(--radius-md)] border px-2 py-1.5 transition-colors ${
+							className={`block rounded-md border px-2 py-1.5 transition-colors ${
 								ch.is_current
 									? "border-primary/40 bg-primary/10"
 									: "border-base-content/10 bg-base-200/40 hover:border-primary/30"
 							}`}
 						>
 							<div className="flex items-center justify-between gap-1">
-								<span className="inline-flex items-center gap-1 font-mono text-[length:var(--text-2xs)] font-bold text-primary-ink">
+								<span className="inline-flex items-center gap-1 font-mono text-2xs font-bold text-primary-ink">
 									{ch.chapter_number != null ? (
 										`第${ch.chapter_number}章`
 									) : (
@@ -132,20 +132,20 @@ export function UniverseTimelinePanel({
 									)}
 									{ch.is_current ? " · 当前" : ""}
 								</span>
-								<span className="font-mono text-[length:var(--text-2xs)] text-bc-muted">
+								<span className="font-mono text-2xs text-bc-muted">
 									{ch.shot_count}格 · {ch.character_count}角
 									{ch.has_video ? " · 成片" : ""}
 								</span>
 							</div>
-							<p className="m-0 mt-0.5 truncate font-heading text-[length:var(--text-xs)] font-bold">
+							<p className="m-0 mt-0.5 truncate font-heading text-xs font-bold">
 								{ch.chapter_title || ch.title}
 							</p>
 							{ch.summary ? (
-								<p className="m-0 mt-0.5 line-clamp-2 text-[length:var(--text-2xs)] text-bc-muted">
+								<p className="m-0 mt-0.5 line-clamp-2 text-2xs text-bc-muted">
 									{ch.summary}
 								</p>
 							) : (
-								<p className="m-0 mt-0.5 text-[length:var(--text-2xs)] text-bc-muted">
+								<p className="m-0 mt-0.5 text-2xs text-bc-muted">
 									{ch.status}
 								</p>
 							)}

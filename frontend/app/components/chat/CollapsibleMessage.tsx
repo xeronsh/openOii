@@ -29,7 +29,7 @@ export function CollapsibleMessage({
           <button
             type="button"
             onClick={toggle}
-            className="mt-1.5 flex items-center gap-1 text-[length:var(--text-2xs)] text-bc-muted transition-colors duration-[var(--duration-fast)] hover:text-base-content/80"
+            className="mt-1.5 flex items-center gap-1 text-2xs text-bc-muted transition-colors duration-fast hover:text-base-content/80"
             aria-label="收起详情"
           >
             <ChevronUpIcon className="h-3 w-3" aria-hidden="true" />
@@ -39,7 +39,7 @@ export function CollapsibleMessage({
       ) : (
         <div
           onClick={toggle}
-          className="-m-1.5 cursor-pointer rounded-[var(--radius-md)] p-1.5 transition-colors duration-[var(--duration-fast)] hover:bg-base-200/50"
+          className="-m-1.5 cursor-pointer rounded-md p-1.5 transition-colors duration-fast hover:bg-base-200/50"
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
@@ -50,8 +50,8 @@ export function CollapsibleMessage({
           }}
           aria-label="展开查看详情"
         >
-          <p className="m-0 text-[length:var(--text-sm)] text-base-content/80">{summary}</p>
-          <div className="mt-0.5 flex items-center gap-1 text-[length:var(--text-2xs)] text-bc-muted">
+          <p className="m-0 text-sm text-base-content/80">{summary}</p>
+          <div className="mt-0.5 flex items-center gap-1 text-2xs text-bc-muted">
             <ChevronDownIcon className="h-3 w-3" aria-hidden="true" />
             <span>点击展开</span>
           </div>
