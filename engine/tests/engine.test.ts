@@ -4,16 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
 import { createEngineApp } from "../src/index.js";
+import type { PipelineRunner } from "../src/pipeline/runner.js";
 
 describe("engine sidecar", () => {
   let cleanupDir: string;
   let server: Server;
   let port: number;
+  let app: ReturnType<typeof createEngineApp>;
 
   beforeEach(async () => {
     process.env.TEXT_PROVIDER = "fake";
     cleanupDir = mkdtempSync(join(tmpdir(), "openoii-engine-"));
-    const app = createEngineApp(join(cleanupDir, "test.db"));
+    app = createEngineApp(join(cleanupDir, "test.db"));
     server = app.server;
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
     port = (server.address() as { port: number }).port;
@@ -21,6 +23,7 @@ describe("engine sidecar", () => {
 
   afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    app.db.close();
     rmSync(cleanupDir, { recursive: true, force: true });
   });
 
@@ -39,6 +42,22 @@ describe("engine sidecar", () => {
       body: JSON.stringify({ project_id: "x" }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rejects a second executor for the same run id", async () => {
+    // Seed the active-execution registry directly so the test does not depend
+    // on a project fixture or provider timing. The HTTP contract must reject a
+    // duplicate start before it can create another writer for this run.
+    app.pipelines.set(77, {} as PipelineRunner);
+    const res = await fetch(`http://127.0.0.1:${port}/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: 1, run_id: 77 }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string; details: { run_id: number } } };
+    expect(body.error.code).toBe("RUN_ALREADY_ACTIVE");
+    expect(body.error.details.run_id).toBe(77);
   });
 
   it("returns 404 for unknown routes", async () => {
