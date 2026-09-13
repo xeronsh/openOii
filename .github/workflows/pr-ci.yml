@@ -26,7 +26,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
       - name: Install
-        run: uv sync --frozen --extra agents
+        run: uv sync --frozen
       - name: Ruff
         run: uv run ruff check app tests
       - name: Pytest
