@@ -108,10 +108,48 @@ async def ensure_postgres_checkpointer_setup(database_url: str) -> None:
 
 @asynccontextmanager
 async def build_postgres_checkpointer(database_url: str) -> AsyncIterator[object]:
+    """Build a run-checkpointer for the configured database URL.
+
+    - postgres URLs → AsyncPostgresSaver (bootstrap via ensure_postgres_checkpointer_setup)
+    - sqlite URLs   → AsyncSqliteSaver on the file (checkpoints survive restarts,
+      preserving resumability in the zero-container local dev mode)
+    - anything else → InMemorySaver (tests / explicit fallback; state is lost on restart)
+    """
     if database_url.startswith(("postgres://", "postgresql://", "postgresql+")):
         conn_str = _normalize_checkpointer_conn_string(database_url)
         async with AsyncPostgresSaver.from_conn_string(conn_str) as checkpointer:
             yield checkpointer
         return
 
+    sqlite_path = _sqlite_path_from_url(database_url)
+    if sqlite_path is not None:
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        async with AsyncSqliteSaver.from_conn_string(sqlite_path) as checkpointer:
+            await checkpointer.setup()
+            # 与 app 引擎一致：saver 的写锁获取也走 busy_timeout 排队而非立即报错
+            try:
+                cursor = await checkpointer.conn.execute("PRAGMA busy_timeout=5000")
+                await cursor.close()
+            except Exception:  # noqa: BLE001 - pragma is best-effort
+                logger.debug("sqlite checkpointer busy_timeout pragma failed", exc_info=True)
+            yield checkpointer
+        return
+
     yield InMemorySaver()
+
+
+def _sqlite_path_from_url(database_url: str) -> str | None:
+    """Extract the file path from sqlite / sqlite+aiosqlite URLs (None otherwise).
+
+    Memory databases (``sqlite://``, ``:memory:``) intentionally return None so
+    callers fall back to the in-memory checkpointer.
+    """
+    if not database_url.startswith("sqlite"):
+        return None
+    from sqlalchemy.engine import make_url
+
+    database = make_url(database_url).database
+    if not database or database == ":memory:":
+        return None
+    return database

@@ -40,11 +40,24 @@ def test_normalize_postgresql_no_asyncpg():
 
 
 @pytest.mark.asyncio
-async def test_build_postgres_checkpointer_non_postgres():
-    """Non-postgres URL should yield InMemorySaver."""
-    async with build_postgres_checkpointer("sqlite:///test.db") as cp:
-        assert cp is not None
-        from langgraph.checkpoint.memory import InMemorySaver
+async def test_build_postgres_checkpointer_sqlite_file(tmp_path):
+    """File-backed sqlite URL yields a persistent AsyncSqliteSaver."""
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    db_path = tmp_path / "checkpoint.db"
+    async with build_postgres_checkpointer(f"sqlite+aiosqlite:///{db_path}") as cp:
+        assert isinstance(cp, AsyncSqliteSaver)
+    assert db_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_build_postgres_checkpointer_memory_urls_fall_back_to_in_memory(tmp_path):
+    """Memory sqlite URLs and unknown schemes yield InMemorySaver."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    async with build_postgres_checkpointer("sqlite://") as cp:
+        assert isinstance(cp, InMemorySaver)
+    async with build_postgres_checkpointer("redis://localhost:6379/0") as cp:
         assert isinstance(cp, InMemorySaver)
 
 

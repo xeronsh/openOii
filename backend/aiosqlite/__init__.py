@@ -6,9 +6,10 @@ here can deadlock under asyncio. To keep `sqlite+aiosqlite` usable for tests,
 we provide a small subset of the aiosqlite API that SQLAlchemy relies on.
 
 Implementation notes:
-- All sqlite3 calls run synchronously in the event loop thread.
-- Every public async method yields once (`await asyncio.sleep(0)`) so the ASGI
-  test transport doesn't deadlock on body-carrying requests (PATCH/POST).
+- Raw sqlite3 calls run in worker threads via `asyncio.to_thread` so a
+  `busy_timeout` wait never blocks the event loop (a blocking busy-wait on the
+  loop thread self-deadlocks: the lock holder can never run to release it).
+- Connections are opened with check_same_thread=False accordingly.
 """
 
 from __future__ import annotations
@@ -30,10 +31,13 @@ sqlite_version_info = sqlite3.sqlite_version_info
 
 
 class Cursor:
-    def __init__(self, conn: "Connection") -> None:
+    def __init__(self, conn: "Connection", _pending: tuple | None = None) -> None:
         self._conn = conn
         self._cursor: sqlite3.Cursor | None = None
         self._closed = False
+        # Pending operation driven by __await__/__aenter__ (aiosqlite protocol:
+        # Connection.cursor/execute/executescript are sync and return a proxy).
+        self._pending = _pending
 
         self.arraysize = 1
         self.rowcount = -1
@@ -41,35 +45,58 @@ class Cursor:
         self.description = None
 
     async def __aenter__(self) -> "Cursor":
+        await self._run_pending()
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         await self.close()
 
+    def __await__(self):
+        return self._run_pending().__await__()
+
+    async def _run_pending(self) -> "Cursor":
+        await self._ensure_cursor()
+        if self._pending is not None:
+            kind = self._pending[0]
+            if kind == "execute":
+                _, operation, parameters = self._pending
+                assert self._cursor is not None
+                if parameters is None:
+                    await asyncio.to_thread(self._cursor.execute, operation)
+                else:
+                    await asyncio.to_thread(self._cursor.execute, operation, parameters)
+            elif kind == "executescript":
+                _, script = self._pending
+                assert self._cursor is not None
+                await asyncio.to_thread(self._cursor.executescript, script)
+            self._pending = None
+            self.description = self._cursor.description
+            self.rowcount = self._cursor.rowcount
+            self.lastrowid = self._cursor.lastrowid
+        return self
+
     async def _ensure_cursor(self) -> None:
-        await asyncio.sleep(0)
         await self._conn._open()
         if self._cursor is None:
             assert self._conn._conn is not None
-            self._cursor = self._conn._conn.cursor()
+            self._cursor = await asyncio.to_thread(self._conn._conn.cursor)
 
     async def close(self) -> None:
-        await asyncio.sleep(0)
         if self._closed:
             return
         self._closed = True
         if self._cursor is not None:
-            self._cursor.close()
-            self._cursor = None
+            cursor, self._cursor = self._cursor, None
+            await asyncio.to_thread(cursor.close)
 
     async def execute(self, operation: Any, parameters: Optional[Sequence[Any]] = None) -> Any:
         await self._ensure_cursor()
         assert self._cursor is not None
 
         if parameters is None:
-            self._cursor.execute(operation)
+            await asyncio.to_thread(self._cursor.execute, operation)
         else:
-            self._cursor.execute(operation, parameters)
+            await asyncio.to_thread(self._cursor.execute, operation, parameters)
 
         self.description = self._cursor.description
         self.rowcount = self._cursor.rowcount
@@ -80,30 +107,28 @@ class Cursor:
         await self._ensure_cursor()
         assert self._cursor is not None
 
-        self._cursor.executemany(operation, list(parameters))
+        await asyncio.to_thread(self._cursor.executemany, operation, list(parameters))
         self.description = self._cursor.description
         self.rowcount = self._cursor.rowcount
         self.lastrowid = self._cursor.lastrowid
         return self
 
     async def fetchone(self) -> Any:
-        await asyncio.sleep(0)
         await self._ensure_cursor()
         assert self._cursor is not None
-        return self._cursor.fetchone()
+        return await asyncio.to_thread(self._cursor.fetchone)
 
     async def fetchmany(self, size: Optional[int] = None) -> list[Any]:
         await asyncio.sleep(0)
         await self._ensure_cursor()
         assert self._cursor is not None
         n = self.arraysize if size is None else size
-        return self._cursor.fetchmany(n)
+        return await asyncio.to_thread(self._cursor.fetchmany, n)
 
     async def fetchall(self) -> list[Any]:
-        await asyncio.sleep(0)
         await self._ensure_cursor()
         assert self._cursor is not None
-        return self._cursor.fetchall()
+        return await asyncio.to_thread(self._cursor.fetchall)
 
     async def setinputsizes(self, sizes: Sequence[Any]) -> None:
         await asyncio.sleep(0)
@@ -119,8 +144,14 @@ class Cursor:
         await asyncio.sleep(0)
         return None
 
-    def __aiter__(self):
-        raise NotSupportedError("server-side cursors are not supported for sqlite")
+    async def __aiter__(self):
+        # sqlite3 results are already materialized client-side; expose them
+        # through the async iteration protocol langgraph's saver relies on.
+        await self._ensure_cursor()
+        assert self._cursor is not None
+        rows = await asyncio.to_thread(self._cursor.fetchall)
+        for row in rows:
+            yield row
 
 
 class Connection:
@@ -141,40 +172,42 @@ class Connection:
         await self.close()
 
     async def _open(self) -> "Connection":
-        await asyncio.sleep(0)
         if self._conn is None:
-            self._conn = self._connector()
+            self._conn = await asyncio.to_thread(self._connector)
         return self
 
-    async def cursor(self, *args: Any, **kwargs: Any) -> Cursor:
-        await asyncio.sleep(0)
-        await self._open()
+    def cursor(self, *args: Any, **kwargs: Any) -> Cursor:
+        # Sync per the aiosqlite protocol: the returned proxy runs lazily via
+        # __await__/__aenter__ (SQLAlchemy's await_() and langgraph's
+        # `async with conn.cursor()` both work against this).
         return Cursor(self)
 
+    def execute(self, operation: Any, parameters: Optional[Sequence[Any]] = None) -> Cursor:
+        return Cursor(self, _pending=("execute", operation, parameters))
+
+    def executescript(self, script: str) -> Cursor:
+        return Cursor(self, _pending=("executescript", script))
+
     async def create_function(self, *args: Any, **kwargs: Any) -> None:
-        await asyncio.sleep(0)
         await self._open()
         assert self._conn is not None
-        self._conn.create_function(*args, **kwargs)
+        await asyncio.to_thread(self._conn.create_function, *args, **kwargs)
 
     async def commit(self) -> None:
-        await asyncio.sleep(0)
         await self._open()
         assert self._conn is not None
-        self._conn.commit()
+        await asyncio.to_thread(self._conn.commit)
 
     async def rollback(self) -> None:
-        await asyncio.sleep(0)
         await self._open()
         assert self._conn is not None
-        self._conn.rollback()
+        await asyncio.to_thread(self._conn.rollback)
 
     async def close(self) -> None:
-        await asyncio.sleep(0)
         if self._conn is None:
             return
-        self._conn.close()
-        self._conn = None
+        conn, self._conn = self._conn, None
+        await asyncio.to_thread(conn.close)
 
     def __getattr__(self, key: str) -> Any:
         if self._conn is None:
@@ -195,6 +228,11 @@ def connect(
         loc = str(database)
 
     def _connector() -> sqlite3.Connection:
+        # Driver-level autocommit: transactions are explicit (SQLAlchemy emits
+        # BEGIN IMMEDIATE; langgraph saver writes become short autocommit
+        # statements). Avoids deferred read→write upgrades that fail instantly
+        # with "database is locked" under concurrency.
+        kwargs.setdefault("check_same_thread", False)
         return sqlite3.connect(loc, **kwargs)
 
     return Connection(_connector)

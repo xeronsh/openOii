@@ -28,6 +28,7 @@ dependencies = [
   "opencv-python-headless>=4.8.0",
   "edge-tts>=6.1.0",
   "reportlab>=4.0",
+  "langgraph-checkpoint-sqlite>=3.1.1",
 ]
 
 [dependency-groups]

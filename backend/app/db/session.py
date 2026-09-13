@@ -22,7 +22,19 @@ ALEMBIC_DIR = Path(__file__).resolve().parents[2] / "alembic"
 
 def _build_engine() -> AsyncEngine:
     settings = get_settings()
-    return create_async_engine(settings.database_url, echo=settings.db_echo, pool_pre_ping=True)
+    engine = create_async_engine(settings.database_url, echo=settings.db_echo, pool_pre_ping=True)
+    if settings.database_url.startswith("sqlite"):
+        from sqlalchemy import event
+
+        @event.listens_for(engine.sync_engine, "connect")
+        def _sqlite_pragmas(dbapi_conn, _record):  # noqa: ANN001
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+
+    return engine
 
 
 engine: AsyncEngine = _build_engine()
@@ -97,6 +109,15 @@ async def _sync_missing_metadata_columns() -> None:
             ]
 
         legacy_not_null_columns = await conn.run_sync(_legacy_not_null_columns)
+        if legacy_not_null_columns and conn.dialect.name == "sqlite":
+            # SQLite cannot ALTER COLUMN; fresh SQLite databases already get the
+            # nullable columns from create_all/alembic, so the legacy relax is a
+            # no-op there by construction.
+            log.info(
+                "init_db: skipped legacy NOT NULL relax on sqlite (columns: %s)",
+                legacy_not_null_columns,
+            )
+            return
         for column_name in legacy_not_null_columns:
             await conn.execute(
                 text(f"ALTER TABLE artifactversion ALTER COLUMN {column_name} DROP NOT NULL")
