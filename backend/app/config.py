@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     environment: str = Field(default="dev", description="dev|staging|prod")
     log_level: str = Field(default="INFO", description="Uvicorn log level")
 
+    # 生成编排引擎：langgraph（进程内，现状）或 pi（engine sidecar，pi-core 迁移）
+    agent_engine: str = Field(
+        default="langgraph",
+        description="langgraph | pi",
+    )
+    engine_url: str = Field(
+        default="http://127.0.0.1:18766",
+        description="pi engine sidecar 的 loopback 地址",
+    )
+
     api_v1_prefix: str = "/api/v1"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     admin_token: str | None = Field(

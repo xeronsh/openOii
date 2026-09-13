@@ -380,6 +380,7 @@ export async function runRenderCharacters(ctx: StageContext): Promise<void> {
   let index = 0;
   for (const character of characters) {
     index += 1;
+    ctx.emitter.sendProgress("render", "render_characters", "character_images_approval", index / total);
     await ctx.emitter.sendMessage("render", `正在绘制：${character.name} (${index}/${total})`);
     const prompt = `角色立绘：${character.name}。${character.description ?? ""} ${character.visual_notes ?? ""} ${ctx.shared.getProject(ctx.projectId)?.visual_bible ?? ""}`.trim();
     const imageUrl = await ctx.media.generateImageUrl({ prompt });
@@ -408,6 +409,7 @@ export async function runRenderShots(ctx: StageContext): Promise<void> {
   let index = 0;
   for (const shot of shots) {
     index += 1;
+    ctx.emitter.sendProgress("render", "render_shots", "shot_images_approval", index / shots.length);
     const names = parseJsonColumn(shot.character_ids, [] as number[]).map((id) => idToName.get(id) ?? `#${id}`);
     const prompt = [
       `分镜首帧：${shot.description}`,
@@ -487,6 +489,11 @@ export async function runCritique(
       `${entityType === "character" ? ((entity as CharacterRow).name ?? "角色") : `分镜 #${entity.id}`} 审查结果：总分 ${score.toFixed(1)}/10${willRegen ? "，将重新生成" : "，质量达标"}`,
     );
   }
+  if (entityType === "character" && !willRegenerate && entities.length > 0) {
+    // consistency_eval service parity: overall score over character critiques
+    const overall = Math.min(100, Math.round((minScore / 10) * 100));
+    ctx.emitter.consistencyEvalCompleted(overall, entities.length);
+  }
   return { willRegenerate, minScore };
 }
 
@@ -501,6 +508,7 @@ export async function runComposeVideos(ctx: StageContext): Promise<void> {
   let index = 0;
   for (const shot of shots) {
     index += 1;
+    ctx.emitter.sendProgress("compose", "compose_videos", "compose_merge", index / shots.length);
     await ctx.emitter.sendMessage("compose", `正在生成视频 (${index}/${shots.length})`);
     const prompt = `${shot.description}${shot.camera ? `（镜头：${shot.camera}）` : ""}`;
     const videoUrl = await ctx.media.generateVideoUrl({

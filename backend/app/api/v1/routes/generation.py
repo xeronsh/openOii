@@ -28,6 +28,13 @@ from app.schemas.project import (
     RecoveryControlRead,
     ResumeRequest,
 )
+from app.services.engine_client import (
+    EngineUnavailableError,
+    engine_cancel_run,
+    engine_resume_run,
+    engine_start_run,
+    ensure_engine_running,
+)
 from app.services.generation_entry import decide_generation_entry
 from app.services.provider_resolution import resolve_project_provider_settings_async
 from app.services.run_recovery import build_recovery_control_surface
@@ -204,6 +211,26 @@ async def generate_project(
         finally:
             task_manager.remove(project_id)
 
+    if settings.agent_engine == "pi":
+        from app.main import STATIC_DIR
+
+        try:
+            await ensure_engine_running(settings.engine_url, settings.database_url, STATIC_DIR)
+            await engine_start_run(
+                settings.engine_url,
+                project_id=project_id,
+                run_id=run_id,
+                stage="full",
+                auto_mode=bool(payload.auto_mode),
+            )
+        except EngineUnavailableError as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        run.status = "running"
+        session.add(run)
+        await session.commit()
+        await session.refresh(run)
+        return AgentRunRead.model_validate(run)
+
     background_tasks.add_task(_start_project_task, project_id, _task())
     return AgentRunRead.model_validate(run)
 
@@ -245,6 +272,20 @@ async def resume_project_run(
         finally:
             task_manager.remove(project_id)
 
+    if settings.agent_engine == "pi":
+        from app.main import STATIC_DIR
+
+        try:
+            await ensure_engine_running(settings.engine_url, settings.database_url, STATIC_DIR)
+            await engine_resume_run(settings.engine_url, project_id=project_id, run_id=run_id)
+        except EngineUnavailableError as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        run.status = "running"
+        session.add(run)
+        await session.commit()
+        await session.refresh(run)
+        return AgentRunRead.model_validate(run)
+
     background_tasks.add_task(_start_project_task, project_id, _task())
     return AgentRunRead.model_validate(run)
 
@@ -253,6 +294,7 @@ async def resume_project_run(
 async def cancel_project_run(
     project_id: int,
     session: AsyncSession = SessionDep,
+    settings: Settings = SettingsDep,
     ws: ConnectionManager = WsManagerDep,
 ):
     """取消项目的当前运行任务"""
@@ -260,6 +302,10 @@ async def cancel_project_run(
 
     # 先取消实际的后台任务
     task_cancelled = task_manager.cancel(project_id)
+    if settings.agent_engine == "pi":
+        active = await _latest_run_for_project(session, project_id, ("queued", "running"))
+        if active is not None:
+            await engine_cancel_run(settings.engine_url, active.id)
 
     # 更新数据库状态
     project_id_col = cast(InstrumentedAttribute[int], cast(object, AgentRun.project_id))

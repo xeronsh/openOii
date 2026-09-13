@@ -33,7 +33,7 @@ export function createEngineApp(dbPath: string) {
       return;
     }
 
-    const runMatch = /^\/runs\/(\d+)(\/cancel|\/events)?$/.exec(url.pathname);
+    const runMatch = /^\/runs\/(\d+)(\/cancel|\/events|\/resume)?$/.exec(url.pathname);
     if (req.method === "POST" && url.pathname === "/runs") {
       const body = await readJson(req);
       const projectId = Number(body.project_id);
@@ -58,6 +58,23 @@ export function createEngineApp(dbPath: string) {
           autoMode: Boolean(body.auto_mode),
           userFeedback: typeof body.user_feedback === "string" ? body.user_feedback : "",
         })
+        .finally(() => pipelines.delete(runId));
+      send(202, { status: "running", run_id: runId, project_id: projectId });
+      return;
+    }
+
+    if (runMatch && req.method === "POST" && runMatch[2] === "/resume") {
+      const runId = Number(runMatch[1]);
+      const body = await readJson(req);
+      const projectId = Number(body.project_id);
+      if (!Number.isFinite(projectId)) {
+        send(400, { error: "project_id is required" });
+        return;
+      }
+      const runner = new PipelineRunner(db, shared, llm);
+      pipelines.set(runId, runner);
+      void runner
+        .resume({ projectId, runId, autoMode: Boolean(body.auto_mode), userFeedback: "" })
         .finally(() => pipelines.delete(runId));
       send(202, { status: "running", run_id: runId, project_id: projectId });
       return;

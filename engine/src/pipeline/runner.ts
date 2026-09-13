@@ -10,6 +10,7 @@ import {
   APPROVAL_TO_PRODUCED_STAGE,
   GATE_AGENT,
   NEXT_STAGE,
+  PRODUCTION_STAGE_SEQUENCE,
   agentForStage,
   progressForStage,
   type StageId,
@@ -60,7 +61,39 @@ export class PipelineRunner {
     this.cancelRequested = true;
   }
 
+  /**
+   * Resume after an engine restart: rebuild completed stages from
+   * engine_checkpoints and continue from the next pending stage.
+   */
+  async resume(request: PipelineRequest): Promise<PipelineOutcome> {
+    const completed = new Set<string>();
+    for (const stage of PRODUCTION_STAGE_SEQUENCE) {
+      const row = this.db.db
+        .prepare("SELECT stage FROM engine_checkpoints WHERE run_id = ? AND stage = ?")
+        .get(request.runId, stage);
+      if (row) completed.add(stage);
+    }
+    if (completed.size === 0) {
+      return this.run(request);
+    }
+    const lastCompleted = PRODUCTION_STAGE_SEQUENCE.filter((s) => completed.has(s)).at(-1);
+    if (!lastCompleted) return this.run(request);
+    const resumeStage = NEXT_STAGE[lastCompleted];
+    if (!resumeStage) return { status: "completed" };
+
+    const outcome = await this.runFromStage(request, resumeStage, completed);
+    return outcome;
+  }
+
   async run(request: PipelineRequest): Promise<PipelineOutcome> {
+    return this.runFromStage(request, "plan_outline", new Set<string>());
+  }
+
+  private async runFromStage(
+    request: PipelineRequest,
+    startStage: StageId,
+    completedStages: Set<string>,
+  ): Promise<PipelineOutcome> {
     const project = this.shared.getProject(request.projectId);
     if (!project) return { status: "failed", error: `project ${request.projectId} not found` };
 
@@ -121,18 +154,19 @@ export class PipelineRunner {
       willRegenerate: false,
     };
 
-    let stage: StageId = "plan_outline";
+    let stage: StageId = startStage;
     let guard = 0;
+    const completedSet = completedStages;
     try {
       while (stage !== null && guard < 64) {
         guard += 1;
         if (this.cancelRequested) {
-          this.shared.updateRun(request.runId, { status: "cancelled" });
           emitter.emit("run_cancelled", {
             run_id: request.runId,
             project_id: request.projectId,
             cancelled_count: 1,
           });
+          this.shared.updateRun(request.runId, { status: "cancelled" });
           return { status: "cancelled" };
         }
 
@@ -141,6 +175,12 @@ export class PipelineRunner {
         }
 
         if (isGate(stage)) {
+          // gates whose production stage already completed are auto-approved
+          const produced = APPROVAL_TO_PRODUCED_STAGE[stage];
+          if (produced && completedSet.has(produced)) {
+            stage = NEXT_STAGE[stage] as StageId;
+            continue;
+          }
           await this.runGate(stage, request, ctx);
           stage = NEXT_STAGE[stage] as StageId;
           continue;
@@ -179,7 +219,6 @@ export class PipelineRunner {
         );
       }
       this.shared.updateProject(request.projectId, { status: "ready" });
-      this.shared.updateRun(request.runId, { status: "succeeded", progress: 1 });
       emitter.emit("run_completed", {
         run_id: request.runId,
         project_id: request.projectId,
@@ -188,10 +227,11 @@ export class PipelineRunner {
         message: null,
         video_generation_pending: null,
       });
+      // flip status AFTER the terminal event row exists (WS bridge tailing)
+      this.shared.updateRun(request.runId, { status: "succeeded", progress: 1 });
       return { status: "completed" };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.shared.updateRun(request.runId, { status: "failed", error: message });
       this.shared.updateProject(request.projectId, { status: "failed" });
       emitter.emit("project_updated", { project: { id: request.projectId, status: "failed" } });
       emitter.emit("run_failed", {
@@ -201,6 +241,7 @@ export class PipelineRunner {
         agent: null,
         current_stage: null,
       });
+      this.shared.updateRun(request.runId, { status: "failed", error: message });
       return { status: "failed", error: message };
     }
   }

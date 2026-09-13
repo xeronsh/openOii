@@ -57,7 +57,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
                  strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
       .run();
-    return Number(edb.db.prepare("SELECT MAX(id) AS id FROM project").get()!.id ?? 0) as number;
+    return Number((edb.db.prepare("SELECT MAX(id) AS id FROM project").get() as { id: number | null }).id ?? 0);
   }
 
   it("completes all stages, persists domain rows, emits contract events", async () => {
@@ -69,7 +69,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
          VALUES (?, 'queued', 'outline', 0, 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
       .run(projectId);
-    const runId = Number(edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get()!.id ?? 0) as number;
+    const runId = Number((edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get() as { id: number | null }).id ?? 0);
 
     // confirm gates asynchronously (auto-advance)
     const confirmer = setInterval(() => {
@@ -122,7 +122,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
 
     // message rows persisted for chat replay
     const messageCount = Number(
-      edb.db.prepare("SELECT COUNT(*) AS n FROM message WHERE run_id = ?").get(runId)!.n,
+      (edb.db.prepare("SELECT COUNT(*) AS n FROM message WHERE run_id = ?").get(runId) as { n: number }).n,
     );
     expect(messageCount).toBeGreaterThan(0);
   }, 60000);
@@ -136,7 +136,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
          VALUES (?, 'queued', 'outline', 0, 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
       .run(projectId);
-    const runId = Number(edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get()!.id ?? 0) as number;
+    const runId = Number((edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get() as { id: number | null }).id ?? 0);
 
     const running = runner.run({ projectId, runId, autoMode: false, userFeedback: "" });
 

@@ -53,7 +53,8 @@ async def _drive_gates(ws, run_id: int | None, stop_at_first_gate: bool) -> str:
             await ws.send(json.dumps({"type": "confirm", "data": {"run_id": confirm_run}}))
             gates_confirmed += 1
         elif etype in ("run_completed", "run_failed", "run_cancelled"):
-            return str(data.get("status") or etype)
+            status = str(data.get("status") or etype)
+            return "completed" if etype == "run_completed" else status
     return "timeout"
 
 

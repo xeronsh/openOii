@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -115,6 +117,71 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    _ENGINE_INTERNAL_EVENTS = {
+        "engine_run_started",
+        "engine_run_completed",
+        "engine_run_failed",
+        "engine_run_cancelled",
+        "agent_start",
+        "agent_end",
+        "turn_start",
+        "turn_end",
+        "message_start",
+        "message_update",
+        "message_end",
+        "tool_execution_start",
+        "tool_execution_update",
+        "tool_execution_end",
+    }
+
+    async def _tail_engine_events(project_id: int, websocket: WebSocket) -> None:
+        """pi 引擎事件的 WS 桥：轮询 engine_run_events 增量推送给本连接。"""
+        from app.db.session import async_session_maker
+        from app.models.agent_run import AgentRun
+        from app.services.engine_client import engine_events_since
+        from sqlalchemy import select
+
+        last_seq: dict[int, int] = {}
+        draining: set[int] = set()
+        try:
+            while True:
+                async with async_session_maker() as session:
+                    res = await session.execute(
+                        select(AgentRun).where(
+                            AgentRun.project_id == project_id,  # type: ignore[arg-type]
+                            AgentRun.status.in_(("queued", "running")),  # type: ignore[attr-defined]
+                        )
+                    )
+                    active_ids = {int(run.id) for run in res.scalars().all() if run.id is not None}
+                for run_id in (active_ids | draining) - set():
+                    draining.add(run_id)
+                    since = last_seq.get(run_id, 0)
+                    try:
+                        events = await engine_events_since(settings.engine_url, run_id, since)
+                    except Exception:  # noqa: BLE001 - 引擎暂不可达时下轮重试
+                        await asyncio.sleep(1.0)
+                        continue
+                    for event in events:
+                        seq = int(event.get("seq") or 0)
+                        if seq <= last_seq.get(run_id, 0):
+                            continue
+                        last_seq[run_id] = seq
+                        etype = str(event.get("type") or "")
+                        # 只拦截引擎内部协议帧；agent_thinking 等契约事件必须放行
+                        if etype not in _ENGINE_INTERNAL_EVENTS:
+                            await ws_manager.send_event(
+                                project_id,
+                                {"type": etype, "data": event.get("data") or {}},
+                            )
+                        if etype in ("run_completed", "run_failed", "run_cancelled"):
+                            last_seq.pop(run_id, None)
+                            draining.discard(run_id)
+                await asyncio.sleep(0.4)
+        except asyncio.CancelledError:
+            return
+        except Exception:  # noqa: BLE001
+            logger.exception("engine event tailer failed for project %s", project_id)
+
     @app.websocket("/ws/projects/{project_id}")
     async def ws_projects(websocket: WebSocket, project_id: int):
         from app.agents.orchestrator import (
@@ -173,6 +240,13 @@ def create_app() -> FastAPI:
             except Exception as e:
                 logger.warning(f"Failed to replay state for project {project_id}: {e}")
 
+            # pi 引擎模式：尾随 engine_run_events，把引擎事件推给 WS 客户端
+            engine_tailer_task: asyncio.Task[None] | None = None
+            if getattr(settings, "agent_engine", "langgraph") == "pi":
+                engine_tailer_task = asyncio.create_task(
+                    _tail_engine_events(project_id, websocket)
+                )
+
             while True:
                 # Pre-check: if the socket is no longer connected, exit cleanly.
                 if websocket.client_state != WebSocketState.CONNECTED:
@@ -228,6 +302,8 @@ def create_app() -> FastAPI:
                             await trigger_confirm_signal(run_id)
                 except WebSocketDisconnect:
                     logger.info(f"WebSocket disconnected for project {project_id}")
+                    if engine_tailer_task is not None:
+                        engine_tailer_task.cancel()
                     break
                 except RuntimeError as e:
                     # Starlette raises RuntimeError when receive_json/send_json
