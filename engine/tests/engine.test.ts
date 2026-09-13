@@ -60,3 +60,15 @@ describe("better-sqlite3 native binding", () => {
     db.close();
   });
 });
+
+describe("pipeline prompts", () => {
+  it("every prompt is non-empty text", async () => {
+    // 回归守卫：曾因引用不存在的 key（critic.SYSTEM_PROMPT）导致 critic 阶段
+    // 拿到空 system prompt，而 `?? ""` 把错误吞掉。类型层已能拦住拼错的 key，
+    // 这个测试再兜住“key 对但内容是空串”的情况。
+    const { PROMPTS } = await import("../src/prompts.js");
+    for (const [key, value] of Object.entries(PROMPTS)) {
+      expect(value.length, `${key} 不应为空`).toBeGreaterThan(50);
+    }
+  });
+});

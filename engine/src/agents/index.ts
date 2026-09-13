@@ -140,7 +140,7 @@ export async function runOutline(ctx: StageContext): Promise<void> {
   };
   if (ctx.userFeedback) payload.user_feedback = ctx.userFeedback;
 
-  const system = PROMPTS["outline.SYSTEM_PROMPT"] ?? "";
+  const system = PROMPTS["outline.SYSTEM_PROMPT"];
   const data = await callLlm(ctx, "outline", system, JSON.stringify(payload), 2048);
 
   const outline = cleanOutline(data);
@@ -247,7 +247,7 @@ export async function runPlanCharacters(ctx: StageContext): Promise<void> {
   await ctx.emitter.sendThinking("plan", "planning", "正在设计角色设定与人物关系...");
 
   const payload = planBasePayload(ctx, "characters");
-  const data = await callLlm(ctx, "plan", PROMPTS["plan.SYSTEM_PROMPT"] ?? "", JSON.stringify(payload), 4096);
+  const data = await callLlm(ctx, "plan", PROMPTS["plan.SYSTEM_PROMPT"], JSON.stringify(payload), 4096);
   await applyCharacterPlan(ctx, data);
 
   await ctx.emitter.sendThinking("plan", "decision", "角色设定完成，等待分镜脚本...");
@@ -264,7 +264,7 @@ export async function runPlanShots(ctx: StageContext): Promise<void> {
   await ctx.emitter.sendThinking("plan", "planning", "正在分镜与节奏设计...");
 
   const payload = planBasePayload(ctx, "shots");
-  const data = await callLlm(ctx, "plan", PROMPTS["plan.SYSTEM_PROMPT"] ?? "", JSON.stringify(payload), 4096);
+  const data = await callLlm(ctx, "plan", PROMPTS["plan.SYSTEM_PROMPT"], JSON.stringify(payload), 4096);
   await applyShotPlan(ctx, data);
 
   await ctx.emitter.sendThinking("plan", "decision", "分镜脚本完成...");
@@ -461,12 +461,12 @@ export async function runCritique(
   for (const entity of entities) {
     const imageUrl = entity.image_url;
     const prompt = `You evaluate visual quality. Review image: ${imageUrl ?? "(none)"} for ${entityType} ${entityType === "character" ? ((entity as CharacterRow).name ?? "角色") : `分镜 #${entity.id}`}. Return JSON with total_score, consistency, quality, composition.`;
+    // key 现在受字面量类型约束，拼错会编译失败（见 prompts.ts 注释）。
+    // 这里不再写 `?? ""` —— 正是那种兜底让空 prompt 的 bug 静默上线。
     const systemPrompt =
-      PROMPTS[
-        entityType === "character"
-          ? "critic.CHARACTER_REVIEW_SYSTEM_PROMPT"
-          : "critic.SHOT_REVIEW_SYSTEM_PROMPT"
-      ] ?? "";
+      entityType === "character"
+        ? PROMPTS["critic.CHARACTER_REVIEW_SYSTEM_PROMPT"]
+        : PROMPTS["critic.SHOT_REVIEW_SYSTEM_PROMPT"];
     const data = await callLlm(ctx, "critic", systemPrompt, prompt, 1024);
     const score = Number(data.total_score ?? 0);
     const dimensions: Record<string, number> = {
