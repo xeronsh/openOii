@@ -1,87 +1,36 @@
 from __future__ import annotations
 
-from typing import Literal
-
-
-Phase2Stage = Literal[
-    "plan_outline",
-    "outline_approval",
-    "plan_characters",
-    "characters_approval",
-    "plan_shots",
-    "shots_approval",
-    "render_characters",
-    "character_images_approval",
-    "critique_character_images",
-    "render_shots",
-    "shot_images_approval",
-    "critique_shot_images",
-    "compose_videos",
-    "compose_merge",
-    "add_audio",
-    "compose_approval",
-    "review",
-]
-
-# Full gate-inclusive stage order (production + approval + critique).
-# Canonical: engine/src/contract.ts NEXT_STAGE mirrors this.
-PHASE2_STAGE_ORDER: tuple[str, ...] = (
-    "plan_outline",
-    "outline_approval",
-    "plan_characters",
-    "characters_approval",
-    "plan_shots",
-    "shots_approval",
-    "render_characters",
-    "character_images_approval",
-    "critique_character_images",
-    "render_shots",
-    "shot_images_approval",
-    "critique_shot_images",
-    "compose_videos",
-    "compose_merge",
-    "add_audio",
-    "compose_approval",
-    "review",
+from app.generated.workflow_contract import (
+    APPROVAL_TO_PRODUCED_STAGE,
+    CRITIQUE_TO_PRODUCED_STAGE,
+    GATE_AGENT,
+    GRAPH_STAGE_FOR_AGENT,
+    NEXT_STAGE,
+    PHASE2_STAGE_ORDER,
+    PRODUCTION_STAGE_SEQUENCE,
+    STAGE_AGENT_MAP,
+    STAGE_TO_UI,
+    WORKFLOW_VERSION,
+    StageId,
 )
 
-# Ordered sequence of production stages (excludes approval gates).
-PRODUCTION_STAGE_SEQUENCE: tuple[str, ...] = (
-    "plan_outline",
-    "plan_characters",
-    "plan_shots",
-    "render_characters",
-    "render_shots",
-    "compose_videos",
-    "compose_merge",
-    "add_audio",
-)
+# Backward-compatible domain name used by skills/tests. The actual literal
+# union is generated from contracts/workflow.json.
+Phase2Stage = StageId
 
-
-# Approval gate → the production stage it comes right after
-_APPROVAL_TO_PRODUCED_STAGE: dict[str, str] = {
-    "outline_approval": "plan_outline",
-    "characters_approval": "plan_characters",
-    "shots_approval": "plan_shots",
-    "character_images_approval": "render_characters",
-    "shot_images_approval": "render_shots",
-    "compose_approval": "add_audio",
-}
-
-_CRITIQUE_TO_PRODUCED_STAGE: dict[str, str] = {
-    "critique_character_images": "render_characters",
-    "critique_shot_images": "render_shots",
-}
+# Historical private names kept only for callers/tests that imported them.
+_APPROVAL_TO_PRODUCED_STAGE = APPROVAL_TO_PRODUCED_STAGE
+_CRITIQUE_TO_PRODUCED_STAGE = CRITIQUE_TO_PRODUCED_STAGE
 
 
 def _resolve_base_stage(stage: str) -> str | None:
-    """Map any stage (production or approval or critique) to its production stage."""
+    """Map any stage (production, approval or critique) to its production stage."""
     if stage in PRODUCTION_STAGE_SEQUENCE:
         return stage
-    base = _APPROVAL_TO_PRODUCED_STAGE.get(stage)
+    base = APPROVAL_TO_PRODUCED_STAGE.get(stage)
     if base is not None:
         return base
-    return _CRITIQUE_TO_PRODUCED_STAGE.get(stage)
+    return CRITIQUE_TO_PRODUCED_STAGE.get(stage)
 
 
 def next_production_stage(stage: str | None) -> str | None:
@@ -107,3 +56,19 @@ def workflow_progress_for_stage(stage: str, *, within_stage: float = 0.0) -> flo
     return min((stage_index + clamped_within) / total, 1.0)
 
 
+__all__ = [
+    "APPROVAL_TO_PRODUCED_STAGE",
+    "CRITIQUE_TO_PRODUCED_STAGE",
+    "GATE_AGENT",
+    "GRAPH_STAGE_FOR_AGENT",
+    "NEXT_STAGE",
+    "PHASE2_STAGE_ORDER",
+    "PRODUCTION_STAGE_SEQUENCE",
+    "Phase2Stage",
+    "STAGE_AGENT_MAP",
+    "STAGE_TO_UI",
+    "WORKFLOW_VERSION",
+    "StageId",
+    "next_production_stage",
+    "workflow_progress_for_stage",
+]
