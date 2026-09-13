@@ -124,6 +124,12 @@ export class PipelineRunner {
     return this.db.configValue(liveKey, liveKey, fallback) ?? fallback;
   }
 
+  private invalidateCheckpointsFrom(runId: number, stage: StageId): void {
+    const index = STAGE_ORDER.indexOf(stage);
+    if (index < 0) return;
+    this.db.deleteCheckpoints(runId, STAGE_ORDER.slice(index));
+  }
+
   /** Stable fingerprint of the authoritative inputs visible to one stage. */
   private stageInputHash(stage: StageId, request: PipelineRequest): string {
     const payload = {
@@ -172,8 +178,6 @@ export class PipelineRunner {
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // A stale executor is no longer authoritative and must not overwrite the
-      // durable attempt owned by the next lease holder.
       if (!message.startsWith("execution lease lost for run")) {
         this.shared.assertExecutionFence();
         this.db.completeStageAttempt(
@@ -188,13 +192,7 @@ export class PipelineRunner {
 
   async resume(request: PipelineRequest): Promise<PipelineOutcome> {
     this.shared.assertExecutionFence();
-    const completed = new Set<string>();
-    for (const stage of STAGE_ORDER) {
-      const row = this.db.db
-        .prepare("SELECT stage FROM engine_checkpoints WHERE run_id = ? AND stage = ?")
-        .get(request.runId, stage);
-      if (row) completed.add(stage);
-    }
+    const completed = new Set(this.db.checkpointStages(request.runId));
     if (completed.size === 0) return this.run(request);
     const lastCompleted = STAGE_ORDER.filter((stage) => completed.has(stage)).at(-1);
     if (!lastCompleted) return this.run(request);
@@ -206,6 +204,11 @@ export class PipelineRunner {
   async run(request: PipelineRequest): Promise<PipelineOutcome> {
     this.shared.assertExecutionFence();
     const startStage = request.startStage ?? "plan_outline";
+    if (startStage === STAGE_ORDER[0]) {
+      this.db.clearCheckpoints(request.runId);
+    } else {
+      this.invalidateCheckpointsFrom(request.runId, startStage);
+    }
     const preserved = new Set<string>();
     for (const stage of STAGE_ORDER) {
       if (stage === startStage) break;
@@ -328,7 +331,10 @@ export class PipelineRunner {
             entityType === "character" ? "characters" : "shots";
           ctx.critiqueRounds[roundsKey] += 1;
           if (outcome.willRegenerate) {
-            stage = entityType === "character" ? "render_characters" : "render_shots";
+            const rerenderStage: StageId =
+              entityType === "character" ? "render_characters" : "render_shots";
+            this.invalidateCheckpointsFrom(request.runId, rerenderStage);
+            stage = rerenderStage;
             continue;
           }
           this.db.saveCheckpoint(request.runId, stage, {
@@ -339,8 +345,13 @@ export class PipelineRunner {
           continue;
         }
 
-        await this.executeStageAttempt(stage, request, async () => {
-          await this.runProduction(stage, ctx, request);
+        await this.executeStageAttempt(stage, request, async (attempt) => {
+          ctx.media.setOperationIdentity(attempt.idempotency_key);
+          try {
+            await this.runProduction(stage, ctx, request);
+          } finally {
+            ctx.media.setOperationIdentity(null);
+          }
         });
         this.shared.assertExecutionFence();
         if (this.shouldCancel(request.runId)) return await this.finishCancelled(request, emitter);
