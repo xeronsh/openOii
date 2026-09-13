@@ -29,10 +29,21 @@ export function createEngineApp(dbPath: string) {
     runId: number,
     request: Parameters<PipelineRunner["run"]>[0],
     mode: "run" | "resume",
-  ): void {
+  ): boolean {
+    // A run id is an execution identity, not merely a lookup key. Starting the
+    // same run twice used to overwrite the Map entry while the old runner kept
+    // executing, leaving two writers for one run and making cancel target only
+    // the newest runner. Reject duplicates until the active execution exits.
+    if (pipelines.has(runId)) return false;
+
     const runner = new PipelineRunner(db, shared, llm);
     pipelines.set(runId, runner);
-    void runner[mode](request).finally(() => pipelines.delete(runId));
+    void runner[mode](request).finally(() => {
+      // Defensive fencing: only the runner that still owns the slot may clear
+      // it. This matters if execution ownership becomes durable in the future.
+      if (pipelines.get(runId) === runner) pipelines.delete(runId);
+    });
+    return true;
   }
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -40,6 +51,15 @@ export function createEngineApp(dbPath: string) {
     const send = (status: number, body: unknown): void => {
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body));
+    };
+    const conflict = (runId: number): void => {
+      send(409, {
+        error: {
+          code: "RUN_ALREADY_ACTIVE",
+          message: `run ${runId} already has an active executor`,
+          details: { run_id: runId },
+        },
+      });
     };
 
     if (req.method === "GET" && url.pathname === "/health") {
@@ -65,7 +85,7 @@ export function createEngineApp(dbPath: string) {
         return;
       }
       const rawStage = typeof body.stage === "string" ? body.stage : "";
-      startPipeline(
+      const started = startPipeline(
         runId,
         {
           projectId,
@@ -76,6 +96,10 @@ export function createEngineApp(dbPath: string) {
         },
         "run",
       );
+      if (!started) {
+        conflict(runId);
+        return;
+      }
       send(202, { status: "running", run_id: runId, project_id: projectId });
       return;
     }
@@ -88,11 +112,15 @@ export function createEngineApp(dbPath: string) {
         send(400, { error: "project_id is required" });
         return;
       }
-      startPipeline(
+      const started = startPipeline(
         runId,
         { projectId, runId, autoMode: Boolean(body.auto_mode), userFeedback: "" },
         "resume",
       );
+      if (!started) {
+        conflict(runId);
+        return;
+      }
       send(202, { status: "running", run_id: runId, project_id: projectId });
       return;
     }
