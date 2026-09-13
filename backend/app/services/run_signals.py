@@ -12,7 +12,10 @@ import asyncio
 
 from sqlalchemy import select, update
 
-from app.generated.workflow_contract import GRAPH_STAGE_FOR_AGENT, STAGE_AGENT_MAP
+from app.generated.workflow_contract import (
+    GRAPH_STAGE_FOR_AGENT as GRAPH_STAGE_FOR_AGENT,
+    STAGE_AGENT_MAP,
+)
 from app.models.agent_run import AgentRun
 
 _CONFIRM_POLL_INTERVAL_S = 0.3
