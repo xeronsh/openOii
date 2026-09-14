@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect
 from sqlmodel import SQLModel
 
-from app.models import agent_run, artifact, artifact_version, config_item, message, project, run, stage, style_template, consistency_report  # noqa: F401
-from app.models.universe import Universe, SharedCharacter, UniverseProjectLink  # noqa: F401
+from app.models import agent_run, artifact, artifact_version, config_item, consistency_report, message, project, run, stage, style_template  # noqa: F401
+from app.models.universe import SharedCharacter, Universe, UniverseProjectLink  # noqa: F401
 
 
 def _backend_root() -> Path:
@@ -54,6 +53,9 @@ def test_alembic_upgrade_head_rebuilds_blank_database(tmp_path: Path) -> None:
         "character",
         "configitem",
         "consistency_report",
+        "engine_checkpoints",
+        "engine_run_events",
+        "engine_stage_attempts",
         "exportcache",
         "message",
         "project",
@@ -75,6 +77,9 @@ def test_alembic_upgrade_head_rebuilds_blank_database(tmp_path: Path) -> None:
         inspector = inspect(column_engine)
         run_columns = {column["name"] for column in inspector.get_columns("run")}
         project_columns = {column["name"] for column in inspector.get_columns("project")}
+        attempt_columns = {
+            column["name"] for column in inspector.get_columns("engine_stage_attempts")
+        }
     finally:
         column_engine.dispose()
     assert {"project_id", "thread_id", "status", "version", "source"}.issubset(run_columns)
@@ -86,6 +91,15 @@ def test_alembic_upgrade_head_rebuilds_blank_database(tmp_path: Path) -> None:
         "visual_bible",
         "outline_approved",
     }.issubset(project_columns)
+    assert {
+        "stage_attempt_id",
+        "run_id",
+        "stage",
+        "attempt",
+        "input_hash",
+        "idempotency_key",
+        "status",
+    }.issubset(attempt_columns)
 
 
 def test_alembic_stamp_adopts_existing_create_all_database(tmp_path: Path) -> None:
