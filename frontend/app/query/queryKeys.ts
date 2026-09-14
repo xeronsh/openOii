@@ -6,5 +6,7 @@ export const projectQueryKeys = {
   /** Live chat feed appended from websocket events (not an HTTP query). */
   messageFeed: (projectId: number) => ["message-feed", projectId] as const,
   generationState: (projectId: number) => ["generation-state", projectId] as const,
+  /** Live run UI projection (run_started/progress/awaiting_confirm/terminal). */
+  runState: (projectId: number) => ["run-state", projectId] as const,
   projects: () => ["projects"] as const,
 };

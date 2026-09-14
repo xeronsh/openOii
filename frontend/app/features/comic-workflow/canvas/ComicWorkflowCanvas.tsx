@@ -12,7 +12,7 @@ import { ImagePreviewModal, VideoPreviewModal } from "~/components/canvas/Previe
 import { canvasEvents } from "~/components/canvas/canvasEvents";
 import { projectQueryKeys } from "~/query/queryKeys";
 import { projectsApi } from "~/services/api";
-import { useEditorStore, useShallow } from "~/stores/editorStore";
+import { useRunState } from "~/hooks/useRunState";
 import { useThemeStore } from "~/stores/themeStore";
 import { toast } from "~/utils/toast";
 import type { ComicWorkflowGraph } from "../graph/types";
@@ -70,13 +70,7 @@ export function ComicWorkflowCanvas({
 		title: string;
 	} | null>(null);
 
-	const { isGenerating, awaitingConfirm, currentRunId } = useEditorStore(
-		useShallow((state) => ({
-			isGenerating: state.isGenerating,
-			awaitingConfirm: state.awaitingConfirm,
-			currentRunId: state.currentRunId,
-		})),
-	);
+	const { isGenerating, awaitingConfirm, currentRunId } = useRunState(projectId);
 
 	const { data: project, isLoading: projectLoading } = useQuery({
 		queryKey: projectQueryKeys.project(projectId),

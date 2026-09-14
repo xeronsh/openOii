@@ -127,7 +127,7 @@ export function useProjectWebSocket(projectId: number | null) {
 				}
 
 				applyServerEvent(appQueryClient, projectId, data);
-				applyWsEvent(projectId, data, useEditorStore.getState(), scheduleAutoConfirm);
+				applyWsEvent(projectId, data, useEditorStore.getState().runMode, scheduleAutoConfirm);
 
 				if (eventId !== null) {
 					lastEventIdRef.current = eventId;

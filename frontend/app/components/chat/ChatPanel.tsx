@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useEditorStore, useShallow } from "~/stores/editorStore";
+import { useEditorStore } from "~/stores/editorStore";
 import { readMessageFeed } from "~/query/messageFeed";
 import { projectQueryKeys } from "~/query/queryKeys";
+import { useRunState } from "~/hooks/useRunState";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { OutlinePreviewCard } from "./OutlinePreviewCard";
@@ -61,17 +62,8 @@ export function ChatPanel({
     awaitingAgent,
     currentStage,
     currentRunId,
-    runMode,
     recoveryGate,
-  } = useEditorStore(useShallow((s) => ({
-    currentAgent: s.currentAgent,
-    awaitingConfirm: s.awaitingConfirm,
-    awaitingAgent: s.awaitingAgent,
-    currentStage: s.currentStage,
-    currentRunId: s.currentRunId,
-    runMode: s.runMode,
-    recoveryGate: s.recoveryGate,
-  })));
+  } = useRunState(projectId);
 
   // The chat feed is server state, so it is read from the query cache rather
   // than mirrored in the UI store (ADR 0007).
@@ -127,6 +119,7 @@ export function ChatPanel({
   const StageIcon = getStageIcon(fallbackStage);
   const hasMessages = messages.length > 0;
   const agentDisplayName = awaitingAgent ? agentNameMap[awaitingAgent] || awaitingAgent : "";
+  const runMode = useEditorStore((s) => s.runMode);
   const isYolo = runMode === "yolo";
 
   const showManualConfirm = awaitingConfirm && !isYolo;

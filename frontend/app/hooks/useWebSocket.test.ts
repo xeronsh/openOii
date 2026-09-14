@@ -13,6 +13,8 @@ vi.mock("~/utils/runtimeBase", () => ({ getWsBase: () => "ws://example.test", ge
 import { useEditorStore } from "~/stores/editorStore";
 import { readMessageFeed, replaceMessageFeed } from "~/query/messageFeed";
 import { applyWsEvent, useProjectWebSocket } from "~/hooks/useWebSocket";
+import { readRunState, patchRunState, resetRunState } from "~/query/runState";
+import { appQueryClient } from "~/query/client";
 import type { WsEvent } from "~/types";
 
 const noopAutoConfirm = vi.fn();
@@ -85,6 +87,7 @@ describe("useProjectWebSocket", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     useEditorStore.getState().reset();
+    appQueryClient.setQueryData(["run-state", 1], null);
     toastMock.success.mockClear();
     toastMock.warning.mockClear();
     toastMock.error.mockClear();
@@ -291,7 +294,7 @@ describe("useProjectWebSocket", () => {
           isLoading: true,
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -341,7 +344,7 @@ describe("useProjectWebSocket", () => {
         type: "run_completed",
         data: { current_stage: "compose" } as never,
       },
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -378,8 +381,6 @@ describe("useProjectWebSocket", () => {
       },
     ]);
 
-    const store = useEditorStore.getState();
-
     applyWsEvent(
       1,
       {
@@ -390,7 +391,7 @@ describe("useProjectWebSocket", () => {
           content: "plan new message",
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -420,9 +421,7 @@ describe("useProjectWebSocket", () => {
     renderHook(() => useProjectWebSocket(41));
     const ws = MockWebSocket.instances[0];
 
-    const store = useEditorStore.getState();
-    const setGeneratingSpy = vi.spyOn(store, "setGenerating");
-    const setCurrentRunIdSpy = vi.spyOn(store, "setCurrentRunId");
+    resetRunState(1);
 
     const runStarted: WsEvent = {
       type: "run_started",
@@ -460,8 +459,8 @@ describe("useProjectWebSocket", () => {
       ws.onmessage?.({ data: "not-json" } as MessageEvent<string>);
     });
 
-    expect(setGeneratingSpy).toHaveBeenCalledWith(true);
-    expect(setCurrentRunIdSpy).toHaveBeenCalledWith(101);
+    expect(readRunState(41).isGenerating).toBe(true);
+    expect(readRunState(41).currentRunId).toBe(101);
     expect(readMessageFeed(1).length).toBeGreaterThan(0);
     expect(toastMock.error).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -509,11 +508,11 @@ describe("useProjectWebSocket", () => {
 				},
 			},
 		} as never,
-		store,
+		"manual",
       noopAutoConfirm
 	);
 
-	expect(useEditorStore.getState().currentRunProviderSnapshot).toMatchObject({
+	expect(readRunState(1).currentRunProviderSnapshot).toMatchObject({
 		text: {
 			selected_key: "openai",
 		},
@@ -543,11 +542,11 @@ describe("useProjectWebSocket", () => {
           recovery_summary: { test: true } as never,
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState()).toMatchObject({
+    expect(readRunState(1)).toMatchObject({
       awaitingConfirm: true,
       awaitingAgent: "plan",
       currentRunId: 202,
@@ -558,7 +557,7 @@ describe("useProjectWebSocket", () => {
       currentStage: "render",
     });
 
-    expect(useEditorStore.getState().recoverySummary).toMatchObject({ test: true });
+    expect(readRunState(1).recoverySummary).toMatchObject({ test: true });
     expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "info",
       agent: "system",
@@ -576,14 +575,14 @@ describe("useProjectWebSocket", () => {
           recovery_summary: { updated: true } as never,
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().awaitingConfirm).toBe(false);
-    expect(useEditorStore.getState().recoveryGate).toBeNull();
-    expect(useEditorStore.getState().currentStage).toBe("compose");
-    expect(useEditorStore.getState().recoverySummary).toEqual({ updated: true });
+    expect(readRunState(1).awaitingConfirm).toBe(false);
+    expect(readRunState(1).recoveryGate).toBeNull();
+    expect(readRunState(1).currentStage).toBe("compose");
+    expect(readRunState(1).recoverySummary).toEqual({ updated: true });
     expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "info",
       content: "已确认，继续执行...",
@@ -609,13 +608,13 @@ describe("useProjectWebSocket", () => {
           auto_mode: true,
         },
       } as never,
-      store,
+      "manual",
       autoConfirmSpy
     );
 
     expect(autoConfirmSpy).not.toHaveBeenCalled();
-    expect(useEditorStore.getState().awaitingConfirm).toBe(true);
-    expect(useEditorStore.getState().currentStage).toBe("render");
+    expect(readRunState(1).awaitingConfirm).toBe(true);
+    expect(readRunState(1).currentStage).toBe("render");
 
     applyWsEvent(
       1,
@@ -628,11 +627,11 @@ describe("useProjectWebSocket", () => {
           auto_mode: true,
         },
       } as never,
-      store,
+      "manual",
       autoConfirmSpy
     );
 
-    expect(useEditorStore.getState().awaitingConfirm).toBe(false);
+    expect(readRunState(1).awaitingConfirm).toBe(false);
     expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "info",
       content: "自动确认，继续执行...",
@@ -640,26 +639,26 @@ describe("useProjectWebSocket", () => {
   });
 
   it("asserts run_completed and run_failed clear states and toasts", () => {
-    const store = useEditorStore.getState();
-
-    store.reset();
-    store.setGenerating(true);
-    store.setProgress(0.2);
-    store.setCurrentAgent("plan");
-    store.setCurrentRunId(111);
-    store.setCurrentRunProviderSnapshot({
-      text: { selected_key: "openai", source: "project", resolved_key: "openai", valid: true },
-      image: { selected_key: "openai", source: "default", resolved_key: "openai", valid: true },
-      video: { selected_key: "doubao", source: "project", resolved_key: "doubao", valid: true },
-    } as never);
-    store.setRecoveryControl({ type: "retry" } as never);
-    store.setRecoverySummary({ from: "before" } as never);
-    store.setRecoveryGate({
-      run_id: 111,
-      agent: "plan",
-      recovery_summary: {} as never,
-      preserved_stages: [],
-    } as never);
+    resetRunState(1);
+    patchRunState(1, {
+      isGenerating: true,
+      progress: 0.2,
+      currentAgent: "plan",
+      currentRunId: 111,
+      currentRunProviderSnapshot: {
+        text: { selected_key: "openai", source: "project", resolved_key: "openai", valid: true },
+        image: { selected_key: "openai", source: "default", resolved_key: "openai", valid: true },
+        video: { selected_key: "doubao", source: "project", resolved_key: "doubao", valid: true },
+      } as never,
+      recoveryControl: { type: "retry" } as never,
+      recoverySummary: { from: "before" } as never,
+      recoveryGate: {
+        run_id: 111,
+        agent: "plan",
+        recovery_summary: {} as never,
+        preserved_stages: [],
+      } as never,
+    });
     replaceMessageFeed(1, [
       {
         id: "m1",
@@ -678,11 +677,11 @@ describe("useProjectWebSocket", () => {
           message: "视频未配置，已完成文本和图片生成",
         } as never,
       },
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState()).toMatchObject({
+    expect(readRunState(1)).toMatchObject({
       isGenerating: false,
       progress: 1,
       currentAgent: null,
@@ -693,7 +692,7 @@ describe("useProjectWebSocket", () => {
       recoveryGate: null,
       currentStage: "compose",
     });
-    expect(useEditorStore.getState().currentRunProviderSnapshot).toBeNull();
+    expect(readRunState(1).currentRunProviderSnapshot).toBeNull();
     expect(readMessageFeed(1)).toContainEqual(
       expect.objectContaining({
         role: "assistant",
@@ -708,13 +707,13 @@ describe("useProjectWebSocket", () => {
         type: "run_failed",
         data: { error: "生成失败" } as never,
       },
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().isGenerating).toBe(false);
-    expect(useEditorStore.getState().recoveryControl).toBeNull();
-    expect(useEditorStore.getState().currentRunProviderSnapshot).toBeNull();
+    expect(readRunState(1).isGenerating).toBe(false);
+    expect(readRunState(1).recoveryControl).toBeNull();
+    expect(readRunState(1).currentRunProviderSnapshot).toBeNull();
     expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "error",
       content: "生成失败: 生成失败",
@@ -727,16 +726,16 @@ describe("useProjectWebSocket", () => {
   });
 
   it("clears live state when run_cancelled arrives", () => {
-    const store = useEditorStore.getState();
-
-    store.reset();
-    store.setGenerating(true);
-    store.setProgress(0.48);
-    store.setCurrentAgent("plan");
-    store.setCurrentRunId(303);
-    store.setRecoveryControl({ type: "retry" } as never);
-    store.setRecoverySummary({ from: "before-cancel" } as never);
-    store.setRecoveryGate({ run_id: 303, agent: "plan" } as never);
+    resetRunState(1);
+    patchRunState(1, {
+      isGenerating: true,
+      progress: 0.48,
+      currentAgent: "plan",
+      currentRunId: 303,
+      recoveryControl: { type: "retry" } as never,
+      recoverySummary: { from: "before-cancel" } as never,
+      recoveryGate: { run_id: 303, agent: "plan" } as never,
+    });
     replaceMessageFeed(1, [
       {
         id: "loading-plan",
@@ -753,11 +752,11 @@ describe("useProjectWebSocket", () => {
         type: "run_cancelled",
         data: { run_id: 303 } as never,
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState()).toMatchObject({
+    expect(readRunState(1)).toMatchObject({
       isGenerating: false,
       progress: 0,
       currentAgent: null,
@@ -767,7 +766,7 @@ describe("useProjectWebSocket", () => {
       recoverySummary: null,
       recoveryGate: null,
     });
-    expect(useEditorStore.getState().currentRunProviderSnapshot).toBeNull();
+    expect(readRunState(1).currentRunProviderSnapshot).toBeNull();
     expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "info",
       agent: "system",
@@ -794,7 +793,7 @@ describe("useProjectWebSocket", () => {
       applyWsEvent(
         1,
         { type, data: { character: { id: 1 }, shot: { id: 1 }, character_id: 1, shot_id: 1 } } as never,
-        store,
+        "manual",
         noopAutoConfirm
       );
     }
@@ -812,13 +811,13 @@ describe("useProjectWebSocket", () => {
     applyWsEvent(
       1,
       { type: "data_cleared", data: { cleared_types: ["characters", "shots"] } } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
     applyWsEvent(
       1,
       { type: "project_updated", data: { project: { id: 7, video_url: "http://cdn/video.mp4" } } } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -833,7 +832,7 @@ describe("useProjectWebSocket", () => {
     applyWsEvent(
       1,
       { type: "shots_reordered", data: { project_id: 1, shots: [shotForWs(1, 2), shotForWs(2, 1)] } } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -868,7 +867,7 @@ describe("useProjectWebSocket", () => {
         type: "error",
         data: { message: "server error", code: "E_SERVER" },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -890,7 +889,7 @@ describe("useProjectWebSocket", () => {
         type: "connected",
         data: {},
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -905,13 +904,13 @@ describe("useProjectWebSocket", () => {
           recovery_summary: { step: "resume" },
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().currentAgent).toBe("plan");
-    expect(useEditorStore.getState().progress).toBe(0.9);
-    expect(useEditorStore.getState().recoverySummary).toMatchObject({ step: "resume" });
+    expect(readRunState(1).currentAgent).toBe("plan");
+    expect(readRunState(1).progress).toBe(0.9);
+    expect(readRunState(1).recoverySummary).toMatchObject({ step: "resume" });
   });
 
   it("sets currentAgent from run_started event", () => {
@@ -928,19 +927,18 @@ describe("useProjectWebSocket", () => {
           stage: "plan",
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().currentAgent).toBe("plan");
-    expect(useEditorStore.getState().currentRunId).toBe(500);
+    expect(readRunState(1).currentAgent).toBe("plan");
+    expect(readRunState(1).currentRunId).toBe(500);
   });
 
   it("recovers generating state from run_progress when not generating", () => {
-    const store = useEditorStore.getState();
-    store.reset();
+    resetRunState(1);
 
-    expect(store.isGenerating).toBe(false);
+    expect(readRunState(1).isGenerating).toBe(false);
 
     applyWsEvent(
       1,
@@ -953,20 +951,19 @@ describe("useProjectWebSocket", () => {
           stage: "character",
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().isGenerating).toBe(true);
-    expect(useEditorStore.getState().currentRunId).toBe(600);
-    expect(useEditorStore.getState().currentAgent).toBe("plan");
+    expect(readRunState(1).isGenerating).toBe(true);
+    expect(readRunState(1).currentRunId).toBe(600);
+    expect(readRunState(1).currentAgent).toBe("plan");
   });
 
   it("recovers generating state from run_awaiting_confirm when not generating", () => {
-    const store = useEditorStore.getState();
-    store.reset();
+    resetRunState(1);
 
-    expect(store.isGenerating).toBe(false);
+    expect(readRunState(1).isGenerating).toBe(false);
 
     applyWsEvent(
       1,
@@ -980,12 +977,12 @@ describe("useProjectWebSocket", () => {
           recovery_summary: {},
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().isGenerating).toBe(true);
-    expect(useEditorStore.getState().currentRunId).toBe(700);
+    expect(readRunState(1).isGenerating).toBe(true);
+    expect(readRunState(1).currentRunId).toBe(700);
   });
 
   it("leaves the project cache to applyServerEvent on data_cleared", () => {
@@ -995,7 +992,7 @@ describe("useProjectWebSocket", () => {
     applyWsEvent(
       1,
       { type: "data_cleared", data: { cleared_types: ["characters"] } } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -1009,7 +1006,7 @@ describe("useProjectWebSocket", () => {
     applyWsEvent(
       1,
       { type: "project_updated", data: { project: { id: 7, video_url: null, title: "updated" } } } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -1023,7 +1020,7 @@ describe("useProjectWebSocket", () => {
     applyWsEvent(
       1,
       { type: "project_updated", data: { project: { id: 7, status: "generating" } } } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -1049,7 +1046,7 @@ describe("useProjectWebSocket", () => {
           },
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -1070,16 +1067,14 @@ describe("useProjectWebSocket", () => {
     const store = useEditorStore.getState();
     store.reset();
 
-    applyWsEvent(1, { type: "project_updated", data: {} } as never, store, noopAutoConfirm);
+    applyWsEvent(1, { type: "project_updated", data: {} } as never, "manual", noopAutoConfirm);
 
     expect(useEditorStore.getState()).not.toHaveProperty("projectStatus");
   });
 
   it("reads current_stage from run_completed event data", () => {
-    const store = useEditorStore.getState();
-    store.reset();
-    store.setGenerating(true);
-    store.setCurrentRunId(888);
+    resetRunState(1);
+    patchRunState(1, { isGenerating: true, currentRunId: 888 });
 
     applyWsEvent(
       1,
@@ -1091,12 +1086,12 @@ describe("useProjectWebSocket", () => {
           message: "完成片段阶段",
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().isGenerating).toBe(false);
-    expect(useEditorStore.getState().currentStage).toBe("compose");
+    expect(readRunState(1).isGenerating).toBe(false);
+    expect(readRunState(1).currentStage).toBe("compose");
   });
 
   it("reads summary from run_message event", () => {
@@ -1114,7 +1109,7 @@ describe("useProjectWebSocket", () => {
           summary: "brief summary",
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -1127,10 +1122,8 @@ describe("useProjectWebSocket", () => {
   });
 
   it("handles run_cancelled with run_ids field", () => {
-    const store = useEditorStore.getState();
-    store.reset();
-    store.setGenerating(true);
-    store.setCurrentRunId(100);
+    resetRunState(1);
+    patchRunState(1, { isGenerating: true, currentRunId: 100 });
 
     applyWsEvent(
       1,
@@ -1138,12 +1131,12 @@ describe("useProjectWebSocket", () => {
         type: "run_cancelled",
         data: { run_ids: [100, 101], cancelled_count: 2 },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().isGenerating).toBe(false);
-    expect(useEditorStore.getState().currentRunId).toBeNull();
+    expect(readRunState(1).isGenerating).toBe(false);
+    expect(readRunState(1).currentRunId).toBeNull();
   });
 
   it("handles data_cleared with start_agent and mode fields", () => {
@@ -1156,7 +1149,7 @@ describe("useProjectWebSocket", () => {
         type: "data_cleared",
         data: { cleared_types: ["characters"], start_agent: "plan", mode: "full" },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
@@ -1181,11 +1174,11 @@ describe("useProjectWebSocket", () => {
           progress: 0.75,
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState()).toMatchObject({
+    expect(readRunState(1)).toMatchObject({
       isGenerating: true,
       currentRunId: 999,
       currentAgent: "animator",
@@ -1209,11 +1202,11 @@ describe("useProjectWebSocket", () => {
           next_stage: "character",
         },
       } as never,
-      store,
+      "manual",
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().currentStage).toBe("plan");
+    expect(readRunState(1).currentStage).toBe("plan");
   });
 
   it("handles extended WS event contracts added after the base generation flow", () => {
@@ -1231,7 +1224,7 @@ describe("useProjectWebSocket", () => {
           details: "face match",
         },
       } as never,
-      useEditorStore.getState(),
+      "manual",
       noopAutoConfirm
     );
     applyWsEvent(
@@ -1248,7 +1241,7 @@ describe("useProjectWebSocket", () => {
           will_regenerate: false,
         },
       } as never,
-      useEditorStore.getState(),
+      "manual",
       noopAutoConfirm
     );
     applyWsEvent(
@@ -1262,7 +1255,7 @@ describe("useProjectWebSocket", () => {
           trigger: "generation",
         },
       } as never,
-      useEditorStore.getState(),
+      "manual",
       noopAutoConfirm
     );
     applyWsEvent(
@@ -1276,7 +1269,7 @@ describe("useProjectWebSocket", () => {
           to_version: 2,
         },
       } as never,
-      useEditorStore.getState(),
+      "manual",
       noopAutoConfirm
     );
     applyWsEvent(
@@ -1290,7 +1283,7 @@ describe("useProjectWebSocket", () => {
           duration: 4.2,
         },
       } as never,
-      useEditorStore.getState(),
+      "manual",
       noopAutoConfirm
     );
     applyWsEvent(
@@ -1304,7 +1297,7 @@ describe("useProjectWebSocket", () => {
           has_embedding: true,
         },
       } as never,
-      useEditorStore.getState(),
+      "manual",
       noopAutoConfirm
     );
     applyWsEvent(
@@ -1317,7 +1310,7 @@ describe("useProjectWebSocket", () => {
           character_count: 3,
         },
       } as never,
-      useEditorStore.getState(),
+      "manual",
       noopAutoConfirm
     );
     applyWsEvent(
@@ -1332,7 +1325,7 @@ describe("useProjectWebSocket", () => {
           error: null,
         },
       } as never,
-      useEditorStore.getState(),
+      "manual",
       noopAutoConfirm
     );
 

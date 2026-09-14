@@ -34,7 +34,9 @@ import {
 import { MobileWorkbenchPreview } from "~/features/comic-workflow/mobile/MobileWorkbenchPreview";
 import { useIsMobileWorkbench } from "~/features/comic-workflow/mobile/useIsMobileWorkbench";
 import { projectsApi, runsApi, exportApi, getStaticUrl } from "~/services/api";
-import { useEditorStore, useShallow } from "~/stores/editorStore";
+import { useRunState } from "~/hooks/useRunState";
+import { useEditorStore } from "~/stores/editorStore";
+import { patchRunState, readRunState as readRunStateSnapshot, resetRunState } from "~/query/runState";
 import { projectQueryKeys } from "~/query/queryKeys";
 import {
 	appendMessage,
@@ -75,6 +77,7 @@ export function ProjectPage() {
 	const [searchParams, setSearchParams] = useSearchParams();
 	const projectId = parseInt(id || "0", 10);
 	const queryClient = useQueryClient();
+	const runState = useRunState(projectId);
 	const {
 		isGenerating: storeIsGenerating,
 		currentRunId: storeCurrentRunId,
@@ -82,18 +85,8 @@ export function ProjectPage() {
 		progress: storeProgress,
 		awaitingConfirm: storeAwaitingConfirm,
 		recoveryControl: storeRecoveryControl,
-		runMode: storeRunMode,
-	} = useEditorStore(
-		useShallow((s) => ({
-			isGenerating: s.isGenerating,
-			currentRunId: s.currentRunId,
-			currentStage: s.currentStage,
-			progress: s.progress,
-			awaitingConfirm: s.awaitingConfirm,
-			recoveryControl: s.recoveryControl,
-			runMode: s.runMode,
-		})),
-	);
+	} = runState;
+	const storeRunMode = useEditorStore((s) => s.runMode);
 	const hasActiveRun = storeIsGenerating || Boolean(storeCurrentRunId);
 	const hasRecovery = Boolean(storeRecoveryControl);
 	const [sidebarTab, setSidebarTab] = useState<WorkspaceSidebarTab>("chat");
@@ -130,16 +123,18 @@ export function ProjectPage() {
 		progress?: number | null;
 		provider_snapshot?: ProjectProviderSettings | null;
 	}) => {
-		const s = useEditorStore.getState();
-		s.setGenerating(true);
-		s.setCurrentRunId(run.id);
-		s.setCurrentAgent(run.current_agent ?? "orchestrator");
-		s.setProgress(typeof run.progress === "number" ? run.progress : 0);
-		s.setCurrentRunProviderSnapshot(run.provider_snapshot ?? null);
-		s.setAwaitingConfirm(false, null, run.id);
-		s.setRecoveryControl(null);
-		s.setRecoverySummary(null);
-		s.setRecoveryGate(null);
+		patchRunState(projectId, {
+			isGenerating: true,
+			currentRunId: run.id,
+			currentAgent: run.current_agent ?? "orchestrator",
+			progress: typeof run.progress === "number" ? run.progress : 0,
+			currentRunProviderSnapshot: run.provider_snapshot ?? null,
+			awaitingConfirm: false,
+			awaitingAgent: null,
+			recoveryControl: null,
+			recoverySummary: null,
+			recoveryGate: null,
+		});
 		setLastRunStatus(null);
 	};
 
@@ -198,45 +193,48 @@ export function ProjectPage() {
 
 	useEffect(() => {
 		if (!hydratedGenerationState) return;
-		const s = useEditorStore.getState();
+		const live = readRunStateSnapshot(projectId);
 		// WS 已建立实时态时不覆盖
-		if (s.isGenerating || s.currentRunId) return;
-		s.setRecoveryControl(hydratedGenerationState);
-		s.setRecoverySummary(hydratedGenerationState.recovery_summary);
+		if (live.isGenerating || live.currentRunId) return;
+		patchRunState(projectId, {
+			recoveryControl: hydratedGenerationState,
+			recoverySummary: hydratedGenerationState.recovery_summary,
+		});
 		if (hydratedGenerationState.state === "active") {
 			// currentRunId 只在真活跃时设置：recoverable 状态设了会让
 			// hasActiveRun 误判为生成中，把「恢复」按钮短路成只剩「停止」
-			s.setCurrentRunId(hydratedGenerationState.active_run.id);
-			s.setGenerating(true);
-			s.setCurrentAgent(hydratedGenerationState.active_run.current_agent);
-			s.setProgress(hydratedGenerationState.active_run.progress ?? 0);
+			patchRunState(projectId, {
+				currentRunId: hydratedGenerationState.active_run.id,
+				isGenerating: true,
+				currentAgent: hydratedGenerationState.active_run.current_agent,
+				progress: hydratedGenerationState.active_run.progress ?? 0,
+			});
 		}
 		const stage = toSimplifiedStage(
 			hydratedGenerationState.recovery_summary.next_stage ??
 				hydratedGenerationState.recovery_summary.current_stage,
 		);
-		if (stage) s.setCurrentStage(stage);
-	}, [hydratedGenerationState]);
+		if (stage) patchRunState(projectId, { currentStage: stage });
+	}, [hydratedGenerationState, projectId]);
 
 	useEffect(() => {
 		if (project) {
-			const editorStore = useEditorStore.getState();
 			if (runModeInitializedRef.current !== project.id) {
-				editorStore.setRunMode(
+				useEditorStore.getState().setRunMode(
 					project.creation_mode === "quick" ? "yolo" : "manual",
 				);
 				runModeInitializedRef.current = project.id;
 			}
 			// 初始阶段按项目真实状态落位，而不是每次打开都归零到 规划/0%。
 			// 有实时运行态或恢复水合时让位给它们（recovery_summary 的 stage 更精确）。
-			if (!editorStore.isGenerating && !editorStore.currentRunId) {
+			const live = readRunStateSnapshot(projectId);
+			if (!live.isGenerating && !live.currentRunId) {
 				if (project.status === "ready" && project.video_url) {
-					editorStore.setCurrentStage("compose");
-					editorStore.setProgress(1);
+					patchRunState(projectId, { currentStage: "compose", progress: 1 });
 				}
 			}
 		}
-	}, [project]);
+	}, [project, projectId]);
 
 	useLayoutEffect(() => {
 		if (projectId <= 0) return;
@@ -244,11 +242,11 @@ export function ProjectPage() {
 		generateRequestTokenRef.current += 1;
 		messagesLoadedRef.current = false;
 		runModeInitializedRef.current = null;
-		const editorStore = useEditorStore.getState();
 
 		clearMessageFeed(projectId);
-		editorStore.resetRunState();
-		editorStore.setCurrentStage("plan");
+		resetRunState(projectId);
+		patchRunState(projectId, { currentStage: "plan" });
+		const editorStore = useEditorStore.getState();
 		editorStore.setSelectedShot(null);
 		editorStore.setSelectedCharacter(null);
 		editorStore.setHighlightedMessage(null);
@@ -307,21 +305,24 @@ export function ProjectPage() {
 				retryCount.current = 0;
 				const control = apiError?.response as RecoveryControlRead | undefined;
 				if (control) {
-					const s = useEditorStore.getState();
-					s.setRecoveryControl(control);
-					s.setRecoverySummary(control.recovery_summary);
-					s.setGenerating(control.state === "active");
-					if (control.state === "active") {
-						// recoverable 时不设 currentRunId，避免「恢复」按钮被短路成「停止」
-						s.setCurrentRunId(control.active_run.id);
-						s.setCurrentAgent(control.active_run.current_agent);
-						s.setProgress(control.active_run.progress);
-					}
+					patchRunState(projectId, {
+						recoveryControl: control,
+						recoverySummary: control.recovery_summary,
+						isGenerating: control.state === "active",
+						...(control.state === "active"
+							? // recoverable 时不设 currentRunId，避免「恢复」按钮被短路成「停止」
+								{
+									currentRunId: control.active_run.id,
+									currentAgent: control.active_run.current_agent,
+									progress: control.active_run.progress,
+								}
+							: {}),
+				});
 					const stage = toSimplifiedStage(
 						control.recovery_summary.next_stage ??
 							control.recovery_summary.current_stage,
 					);
-					if (stage) s.setCurrentStage(stage);
+					if (stage) patchRunState(projectId, { currentStage: stage });
 					// 说明性提示：按钮此时会静默换成「恢复 / 停止」，
 					// 不提示的话用户会以为点击没有生效
 					toast.info({
@@ -374,14 +375,15 @@ export function ProjectPage() {
 			// Feedback starts a review-routed run; bind immediately so cancel/confirm work
 			// even before the first WS event arrives.
 			if (result?.run_id) {
-				const s = useEditorStore.getState();
-				s.setCurrentRunId(result.run_id);
-				s.setGenerating(true);
-				s.setCurrentAgent("review");
-				s.setCurrentStage("review");
-				s.setProgress(0);
-				s.setRecoveryControl(null);
-				s.setRecoverySummary(null);
+				patchRunState(projectId, {
+					currentRunId: result.run_id,
+					isGenerating: true,
+					currentAgent: "review",
+					currentStage: "review",
+					progress: 0,
+					recoveryControl: null,
+					recoverySummary: null,
+				});
 			}
 		},
 		onError: (error: Error | ApiError) => {
@@ -392,21 +394,24 @@ export function ProjectPage() {
 			if (isConflict) {
 				const control = apiError?.response as RecoveryControlRead | undefined;
 				if (control?.active_run && control.recovery_summary) {
-					const s = useEditorStore.getState();
-					s.setRecoveryControl(control);
-					s.setRecoverySummary(control.recovery_summary);
-					s.setGenerating(control.state === "active");
-					if (control.state === "active") {
-						// recoverable 时不设 currentRunId，避免「恢复」按钮被短路成「停止」
-						s.setCurrentRunId(control.active_run.id);
-						s.setCurrentAgent(control.active_run.current_agent);
-						s.setProgress(control.active_run.progress);
-					}
+					patchRunState(projectId, {
+						recoveryControl: control,
+						recoverySummary: control.recovery_summary,
+						isGenerating: control.state === "active",
+						...(control.state === "active"
+							? // recoverable 时不设 currentRunId，避免「恢复」按钮被短路成「停止」
+								{
+									currentRunId: control.active_run.id,
+									currentAgent: control.active_run.current_agent,
+									progress: control.active_run.progress,
+								}
+							: {}),
+					});
 					const stage = toSimplifiedStage(
 						control.recovery_summary.next_stage ??
 							control.recovery_summary.current_stage,
 					);
-					if (stage) s.setCurrentStage(stage);
+					if (stage) patchRunState(projectId, { currentStage: stage });
 					toast.info({
 						title: "已有任务进行中",
 						message: "已恢复当前运行控制，请先确认或停止",
@@ -441,7 +446,7 @@ export function ProjectPage() {
 			}
 		},
 		onSettled: () => {
-			useEditorStore.getState().resetRunState();
+			resetRunState(projectId);
 			appendMessage(projectId, {
 				agent: "system",
 				role: "system",
@@ -462,24 +467,25 @@ export function ProjectPage() {
 		},
 		onSuccess: (run) => {
 			const control = storeRecoveryControl;
-			const s = useEditorStore.getState();
-			s.setGenerating(true);
-			s.setCurrentRunId(run.id);
-			s.setCurrentAgent(run.current_agent);
-			s.setProgress(run.progress);
-			s.setCurrentRunProviderSnapshot(run.provider_snapshot ?? null);
+			patchRunState(projectId, {
+				isGenerating: true,
+				currentRunId: run.id,
+				currentAgent: run.current_agent,
+				progress: run.progress,
+				currentRunProviderSnapshot: run.provider_snapshot ?? null,
+				recoveryControl: null,
+				recoverySummary: null,
+				recoveryGate: null,
+			});
 			if (control) {
 				const nextStage = toSimplifiedStage(
 					control.recovery_summary.next_stage ??
 						control.recovery_summary.current_stage,
 				);
 				if (nextStage) {
-					s.setCurrentStage(nextStage);
+					patchRunState(projectId, { currentStage: nextStage });
 				}
 			}
-			s.setRecoveryControl(null);
-			s.setRecoverySummary(null);
-			s.setRecoveryGate(null);
 			setLastRunStatus(null);
 		},
 		onError: (error: Error | ApiError) => {
@@ -498,7 +504,7 @@ export function ProjectPage() {
 		generateRequestTokenRef.current = requestToken;
 		setLastRunStatus(null);
 		clearMessageFeed(projectId);
-		useEditorStore.getState().setCurrentStage("plan");
+		patchRunState(projectId, { currentStage: "plan" });
 		generateMutation.mutate({
 			requestToken,
 			skillId: searchParams.get("skill") || project?.skill_id || null,
@@ -628,7 +634,7 @@ export function ProjectPage() {
 
 	useEffect(() => {
 		if (!storeIsGenerating) {
-			const progress = useEditorStore.getState().progress;
+			const progress = readRunStateSnapshot(projectId).progress;
 			if (progress === 1) {
 				queryClient.invalidateQueries({ queryKey: ["characters", projectId] });
 				queryClient.invalidateQueries({ queryKey: ["shots", projectId] });
@@ -657,7 +663,6 @@ export function ProjectPage() {
 			!autoStartTriggered.current &&
 			!hasActiveRun
 		) {
-			const editorStore = useEditorStore.getState();
 			autoStartTriggered.current = true;
 			// Clear autoStart noise; skill is durable on project
 			setSearchParams({}, { replace: true });
@@ -665,10 +670,10 @@ export function ProjectPage() {
 			generateRequestTokenRef.current = requestToken;
 			setLastRunStatus(null);
 			clearMessageFeed(projectId);
-			editorStore.setCurrentStage("plan");
+			patchRunState(projectId, { currentStage: "plan" });
 			// quick skill prefers yolo
 			if (skillId === "quick-short" || project.creation_mode === "quick") {
-				editorStore.setRunMode("yolo");
+				useEditorStore.getState().setRunMode("yolo");
 			}
 			generateMutation.mutate({ requestToken, skillId });
 		}

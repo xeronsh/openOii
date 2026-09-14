@@ -1,5 +1,6 @@
 import { appendMessage, updateMessageFeed } from "~/query/messageFeed";
-import { useEditorStore, type RunMode } from "~/stores/editorStore";
+import { patchRunState, readRunState, resetRunState } from "~/query/runState";
+import type { RunMode } from "~/stores/editorStore";
 import type {
 	AgentMessage,
 	AgentThinkingEventData,
@@ -63,12 +64,9 @@ function cleanupStaleMessages(projectId: number, completedAgent?: string): void 
 	);
 }
 
-function applyStage(
-	store: ReturnType<typeof useEditorStore.getState>,
-	data: Record<string, unknown>,
-) {
+function applyStage(projectId: number, data: Record<string, unknown>): void {
 	const stage = resolveEventStage(data);
-	if (stage) store.setCurrentStage(stage);
+	if (stage) patchRunState(projectId, { currentStage: stage });
 }
 
 type AutoConfirmFn = (runId: number) => void;
@@ -76,17 +74,20 @@ type AutoConfirmFn = (runId: number) => void;
 /**
  * UI projection for websocket events.
  *
- * Durable server entities are projected into TanStack Query by
- * `applyServerEvent`. This function owns only what the server does not own:
- * interaction state and the live run UI. The chat feed also lives in the query
- * cache now, so it is written through `~/query/messageFeed`.
+ * Single websocket reducer.
+ *
+ * Durable entities, the chat feed and the live run UI all live in the query
+ * cache now, so one event is projected exactly once (messageFeed / runState /
+ * applyServerEvent) instead of being written to a store and then mirrored.
  */
 export function applyWsEvent(
 	projectId: number,
 	event: WsEvent,
-	store: ReturnType<typeof useEditorStore.getState>,
+	runMode: RunMode,
 	autoConfirm: AutoConfirmFn,
 ): void {
+	// `runMode` is a genuine client preference (manual/yolo) owned by the editor
+	// store; everything else in this reducer writes to the query cache.
 	switch (event.type) {
 		case "connected":
 			break;
@@ -107,8 +108,8 @@ export function applyWsEvent(
 
 		case "run_started": {
 			const d = event.data as unknown as RunStartedEventData;
-			store.setGenerating(true);
-			store.setProgress(0);
+			patchRunState(projectId, { isGenerating: true });
+			patchRunState(projectId, { progress: 0 });
 			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
@@ -116,28 +117,28 @@ export function applyWsEvent(
 				content: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
 				timestamp: new Date().toISOString(),
 			});
-			store.setCurrentRunId(d.run_id);
-			store.setCurrentAgent(d.current_agent ?? null);
-			store.setAwaitingConfirm(false);
-			store.setRecoveryGate(null);
-			applyStage(store, event.data);
-			if (d.recovery_summary) store.setRecoverySummary(d.recovery_summary);
+			patchRunState(projectId, { currentRunId: d.run_id });
+			patchRunState(projectId, { currentAgent: d.current_agent ?? null });
+			patchRunState(projectId, { awaitingConfirm: false, awaitingAgent: null });
+			patchRunState(projectId, { recoveryGate: null });
+			applyStage(projectId, event.data);
+			if (d.recovery_summary) patchRunState(projectId, { recoverySummary: d.recovery_summary });
 			if (Object.hasOwn(d, "provider_snapshot")) {
-				store.setCurrentRunProviderSnapshot(d.provider_snapshot ?? null);
+				patchRunState(projectId, { currentRunProviderSnapshot: d.provider_snapshot ?? null });
 			}
 			break;
 		}
 
 		case "run_progress": {
 			const p = event.data as unknown as RunProgressEventData;
-			if (!store.isGenerating && p.run_id) {
-				store.setGenerating(true);
-				store.setCurrentRunId(p.run_id);
+			if (!readRunState(projectId).isGenerating && p.run_id) {
+				patchRunState(projectId, { isGenerating: true });
+				patchRunState(projectId, { currentRunId: p.run_id });
 			}
-			store.setCurrentAgent(p.current_agent ?? null);
-			store.setProgress(p.progress);
-			if (p.recovery_summary) store.setRecoverySummary(p.recovery_summary);
-			applyStage(store, event.data);
+			patchRunState(projectId, { currentAgent: p.current_agent ?? null });
+			patchRunState(projectId, { progress: p.progress });
+			if (p.recovery_summary) patchRunState(projectId, { recoverySummary: p.recovery_summary });
+			applyStage(projectId, event.data);
 			break;
 		}
 
@@ -146,7 +147,7 @@ export function applyWsEvent(
 			clearLoadingStates(projectId, agent);
 			const msgProgress = event.data.progress as number | undefined;
 			if (typeof msgProgress === "number" && msgProgress >= 0 && msgProgress <= 1) {
-				store.setProgress(msgProgress);
+				patchRunState(projectId, { progress: msgProgress });
 			}
 			const message: AgentMessage = {
 				id: generateMessageId(),
@@ -182,14 +183,14 @@ export function applyWsEvent(
 		case "run_awaiting_confirm": {
 			clearLoadingStates(projectId);
 			const gate = event.data as unknown as RunAwaitingConfirmEventData;
-			if (!store.isGenerating) {
-				store.setGenerating(true);
-				store.setCurrentRunId(gate.run_id);
+			if (!readRunState(projectId).isGenerating) {
+				patchRunState(projectId, { isGenerating: true });
+				patchRunState(projectId, { currentRunId: gate.run_id });
 			}
-			store.setAwaitingConfirm(true, gate.agent, gate.run_id);
-			store.setRecoveryGate(gate);
-			store.setRecoverySummary(gate.recovery_summary);
-			applyStage(store, event.data);
+			patchRunState(projectId, { awaitingConfirm: true, awaitingAgent: gate.agent, currentRunId: gate.run_id });
+			patchRunState(projectId, { recoveryGate: gate });
+			patchRunState(projectId, { recoverySummary: gate.recovery_summary });
+			applyStage(projectId, event.data);
 			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
@@ -197,7 +198,7 @@ export function applyWsEvent(
 				content: event.data.message as string,
 				timestamp: new Date().toISOString(),
 			});
-			if (!gate.auto_mode && shouldAutoConfirm(gate.agent, store.runMode)) {
+			if (!gate.auto_mode && shouldAutoConfirm(gate.agent, runMode)) {
 				autoConfirm(gate.run_id);
 			}
 			break;
@@ -205,10 +206,10 @@ export function applyWsEvent(
 
 		case "run_confirmed": {
 			const confirmed = event.data as unknown as RunConfirmedEventData;
-			store.setAwaitingConfirm(false);
-			store.setRecoveryGate(null);
-			if (confirmed.recovery_summary) store.setRecoverySummary(confirmed.recovery_summary);
-			applyStage(store, event.data);
+			patchRunState(projectId, { awaitingConfirm: false, awaitingAgent: null });
+			patchRunState(projectId, { recoveryGate: null });
+			if (confirmed.recovery_summary) patchRunState(projectId, { recoverySummary: confirmed.recovery_summary });
+			applyStage(projectId, event.data);
 			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
@@ -223,12 +224,12 @@ export function applyWsEvent(
 			clearLoadingStates(projectId);
 			const d = event.data as unknown as RunCompletedEventData;
 			cleanupStaleMessages(projectId);
-			store.resetRunState();
-			store.setProgress(1);
+			resetRunState(projectId);
+			patchRunState(projectId, { progress: 1 });
 			const stage = resolveEventStage(event.data);
-			if (stage) store.setCurrentStage(stage);
-			else if (d.video_generation_pending) store.setCurrentStage("render");
-			else store.setCurrentStage("compose");
+			if (stage) patchRunState(projectId, { currentStage: stage });
+			else if (d.video_generation_pending) patchRunState(projectId, { currentStage: "render" });
+			else patchRunState(projectId, { currentStage: "compose" });
 			if (typeof d.message === "string" && d.message.trim()) {
 				appendMessage(projectId, {
 					id: generateMessageId(),
@@ -245,7 +246,7 @@ export function applyWsEvent(
 			clearLoadingStates(projectId);
 			cleanupStaleMessages(projectId);
 			const d = event.data as unknown as RunFailedEventData;
-			store.resetRunState();
+			resetRunState(projectId);
 			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
@@ -259,8 +260,8 @@ export function applyWsEvent(
 
 		case "run_cancelled": {
 			clearLoadingStates(projectId);
-			store.resetRunState();
-			store.setProgress(0);
+			resetRunState(projectId);
+			patchRunState(projectId, { progress: 0 });
 			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",

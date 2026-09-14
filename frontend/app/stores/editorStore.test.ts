@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { useEditorStore } from '~/stores/editorStore';
+import { appQueryClient } from '~/query/client';
+import { patchRunState, readRunState, resetRunState } from '~/query/runState';
 
 describe('useEditorStore review contract', () => {
   beforeEach(() => {
@@ -14,27 +16,49 @@ describe('useEditorStore review contract', () => {
     useEditorStore.getState().setRunMode('manual');
     expect(useEditorStore.getState().runMode).toBe('manual');
   });
+});
 
-  it('resetRunState clears run fields without touching data', () => {
-    const store = useEditorStore.getState();
-    store.setGenerating(true);
-    store.setCurrentAgent('plan');
-    store.setProgress(0.5);
-    store.setCurrentRunId(42);
-    store.setAwaitingConfirm(true, 'plan', 42);
-    store.setHighlightedMessage(3);
+describe('run state projection (query cache)', () => {
+  beforeEach(() => {
+    resetRunState(1);
+  });
 
-    store.resetRunState();
+  it('patches run fields and reads them back', () => {
+    patchRunState(1, {
+      isGenerating: true,
+      currentAgent: 'plan',
+      progress: 0.5,
+      currentRunId: 42,
+      awaitingConfirm: true,
+      awaitingAgent: 'plan',
+    });
 
-    const s = useEditorStore.getState();
+    const s = readRunState(1);
+    expect(s.isGenerating).toBe(true);
+    expect(s.currentAgent).toBe('plan');
+    expect(s.progress).toBe(0.5);
+    expect(s.currentRunId).toBe(42);
+    expect(s.awaitingConfirm).toBe(true);
+    expect(s.awaitingAgent).toBe('plan');
+  });
+
+  it('reset clears run fields', () => {
+    patchRunState(1, { isGenerating: true, currentRunId: 42, progress: 0.5 });
+
+    resetRunState(1);
+
+    const s = readRunState(1);
     expect(s.isGenerating).toBe(false);
-    expect(s.currentAgent).toBeNull();
-    expect(s.progress).toBe(0);
     expect(s.currentRunId).toBeNull();
-    expect(s.awaitingConfirm).toBe(false);
-    expect(s.awaitingAgent).toBeNull();
-    // 画布/消息选中是客户端自有状态，resetRunState 不碰它
-    expect(s.highlightedMessageIndex).toBe(3);
-    expect(s.currentStage).toBe('plan');
+    expect(s.progress).toBe(0);
+  });
+
+  it('keeps the run-state cache scoped per project', () => {
+    patchRunState(1, { isGenerating: true, currentRunId: 42 });
+
+    expect(readRunState(2).isGenerating).toBe(false);
+    expect(appQueryClient.getQueryData(['run-state', 1])).toMatchObject({
+      currentRunId: 42,
+    });
   });
 });

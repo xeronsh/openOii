@@ -7,7 +7,8 @@ import type { AgentMessage } from "~/types";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { RunMode } from "~/stores/editorStore";
+import { useEditorStore } from "~/stores/editorStore";
+import { patchRunState, resetRunState } from "~/query/runState";
 import type { WorkflowStage } from "~/types";
 import { ChatPanel } from "./ChatPanel";
 
@@ -15,44 +16,13 @@ function setChatFeed(messages: AgentMessage[]): void {
 	appQueryClient.setQueryData(projectQueryKeys.messageFeed(1), messages);
 }
 
-type ChatPanelStoreState = {
-	currentAgent: string | null;
-	awaitingConfirm: boolean;
-	awaitingAgent: string | null;
-	currentStage: WorkflowStage;
-	currentRunId: number | null;
-	runMode: RunMode;
-	setRunMode: (mode: RunMode) => void;
-};
-
 const onSendFeedback = vi.fn();
 const onConfirm = vi.fn();
 const onCancel = vi.fn();
-const setRunMode = vi.fn();
 
-const storeState: ChatPanelStoreState = {
-	currentAgent: null,
-	awaitingConfirm: false,
-	awaitingAgent: null,
-	currentStage: "plan",
-	currentRunId: null as number | null,
-	runMode: "manual",
-	setRunMode,
-};
-
-vi.mock("~/stores/editorStore", () => ({
-	useEditorStore: Object.assign(
-		(selector?: (state: typeof storeState) => unknown) =>
-			selector ? selector(storeState) : storeState,
-		{
-			getState: () => storeState,
-		},
-	),
-	useShallow: (selector: (state: typeof storeState) => unknown) => {
-		const result = selector(storeState);
-		return () => result;
-	},
-}));
+function seedRunState(patch: Parameters<typeof patchRunState>[1]): void {
+	patchRunState(1, patch);
+}
 
 vi.mock("./MessageList", () => ({
 	MessageList: () => <div data-testid="message-list" />,
@@ -93,12 +63,8 @@ describe("ChatPanel", () => {
 			value: vi.fn(),
 		});
 		appQueryClient.setQueryData(projectQueryKeys.messageFeed(1), []);
-		storeState.currentAgent = null;
-		storeState.awaitingConfirm = false;
-		storeState.awaitingAgent = null;
-		storeState.currentStage = "plan";
-		storeState.currentRunId = null;
-		storeState.runMode = "manual";
+		resetRunState(1);
+		useEditorStore.getState().setRunMode("manual");
 	});
 
 	it("keeps global generation out of the empty chat state", () => {
@@ -111,7 +77,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("shows processing state and stop button while generating", () => {
-		storeState.currentAgent = "plan";
+		seedRunState({ currentAgent: "plan" });
 
 		renderChatPanel(true);
 
@@ -121,8 +87,7 @@ describe("ChatPanel", () => {
 
 	it("shows awaiting confirm area and sends trimmed feedback to confirm", async () => {
 		const user = userEvent.setup();
-		storeState.awaitingConfirm = true;
-		storeState.awaitingAgent = "plan";
+		seedRunState({ awaitingConfirm: true, awaitingAgent: "plan" });
 		setChatFeed([
 			{
 				id: "1",
@@ -145,20 +110,19 @@ describe("ChatPanel", () => {
 
 	it("toggles between review and quick mode", async () => {
 		const user = userEvent.setup();
-		storeState.runMode = "manual";
+		useEditorStore.getState().setRunMode("manual");
 
 		renderChatPanel(false);
 
 		await user.click(screen.getByRole("button", { name: "切换快速生成模式" }));
 
-		expect(setRunMode).toHaveBeenCalledWith("yolo");
+		expect(useEditorStore.getState().runMode).toBe("yolo");
 	});
 
 	it("confirms the current gate when switching to quick mode while awaiting confirmation", async () => {
 		const user = userEvent.setup();
-		storeState.awaitingConfirm = true;
-		storeState.awaitingAgent = "plan";
-		storeState.runMode = "manual";
+		seedRunState({ awaitingConfirm: true, awaitingAgent: "plan" });
+		useEditorStore.getState().setRunMode("manual");
 		setChatFeed([
 			{
 				id: "1",
@@ -172,14 +136,13 @@ describe("ChatPanel", () => {
 
 		await user.click(screen.getByRole("button", { name: "切换快速生成模式" }));
 
-		expect(setRunMode).toHaveBeenCalledWith("yolo");
+		expect(useEditorStore.getState().runMode).toBe("yolo");
 		expect(onConfirm).toHaveBeenLastCalledWith(undefined);
 	});
 
 	it("hides manual confirm bar in YOLO mode", () => {
-		storeState.awaitingConfirm = true;
-		storeState.awaitingAgent = "plan";
-		storeState.runMode = "yolo";
+		seedRunState({ awaitingConfirm: true, awaitingAgent: "plan" });
+		useEditorStore.getState().setRunMode("yolo");
 
 		renderChatPanel(true);
 
@@ -199,8 +162,7 @@ describe("ChatPanel", () => {
 
 	it("does not treat mid-run messages as confirm when not awaiting a gate", async () => {
 		const user = userEvent.setup();
-		storeState.currentRunId = 99;
-		storeState.awaitingConfirm = false;
+		seedRunState({ currentRunId: 99, awaitingConfirm: false });
 		toastInfo.mockClear();
 
 		renderChatPanel(true);
@@ -214,7 +176,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("shows render stage icon when currentStage is render", () => {
-		storeState.currentStage = "render";
+		seedRunState({ currentStage: "render" as WorkflowStage });
 
 		renderChatPanel(false);
 
@@ -222,7 +184,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("shows render_approval stage icon when currentStage is render_approval", () => {
-		storeState.currentStage = "render_approval";
+		seedRunState({ currentStage: "render_approval" as WorkflowStage });
 
 		renderChatPanel(false);
 
@@ -230,7 +192,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("shows compose stage icon when currentStage is compose", () => {
-		storeState.currentStage = "compose";
+		seedRunState({ currentStage: "compose" as WorkflowStage });
 
 		renderChatPanel(false);
 
