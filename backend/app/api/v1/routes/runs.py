@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from typing import cast
@@ -41,6 +42,7 @@ from app.services.engine_client import (
 )
 from app.services.generation_entry import decide_generation_entry
 from app.services.image_factory import create_image_service
+from app.services.invalidation import build_invalidation_plan
 from app.services.provider_resolution import resolve_project_provider_settings_async
 from app.services.run_context import build_run_context_snapshot
 from app.services.run_recovery import build_recovery_control_surface
@@ -343,7 +345,9 @@ async def start_run(
         stage="full",
         auto_mode=bool(payload.auto_mode),
     )
-    await session.refresh(run)
+    # Command acceptance is represented by the durable queued row. Do not
+    # refresh here: whether the sidecar has already acquired its lease is a race
+    # and must not make this API response nondeterministically queued/running.
     return AgentRunRead.model_validate(run)
 
 
@@ -456,7 +460,7 @@ async def feedback_project(
     project = await get_or_404(session, Project, project_id)
 
     candidate = await _latest_run_for_project(session, project_id, _ACTIVE_RUN_STATUSES)
-    active_run, _ = await _reconcile_active_candidate(
+    active_run, newly_recoverable = await _reconcile_active_candidate(
         session=session,
         settings=settings,
         run=candidate,
@@ -467,6 +471,14 @@ async def feedback_project(
             database_url=settings.database_url,
             run=active_run,
             state="active",
+        )
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content=control.model_dump(mode="json"))
+    if newly_recoverable is not None:
+        control = await build_recovery_control_surface(
+            session=session,
+            database_url=settings.database_url,
+            run=newly_recoverable,
+            state="recoverable",
         )
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content=control.model_dump(mode="json"))
 
@@ -502,7 +514,7 @@ async def feedback_project(
     )
     await session.commit()
 
-    start_stage = await _route_feedback_to_stage(
+    classified_stage = await _route_feedback_to_stage(
         settings=settings,
         ws=ws,
         session=session,
@@ -514,13 +526,22 @@ async def feedback_project(
         entity_id=payload.entity_id,
         entity_ids=payload.entity_ids,
     )
+    invalidation_plan = build_invalidation_plan(
+        start_stage=classified_stage,
+        entity_type=payload.entity_type,
+        entity_id=payload.entity_id,
+        entity_ids=payload.entity_ids,
+    )
+    run.patch_plan = json.dumps(invalidation_plan, ensure_ascii=False, sort_keys=True)
+    session.add(run)
+    await session.commit()
+
     await _dispatch_to_engine(
         settings=settings,
         project_id=project_id,
         run_id=run_id,
-        stage=start_stage,
+        stage=invalidation_plan["start_stage"],
         auto_mode=False,
         user_feedback=content,
     )
-    await session.refresh(run)
     return FeedbackAcceptedResponse(run_id=run_id)
