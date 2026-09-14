@@ -11,6 +11,7 @@ vi.mock("~/utils/toast", () => ({ toast: toastMock }));
 vi.mock("~/utils/runtimeBase", () => ({ getWsBase: () => "ws://example.test", getApiBase: () => "http://example.test" }));
 
 import { useEditorStore } from "~/stores/editorStore";
+import { readMessageFeed, replaceMessageFeed } from "~/query/messageFeed";
 import { applyWsEvent, useProjectWebSocket } from "~/hooks/useWebSocket";
 import type { WsEvent } from "~/types";
 
@@ -263,7 +264,7 @@ describe("useProjectWebSocket", () => {
   it("replaces transient batch progress messages while run is active", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.setMessages([
+    replaceMessageFeed(1, [
       {
         id: "old-progress",
         agent: "compose",
@@ -280,6 +281,7 @@ describe("useProjectWebSocket", () => {
     ]);
 
     applyWsEvent(
+      1,
       {
         type: "run_message",
         data: {
@@ -293,7 +295,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
 
-    const messages = useEditorStore.getState().messages;
+    const messages = readMessageFeed(1);
     expect(messages.map((message) => message.content)).toEqual([
       "漫剧制作完成！6 个分镜已拼接为完整视频。",
       "正在生成视频 2/6...",
@@ -303,7 +305,7 @@ describe("useProjectWebSocket", () => {
   it("removes transient batch progress messages after run completes", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.setMessages([
+    replaceMessageFeed(1, [
       {
         id: "start-videos",
         agent: "compose",
@@ -334,6 +336,7 @@ describe("useProjectWebSocket", () => {
     ]);
 
     applyWsEvent(
+      1,
       {
         type: "run_completed",
         data: { current_stage: "compose" } as never,
@@ -342,7 +345,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().messages.map((message) => message.content)).toEqual([
+    expect(readMessageFeed(1).map((message) => message.content)).toEqual([
       "漫剧制作完成！6 个分镜已拼接为完整视频。",
     ]);
   });
@@ -351,7 +354,7 @@ describe("useProjectWebSocket", () => {
     const initialStore = useEditorStore.getState();
 
     initialStore.reset();
-    initialStore.setMessages([
+    replaceMessageFeed(1, [
       {
         id: "m-loading-plan",
         agent: "plan",
@@ -376,9 +379,9 @@ describe("useProjectWebSocket", () => {
     ]);
 
     const store = useEditorStore.getState();
-    const setMessagesSpy = vi.spyOn(store, "setMessages");
 
     applyWsEvent(
+      1,
       {
         type: "run_message",
         data: {
@@ -391,9 +394,8 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
 
-    expect(setMessagesSpy).toHaveBeenCalledTimes(1);
-    const updatedMessages = setMessagesSpy.mock.calls.at(-1)?.[0] ?? [];
-    const latestMessages = useEditorStore.getState().messages;
+    const updatedMessages = readMessageFeed(1);
+    const latestMessages = updatedMessages;
 
     expect(updatedMessages.at(0)).toMatchObject({
       id: "m-loading-plan",
@@ -421,7 +423,6 @@ describe("useProjectWebSocket", () => {
     const store = useEditorStore.getState();
     const setGeneratingSpy = vi.spyOn(store, "setGenerating");
     const setCurrentRunIdSpy = vi.spyOn(store, "setCurrentRunId");
-    const addMessageSpy = vi.spyOn(store, "addMessage");
 
     const runStarted: WsEvent = {
       type: "run_started",
@@ -461,7 +462,7 @@ describe("useProjectWebSocket", () => {
 
     expect(setGeneratingSpy).toHaveBeenCalledWith(true);
     expect(setCurrentRunIdSpy).toHaveBeenCalledWith(101);
-    expect(addMessageSpy).toHaveBeenCalled();
+    expect(readMessageFeed(1).length).toBeGreaterThan(0);
     expect(toastMock.error).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "数据格式错误",
@@ -475,6 +476,7 @@ describe("useProjectWebSocket", () => {
 	store.reset();
 
 	applyWsEvent(
+		1,
 		{
 			type: "run_started",
 			data: {
@@ -530,6 +532,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "run_awaiting_confirm",
         data: {
@@ -556,13 +559,14 @@ describe("useProjectWebSocket", () => {
     });
 
     expect(useEditorStore.getState().recoverySummary).toMatchObject({ test: true });
-    expect(useEditorStore.getState().messages.at(-1)).toMatchObject({
+    expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "info",
       agent: "system",
       content: "请确认",
     });
 
     applyWsEvent(
+      1,
       {
         type: "run_confirmed",
         data: {
@@ -580,7 +584,7 @@ describe("useProjectWebSocket", () => {
     expect(useEditorStore.getState().recoveryGate).toBeNull();
     expect(useEditorStore.getState().currentStage).toBe("compose");
     expect(useEditorStore.getState().recoverySummary).toEqual({ updated: true });
-    expect(useEditorStore.getState().messages.at(-1)).toMatchObject({
+    expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "info",
       content: "已确认，继续执行...",
     });
@@ -593,6 +597,7 @@ describe("useProjectWebSocket", () => {
     const autoConfirmSpy = vi.fn();
 
     applyWsEvent(
+      1,
       {
         type: "run_awaiting_confirm",
         data: {
@@ -613,6 +618,7 @@ describe("useProjectWebSocket", () => {
     expect(useEditorStore.getState().currentStage).toBe("render");
 
     applyWsEvent(
+      1,
       {
         type: "run_confirmed",
         data: {
@@ -627,7 +633,7 @@ describe("useProjectWebSocket", () => {
     );
 
     expect(useEditorStore.getState().awaitingConfirm).toBe(false);
-    expect(useEditorStore.getState().messages.at(-1)).toMatchObject({
+    expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "info",
       content: "自动确认，继续执行...",
     });
@@ -648,14 +654,13 @@ describe("useProjectWebSocket", () => {
     } as never);
     store.setRecoveryControl({ type: "retry" } as never);
     store.setRecoverySummary({ from: "before" } as never);
-    const addMessageSpy = vi.spyOn(store, "addMessage");
     store.setRecoveryGate({
       run_id: 111,
       agent: "plan",
       recovery_summary: {} as never,
       preserved_stages: [],
     } as never);
-    store.setMessages([
+    replaceMessageFeed(1, [
       {
         id: "m1",
         agent: "plan",
@@ -666,6 +671,7 @@ describe("useProjectWebSocket", () => {
     ]);
 
     applyWsEvent(
+      1,
       {
         type: "run_completed",
         data: {
@@ -688,7 +694,7 @@ describe("useProjectWebSocket", () => {
       currentStage: "compose",
     });
     expect(useEditorStore.getState().currentRunProviderSnapshot).toBeNull();
-    expect(addMessageSpy).toHaveBeenCalledWith(
+    expect(readMessageFeed(1)).toContainEqual(
       expect.objectContaining({
         role: "assistant",
         agent: "system",
@@ -697,6 +703,7 @@ describe("useProjectWebSocket", () => {
     );
 
     applyWsEvent(
+      1,
       {
         type: "run_failed",
         data: { error: "生成失败" } as never,
@@ -708,7 +715,7 @@ describe("useProjectWebSocket", () => {
     expect(useEditorStore.getState().isGenerating).toBe(false);
     expect(useEditorStore.getState().recoveryControl).toBeNull();
     expect(useEditorStore.getState().currentRunProviderSnapshot).toBeNull();
-    expect(useEditorStore.getState().messages.at(-1)).toMatchObject({
+    expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "error",
       content: "生成失败: 生成失败",
     });
@@ -730,7 +737,7 @@ describe("useProjectWebSocket", () => {
     store.setRecoveryControl({ type: "retry" } as never);
     store.setRecoverySummary({ from: "before-cancel" } as never);
     store.setRecoveryGate({ run_id: 303, agent: "plan" } as never);
-    store.setMessages([
+    replaceMessageFeed(1, [
       {
         id: "loading-plan",
         agent: "plan",
@@ -741,6 +748,7 @@ describe("useProjectWebSocket", () => {
     ]);
 
     applyWsEvent(
+      1,
       {
         type: "run_cancelled",
         data: { run_id: 303 } as never,
@@ -760,12 +768,12 @@ describe("useProjectWebSocket", () => {
       recoveryGate: null,
     });
     expect(useEditorStore.getState().currentRunProviderSnapshot).toBeNull();
-    expect(useEditorStore.getState().messages.at(-1)).toMatchObject({
+    expect(readMessageFeed(1).at(-1)).toMatchObject({
       role: "info",
       agent: "system",
       content: "生成已停止",
     });
-    expect(useEditorStore.getState().messages[0]).toMatchObject({
+    expect(readMessageFeed(1)[0]).toMatchObject({
       id: "loading-plan",
       isLoading: false,
     });
@@ -784,6 +792,7 @@ describe("useProjectWebSocket", () => {
       "shot_deleted",
     ] as const) {
       applyWsEvent(
+        1,
         { type, data: { character: { id: 1 }, shot: { id: 1 }, character_id: 1, shot_id: 1 } } as never,
         store,
         noopAutoConfirm
@@ -801,11 +810,13 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       { type: "data_cleared", data: { cleared_types: ["characters", "shots"] } } as never,
       store,
       noopAutoConfirm
     );
     applyWsEvent(
+      1,
       { type: "project_updated", data: { project: { id: 7, video_url: "http://cdn/video.mp4" } } } as never,
       store,
       noopAutoConfirm
@@ -820,6 +831,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       { type: "shots_reordered", data: { project_id: 1, shots: [shotForWs(1, 2), shotForWs(2, 1)] } } as never,
       store,
       noopAutoConfirm
@@ -851,6 +863,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "error",
         data: { message: "server error", code: "E_SERVER" },
@@ -872,6 +885,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "connected",
         data: {},
@@ -881,6 +895,7 @@ describe("useProjectWebSocket", () => {
     );
 
     applyWsEvent(
+      1,
       {
         type: "run_progress",
         data: {
@@ -904,6 +919,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "run_started",
         data: {
@@ -927,6 +943,7 @@ describe("useProjectWebSocket", () => {
     expect(store.isGenerating).toBe(false);
 
     applyWsEvent(
+      1,
       {
         type: "run_progress",
         data: {
@@ -952,6 +969,7 @@ describe("useProjectWebSocket", () => {
     expect(store.isGenerating).toBe(false);
 
     applyWsEvent(
+      1,
       {
         type: "run_awaiting_confirm",
         data: {
@@ -975,6 +993,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       { type: "data_cleared", data: { cleared_types: ["characters"] } } as never,
       store,
       noopAutoConfirm
@@ -988,6 +1007,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       { type: "project_updated", data: { project: { id: 7, video_url: null, title: "updated" } } } as never,
       store,
       noopAutoConfirm
@@ -1001,6 +1021,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       { type: "project_updated", data: { project: { id: 7, status: "generating" } } } as never,
       store,
       noopAutoConfirm
@@ -1014,6 +1035,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "project_updated",
         data: {
@@ -1048,7 +1070,7 @@ describe("useProjectWebSocket", () => {
     const store = useEditorStore.getState();
     store.reset();
 
-    applyWsEvent({ type: "project_updated", data: {} } as never, store, noopAutoConfirm);
+    applyWsEvent(1, { type: "project_updated", data: {} } as never, store, noopAutoConfirm);
 
     expect(useEditorStore.getState()).not.toHaveProperty("projectStatus");
   });
@@ -1060,6 +1082,7 @@ describe("useProjectWebSocket", () => {
     store.setCurrentRunId(888);
 
     applyWsEvent(
+      1,
       {
         type: "run_completed",
         data: {
@@ -1081,6 +1104,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "run_message",
         data: {
@@ -1094,7 +1118,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
 
-    const lastMsg = useEditorStore.getState().messages.at(-1);
+    const lastMsg = readMessageFeed(1).at(-1);
     expect(lastMsg).toMatchObject({
       agent: "plan",
       content: "full content here",
@@ -1109,6 +1133,7 @@ describe("useProjectWebSocket", () => {
     store.setCurrentRunId(100);
 
     applyWsEvent(
+      1,
       {
         type: "run_cancelled",
         data: { run_ids: [100, 101], cancelled_count: 2 },
@@ -1126,6 +1151,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "data_cleared",
         data: { cleared_types: ["characters"], start_agent: "plan", mode: "full" },
@@ -1144,6 +1170,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "run_progress",
         data: {
@@ -1171,6 +1198,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "run_started",
         data: {
@@ -1193,6 +1221,7 @@ describe("useProjectWebSocket", () => {
     store.reset();
 
     applyWsEvent(
+      1,
       {
         type: "agent_thinking",
         data: {
@@ -1206,6 +1235,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
     applyWsEvent(
+      1,
       {
         type: "critique_result",
         data: {
@@ -1222,6 +1252,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
     applyWsEvent(
+      1,
       {
         type: "version_created",
         data: {
@@ -1235,6 +1266,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
     applyWsEvent(
+      1,
       {
         type: "version_rollback",
         data: {
@@ -1248,6 +1280,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
     applyWsEvent(
+      1,
       {
         type: "audio_generated",
         data: {
@@ -1261,6 +1294,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
     applyWsEvent(
+      1,
       {
         type: "bible_updated",
         data: {
@@ -1274,6 +1308,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
     applyWsEvent(
+      1,
       {
         type: "consistency_eval_completed",
         data: {
@@ -1286,6 +1321,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
     applyWsEvent(
+      1,
       {
         type: "export_completed",
         data: {
@@ -1300,7 +1336,7 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
 
-    const messages = useEditorStore.getState().messages;
+    const messages = readMessageFeed(1);
     expect(messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

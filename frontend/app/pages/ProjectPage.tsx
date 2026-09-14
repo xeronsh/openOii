@@ -36,6 +36,11 @@ import { useIsMobileWorkbench } from "~/features/comic-workflow/mobile/useIsMobi
 import { projectsApi, runsApi, exportApi, getStaticUrl } from "~/services/api";
 import { useEditorStore, useShallow } from "~/stores/editorStore";
 import { projectQueryKeys } from "~/query/queryKeys";
+import {
+	appendMessage,
+	clearMessageFeed,
+	replaceMessageFeed,
+} from "~/query/messageFeed";
 import type {
 	ProjectProviderSettings,
 	RecoveryControlRead,
@@ -241,7 +246,7 @@ export function ProjectPage() {
 		runModeInitializedRef.current = null;
 		const editorStore = useEditorStore.getState();
 
-		editorStore.clearMessages();
+		clearMessageFeed(projectId);
 		editorStore.resetRunState();
 		editorStore.setCurrentStage("plan");
 		editorStore.setSelectedShot(null);
@@ -256,9 +261,10 @@ export function ProjectPage() {
 	useEffect(() => {
 		if (messages && !messagesLoadedRef.current) {
 			messagesLoadedRef.current = true;
-			const editorStore = useEditorStore.getState();
-			messages.forEach((msg) => {
-				editorStore.addMessage({
+			// Hydrate the chat feed into the same cache the websocket appends to.
+			replaceMessageFeed(
+				projectId,
+				messages.map((msg) => ({
 					id: `db_${msg.id}`,
 					agent: msg.agent,
 					role: msg.role,
@@ -267,10 +273,10 @@ export function ProjectPage() {
 					progress: msg.progress ?? undefined,
 					// 从数据库加载的消息不再显示为加载中
 					isLoading: false,
-				});
-			});
+				})),
+			);
 		}
-	}, [messages]);
+	}, [messages, projectId]);
 
 	const generateMutation = useMutation({
 		mutationFn: ({
@@ -436,7 +442,7 @@ export function ProjectPage() {
 		},
 		onSettled: () => {
 			useEditorStore.getState().resetRunState();
-			useEditorStore.getState().addMessage({
+			appendMessage(projectId, {
 				agent: "system",
 				role: "system",
 				content: "生成已停止",
@@ -491,7 +497,7 @@ export function ProjectPage() {
 		const requestToken = generateRequestTokenRef.current + 1;
 		generateRequestTokenRef.current = requestToken;
 		setLastRunStatus(null);
-		useEditorStore.getState().clearMessages();
+		clearMessageFeed(projectId);
 		useEditorStore.getState().setCurrentStage("plan");
 		generateMutation.mutate({
 			requestToken,
@@ -543,7 +549,7 @@ export function ProjectPage() {
 		}
 
 		feedbackMutation.mutate({ content, entityType, entityId, entityIds });
-		useEditorStore.getState().addMessage({
+		appendMessage(projectId, {
 			agent: "user",
 			role: "user",
 			content: contextLabel ? `${content}\n${contextLabel}` : content,
@@ -579,7 +585,7 @@ export function ProjectPage() {
 				data: { run_id: runId, feedback: annotated || feedback },
 			});
 			if (annotated || feedback) {
-				useEditorStore.getState().addMessage({
+				appendMessage(projectId, {
 					agent: "user",
 					role: "user",
 					content: annotated || feedback || "",
@@ -658,7 +664,7 @@ export function ProjectPage() {
 			const requestToken = generateRequestTokenRef.current + 1;
 			generateRequestTokenRef.current = requestToken;
 			setLastRunStatus(null);
-			editorStore.clearMessages();
+			clearMessageFeed(projectId);
 			editorStore.setCurrentStage("plan");
 			// quick skill prefers yolo
 			if (skillId === "quick-short" || project.creation_mode === "quick") {

@@ -115,8 +115,7 @@ const storeState: {
   recoveryControl: RecoveryControlRead | null;
   recoverySummary: unknown;
   recoveryGate: unknown;
-  messages: never[];
-  clearMessages: ReturnType<typeof vi.fn>;
+
   setGenerating: ReturnType<typeof vi.fn>;
   setProgress: ReturnType<typeof vi.fn>;
   setCurrentAgent: ReturnType<typeof vi.fn>;
@@ -130,7 +129,6 @@ const storeState: {
   setRecoveryControl: ReturnType<typeof vi.fn>;
   setRecoverySummary: ReturnType<typeof vi.fn>;
   setRecoveryGate: ReturnType<typeof vi.fn>;
-  addMessage: ReturnType<typeof vi.fn>;
   resetRunState: ReturnType<typeof vi.fn>;
   runMode: string;
   setRunMode: ReturnType<typeof vi.fn>;
@@ -146,8 +144,6 @@ const storeState: {
   recoveryControl: null,
   recoverySummary: null,
   recoveryGate: null,
-  messages: emptyMessages,
-  clearMessages: vi.fn(),
   setGenerating: vi.fn(),
   setProgress: vi.fn(),
   setCurrentAgent: vi.fn(),
@@ -161,7 +157,6 @@ const storeState: {
   setRecoveryControl: vi.fn(),
   setRecoverySummary: vi.fn(),
   setRecoveryGate: vi.fn(),
-  addMessage: vi.fn(),
   resetRunState: vi.fn(),
   runMode: 'manual' as string,
   setRunMode: vi.fn(),
@@ -190,7 +185,10 @@ vi.mock('~/utils/toast', () => ({
   },
 }));
 
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  // `~/query/client` builds a real QueryClient at module load, so the actual
+  // module must stay available; only the hooks used by the page are stubbed.
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQueryClient: () => ({ invalidateQueries }),
   useQuery: ({ queryKey }: { queryKey: [string, number] }) => {
     if (queryKey[0] === 'project') {
@@ -271,6 +269,18 @@ vi.mock('~/stores/editorStore', () => ({
     const result = selector(storeState);
     return () => result;
   },
+}));
+
+// The chat feed is server state and lives in the query cache (ADR 0007), so
+// the module that writes it is spied on rather than a store action.
+const appendMessage = vi.fn();
+const clearMessageFeed = vi.fn();
+const replaceMessageFeed = vi.fn();
+vi.mock('~/query/messageFeed', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/query/messageFeed')>()),
+  appendMessage: (...args: unknown[]) => appendMessage(...args),
+  clearMessageFeed: (...args: unknown[]) => clearMessageFeed(...args),
+  replaceMessageFeed: (...args: unknown[]) => replaceMessageFeed(...args),
 }));
 
 vi.mock('~/services/api', () => ({
@@ -677,9 +687,10 @@ describe('ProjectPage live hydration', () => {
 
     rerender(<ProjectPage />);
 
-    // 客户端自有状态在切项目时重置；服务端实体由 query cache 按 projectId 自己隔离
+    // 客户端自有状态在切项目时重置；服务端实体由 query cache 按 projectId 自己隔离。
+    // 清空的是新路由项目的消息流（query key 自带作用域）。
     await waitFor(() => {
-      expect(storeState.clearMessages).toHaveBeenCalled();
+      expect(clearMessageFeed).toHaveBeenCalledWith(10);
     });
     expect(storeState.resetRunState).toHaveBeenCalled();
     expect(storeState.setSelectedShot).toHaveBeenCalledWith(null);
@@ -880,7 +891,8 @@ describe('ProjectPage live hydration', () => {
         undefined,
       );
     });
-    expect(storeState.addMessage).toHaveBeenCalledWith(
+    expect(appendMessage).toHaveBeenCalledWith(
+      9,
       expect.objectContaining({
         agent: 'user',
         role: 'user',
@@ -950,7 +962,8 @@ describe('ProjectPage live hydration', () => {
       data: { run_id: 42, feedback: '请微调这一版' },
     });
     expect(projectsApi.feedback).not.toHaveBeenCalled();
-    expect(storeState.addMessage).toHaveBeenCalledWith(
+    expect(appendMessage).toHaveBeenCalledWith(
+      9,
       expect.objectContaining({
         agent: 'user',
         content: '请微调这一版',
@@ -1041,7 +1054,8 @@ describe('ProjectPage live hydration', () => {
       expect(runsApi.cancel).toHaveBeenCalledWith(18);
     });
     expect(storeState.resetRunState).toHaveBeenCalled();
-    expect(storeState.addMessage).toHaveBeenCalledWith(
+    expect(appendMessage).toHaveBeenCalledWith(
+      9,
       expect.objectContaining({
         agent: 'system',
         content: '生成已停止',
@@ -1111,7 +1125,7 @@ describe('ProjectPage live hydration', () => {
     await waitFor(() => {
       expect(projectsApi.startRun).toHaveBeenCalledWith(9, { auto_mode: false });
     });
-    expect(storeState.clearMessages).toHaveBeenCalled();
+    expect(clearMessageFeed).toHaveBeenCalledWith(9);
     expect(storeState.setCurrentStage).toHaveBeenCalledWith('plan');
     expect(storeState.setGenerating).toHaveBeenCalledWith(true);
     expect(storeState.setCurrentRunId).toHaveBeenCalledWith(77);
@@ -1366,7 +1380,8 @@ describe('ProjectPage live hydration', () => {
       expect(runsApi.cancel).toHaveBeenCalledWith(18);
     });
     expect(storeState.resetRunState).toHaveBeenCalled();
-    expect(storeState.addMessage).toHaveBeenCalledWith(
+    expect(appendMessage).toHaveBeenCalledWith(
+      9,
       expect.objectContaining({
         agent: 'system',
         content: '生成已停止',

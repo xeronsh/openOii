@@ -1,4 +1,9 @@
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import { appQueryClient } from "~/query/client";
+import { projectQueryKeys } from "~/query/queryKeys";
+import type { AgentMessage } from "~/types";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,8 +11,11 @@ import type { RunMode } from "~/stores/editorStore";
 import type { WorkflowStage } from "~/types";
 import { ChatPanel } from "./ChatPanel";
 
+function setChatFeed(messages: AgentMessage[]): void {
+	appQueryClient.setQueryData(projectQueryKeys.messageFeed(1), messages);
+}
+
 type ChatPanelStoreState = {
-	messages: never[];
 	currentAgent: string | null;
 	awaitingConfirm: boolean;
 	awaitingAgent: string | null;
@@ -23,7 +31,6 @@ const onCancel = vi.fn();
 const setRunMode = vi.fn();
 
 const storeState: ChatPanelStoreState = {
-	messages: [] as never[],
 	currentAgent: null,
 	awaitingConfirm: false,
 	awaitingAgent: null,
@@ -62,13 +69,19 @@ vi.mock("~/utils/toast", () => ({
 }));
 
 function renderChatPanel(isGenerating = false) {
+	// ChatPanel reads the chat feed from the query cache (ADR 0007).
+	const wrapper = ({ children }: { children: ReactNode }) => (
+		<QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+	);
 	return render(
 		<ChatPanel
+			projectId={1}
 			onSendFeedback={onSendFeedback}
 			onConfirm={onConfirm}
 			onCancel={onCancel}
 			isGenerating={isGenerating}
 		/>,
+		{ wrapper },
 	);
 }
 
@@ -79,7 +92,7 @@ describe("ChatPanel", () => {
 			configurable: true,
 			value: vi.fn(),
 		});
-		storeState.messages = [];
+		appQueryClient.setQueryData(projectQueryKeys.messageFeed(1), []);
 		storeState.currentAgent = null;
 		storeState.awaitingConfirm = false;
 		storeState.awaitingAgent = null;
@@ -110,7 +123,7 @@ describe("ChatPanel", () => {
 		const user = userEvent.setup();
 		storeState.awaitingConfirm = true;
 		storeState.awaitingAgent = "plan";
-		storeState.messages = [
+		setChatFeed([
 			{
 				id: "1",
 				agent: "plan",
@@ -118,7 +131,7 @@ describe("ChatPanel", () => {
 				content: "完整内容",
 				summary: "规划摘要",
 			},
-		] as never[];
+		]);
 
 		renderChatPanel(true);
 
@@ -146,14 +159,14 @@ describe("ChatPanel", () => {
 		storeState.awaitingConfirm = true;
 		storeState.awaitingAgent = "plan";
 		storeState.runMode = "manual";
-		storeState.messages = [
+		setChatFeed([
 			{
 				id: "1",
 				agent: "plan",
 				role: "assistant",
 				content: "规划完成",
 			},
-		] as never[];
+		]);
 
 		renderChatPanel(true);
 

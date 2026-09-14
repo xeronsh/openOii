@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useEditorStore, useShallow } from "~/stores/editorStore";
+import { readMessageFeed } from "~/query/messageFeed";
+import { projectQueryKeys } from "~/query/queryKeys";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { OutlinePreviewCard } from "./OutlinePreviewCard";
@@ -17,8 +20,13 @@ import {
 } from "@heroicons/react/24/outline";
 import { getWorkflowStageInfo } from "~/utils/workflowStage";
 import { toast } from "~/utils/toast";
+import type { AgentMessage } from "~/types";
+
+/** Stable empty array so the query's fallback does not churn identity. */
+const EMPTY_MESSAGES: AgentMessage[] = [];
 
 interface ChatPanelProps {
+  projectId: number;
   onSendFeedback: (content: string) => void;
   onConfirm: (feedback?: string) => void;
   onCancel: () => void;
@@ -38,6 +46,7 @@ function getStageIcon(stage: WorkflowStage) {
 const agentNameMap = AGENT_NAME_MAP;
 
 export function ChatPanel({
+  projectId,
   onSendFeedback,
   onConfirm,
   onCancel,
@@ -47,7 +56,6 @@ export function ChatPanel({
   onResume: _onResume,
 }: ChatPanelProps) {
   const {
-    messages,
     currentAgent,
     awaitingConfirm,
     awaitingAgent,
@@ -56,7 +64,6 @@ export function ChatPanel({
     runMode,
     recoveryGate,
   } = useEditorStore(useShallow((s) => ({
-    messages: s.messages,
     currentAgent: s.currentAgent,
     awaitingConfirm: s.awaitingConfirm,
     awaitingAgent: s.awaitingAgent,
@@ -65,6 +72,14 @@ export function ChatPanel({
     runMode: s.runMode,
     recoveryGate: s.recoveryGate,
   })));
+
+  // The chat feed is server state, so it is read from the query cache rather
+  // than mirrored in the UI store (ADR 0007).
+  const messages = useQuery({
+    queryKey: projectQueryKeys.messageFeed(projectId),
+    queryFn: () => readMessageFeed(projectId),
+    staleTime: Infinity,
+  }).data ?? EMPTY_MESSAGES;
 
   const setRunMode = useEditorStore((s) => s.setRunMode);
   const [input, setInput] = useState("");

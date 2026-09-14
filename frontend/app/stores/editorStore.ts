@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 import type {
-	AgentMessage,
 	ProjectProviderSettings,
 	RecoveryControlRead,
 	RecoverySummaryRead,
@@ -15,10 +14,10 @@ export type RunMode = "manual" | "yolo";
 /**
  * Server-owned state lives in TanStack Query (see `~/query`).
  *
- * This store keeps only what the server does not own: canvas selection,
- * the message feed, and the live run UI state. Project fields, characters,
- * shots, blocking clips and messages-from-DB are read from the query cache,
- * so the workbench no longer maintains a second server-state source of truth.
+ * This store keeps only what the server does not own: canvas selection and the
+ * live run UI state. Project fields, characters, shots, blocking clips and the
+ * chat feed are read from the query cache, so the workbench no longer maintains
+ * a second server-state source of truth.
  */
 interface EditorState {
 	selectedShotId: number | null;
@@ -28,7 +27,6 @@ interface EditorState {
 	currentStage: WorkflowStage;
 	currentAgent: string | null;
 	progress: number;
-	messages: AgentMessage[];
 	recoveryControl: RecoveryControlRead | null;
 	recoverySummary: RecoverySummaryRead | null;
 	recoveryGate: RunAwaitingConfirmEventData | null;
@@ -45,9 +43,6 @@ interface EditorState {
 	setCurrentStage: (stage: WorkflowStage) => void;
 	setCurrentAgent: (agent: string | null) => void;
 	setProgress: (progress: number) => void;
-	addMessage: (message: AgentMessage) => void;
-	setMessages: (messages: AgentMessage[]) => void;
-	clearMessages: () => void;
 	setRecoveryControl: (control: RecoveryControlRead | null) => void;
 	setRecoverySummary: (summary: RecoverySummaryRead | null) => void;
 	setRecoveryGate: (gate: RunAwaitingConfirmEventData | null) => void;
@@ -84,7 +79,6 @@ const initialState = {
 	highlightedMessageIndex: null,
 	currentStage: "plan" as WorkflowStage,
 	runMode: "manual" as RunMode,
-	messages: [],
 	...initialRunState,
 };
 
@@ -106,19 +100,6 @@ export const useEditorStore = create<EditorState>()(
 			setCurrentAgent: (agent) =>
 				set({ currentAgent: agent }, false, "setCurrentAgent"),
 			setProgress: (progress) => set({ progress }, false, "setProgress"),
-			addMessage: (message) =>
-				set(
-					(state) => ({ messages: [...state.messages, message] }),
-					false,
-					"addMessage",
-				),
-			setMessages: (messages) => set({ messages }, false, "setMessages"),
-			clearMessages: () =>
-				set(
-					{ messages: [], highlightedMessageIndex: null },
-					false,
-					"clearMessages",
-				),
 			setRecoveryControl: (control) =>
 				set({ recoveryControl: control }, false, "setRecoveryControl"),
 			setRecoverySummary: (summary) =>

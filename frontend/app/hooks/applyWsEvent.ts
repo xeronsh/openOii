@@ -1,3 +1,4 @@
+import { appendMessage, updateMessageFeed } from "~/query/messageFeed";
 import { useEditorStore, type RunMode } from "~/stores/editorStore";
 import type {
 	AgentMessage,
@@ -31,20 +32,14 @@ function shouldAutoConfirm(_agent: string | null, runMode: RunMode): boolean {
 	return runMode === "yolo";
 }
 
-function clearLoadingStates(
-	store: ReturnType<typeof useEditorStore.getState>,
-	agentFilter?: string,
-): void {
-	const currentMessages = useEditorStore.getState().messages;
-	const updatedMessages = currentMessages.map((msg) => {
-		if (msg.isLoading && (!agentFilter || msg.agent === agentFilter)) {
-			return { ...msg, isLoading: false };
-		}
-		return msg;
-	});
-	if (updatedMessages.some((msg, idx) => msg !== currentMessages[idx])) {
-		store.setMessages(updatedMessages);
-	}
+function clearLoadingStates(projectId: number, agentFilter?: string): void {
+	updateMessageFeed(projectId, (messages) =>
+		messages.map((msg) =>
+			msg.isLoading && (!agentFilter || msg.agent === agentFilter)
+				? { ...msg, isLoading: false }
+				: msg,
+		),
+	);
 }
 
 function isTransientProgressMessage(msg: AgentMessage): boolean {
@@ -52,25 +47,20 @@ function isTransientProgressMessage(msg: AgentMessage): boolean {
 	return Boolean(msg.isLoading) || TRANSIENT_MESSAGE_PATTERNS.some((pattern) => pattern.test(content));
 }
 
-function cleanupStaleMessages(
-	store: ReturnType<typeof useEditorStore.getState>,
-	completedAgent?: string,
-): void {
-	const currentMessages = useEditorStore.getState().messages;
-	const cleaned = currentMessages.filter((msg) => {
-		if (completedAgent && msg.agent !== completedAgent) return true;
-		if (
-			msg.role === "info" &&
-			(msg.content.includes("已确认") || msg.content.includes("继续执行"))
-		)
-			return false;
-		if (!msg.content?.trim() && !msg.summary) return false;
-		if (isTransientProgressMessage(msg)) return false;
-		return true;
-	});
-	if (cleaned.length !== currentMessages.length) {
-		store.setMessages(cleaned);
-	}
+function cleanupStaleMessages(projectId: number, completedAgent?: string): void {
+	updateMessageFeed(projectId, (messages) =>
+		messages.filter((msg) => {
+			if (completedAgent && msg.agent !== completedAgent) return true;
+			if (
+				msg.role === "info" &&
+				(msg.content.includes("已确认") || msg.content.includes("继续执行"))
+			)
+				return false;
+			if (!msg.content?.trim() && !msg.summary) return false;
+			if (isTransientProgressMessage(msg)) return false;
+			return true;
+		}),
+	);
 }
 
 function applyStage(
@@ -88,9 +78,11 @@ type AutoConfirmFn = (runId: number) => void;
  *
  * Durable server entities are projected into TanStack Query by
  * `applyServerEvent`. This function owns only what the server does not own:
- * interaction state, the message feed and the live run UI.
+ * interaction state and the live run UI. The chat feed also lives in the query
+ * cache now, so it is written through `~/query/messageFeed`.
  */
 export function applyWsEvent(
+	projectId: number,
 	event: WsEvent,
 	store: ReturnType<typeof useEditorStore.getState>,
 	autoConfirm: AutoConfirmFn,
@@ -102,7 +94,7 @@ export function applyWsEvent(
 		case "error": {
 			const code = event.data.code as string | undefined;
 			const msg = event.data.message as string | undefined;
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
 				role: "error",
@@ -117,7 +109,7 @@ export function applyWsEvent(
 			const d = event.data as unknown as RunStartedEventData;
 			store.setGenerating(true);
 			store.setProgress(0);
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
 				role: "separator",
@@ -151,7 +143,7 @@ export function applyWsEvent(
 
 		case "run_message": {
 			const agent = event.data.agent as string;
-			clearLoadingStates(store, agent);
+			clearLoadingStates(projectId, agent);
 			const msgProgress = event.data.progress as number | undefined;
 			if (typeof msgProgress === "number" && msgProgress >= 0 && msgProgress <= 1) {
 				store.setProgress(msgProgress);
@@ -168,14 +160,14 @@ export function applyWsEvent(
 				phase: event.data.phase as AgentMessage["phase"],
 				details: event.data.details as string | null | undefined,
 			};
-			if (isTransientProgressMessage(message)) cleanupStaleMessages(store, agent);
-			store.addMessage(message);
+			if (isTransientProgressMessage(message)) cleanupStaleMessages(projectId, agent);
+			appendMessage(projectId, message);
 			break;
 		}
 
 		case "agent_thinking": {
 			const td = event.data as unknown as AgentThinkingEventData;
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: td.agent,
 				role: "thinking",
@@ -188,7 +180,7 @@ export function applyWsEvent(
 		}
 
 		case "run_awaiting_confirm": {
-			clearLoadingStates(store);
+			clearLoadingStates(projectId);
 			const gate = event.data as unknown as RunAwaitingConfirmEventData;
 			if (!store.isGenerating) {
 				store.setGenerating(true);
@@ -198,7 +190,7 @@ export function applyWsEvent(
 			store.setRecoveryGate(gate);
 			store.setRecoverySummary(gate.recovery_summary);
 			applyStage(store, event.data);
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
 				role: "info",
@@ -217,7 +209,7 @@ export function applyWsEvent(
 			store.setRecoveryGate(null);
 			if (confirmed.recovery_summary) store.setRecoverySummary(confirmed.recovery_summary);
 			applyStage(store, event.data);
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
 				role: "info",
@@ -228,9 +220,9 @@ export function applyWsEvent(
 		}
 
 		case "run_completed": {
-			clearLoadingStates(store);
+			clearLoadingStates(projectId);
 			const d = event.data as unknown as RunCompletedEventData;
-			cleanupStaleMessages(store);
+			cleanupStaleMessages(projectId);
 			store.resetRunState();
 			store.setProgress(1);
 			const stage = resolveEventStage(event.data);
@@ -238,7 +230,7 @@ export function applyWsEvent(
 			else if (d.video_generation_pending) store.setCurrentStage("render");
 			else store.setCurrentStage("compose");
 			if (typeof d.message === "string" && d.message.trim()) {
-				store.addMessage({
+				appendMessage(projectId, {
 					id: generateMessageId(),
 					agent: "system",
 					role: "assistant",
@@ -250,11 +242,11 @@ export function applyWsEvent(
 		}
 
 		case "run_failed": {
-			clearLoadingStates(store);
-			cleanupStaleMessages(store);
+			clearLoadingStates(projectId);
+			cleanupStaleMessages(projectId);
 			const d = event.data as unknown as RunFailedEventData;
 			store.resetRunState();
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
 				role: "error",
@@ -266,10 +258,10 @@ export function applyWsEvent(
 		}
 
 		case "run_cancelled": {
-			clearLoadingStates(store);
+			clearLoadingStates(projectId);
 			store.resetRunState();
 			store.setProgress(0);
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
 				role: "info",
@@ -293,7 +285,7 @@ export function applyWsEvent(
 			const sugStr = critData.suggestions.length ? critData.suggestions.join("；") : "无";
 			const entityLabel = critData.entity_type === "character" ? "角色" : "分镜";
 			const statusText = critData.will_regenerate ? "分数低于阈值，将重新生成" : "质量达标";
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "critic",
 				role: "assistant",
@@ -305,7 +297,7 @@ export function applyWsEvent(
 
 		case "version_created": {
 			const versionData = event.data as unknown as VersionCreatedEventData;
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
 				role: "info",
@@ -317,7 +309,7 @@ export function applyWsEvent(
 
 		case "version_rollback": {
 			const rollbackData = event.data as unknown as VersionRollbackEventData;
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
 				role: "info",
@@ -344,7 +336,7 @@ export function applyWsEvent(
 
 		case "bible_updated": {
 			const bibleData = event.data as unknown as import("~/types").BibleUpdatedEventData;
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "critic",
 				role: "info",
@@ -356,7 +348,7 @@ export function applyWsEvent(
 
 		case "consistency_eval_completed": {
 			const evalData = event.data as unknown as import("~/types").ConsistencyEvalCompletedEventData;
-			store.addMessage({
+			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "critic",
 				role: "info",

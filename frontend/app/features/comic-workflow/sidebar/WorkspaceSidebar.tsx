@@ -229,6 +229,7 @@ export function WorkspaceSidebar({
 						) : null}
 						<div className="min-h-0 flex-1 overscroll-contain">
 							<ChatPanel
+								projectId={projectId}
 								onSendFeedback={onSendFeedback}
 								onConfirm={onConfirm}
 								onCancel={onCancel}

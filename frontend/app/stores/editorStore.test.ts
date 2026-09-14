@@ -22,7 +22,7 @@ describe('useEditorStore review contract', () => {
     store.setProgress(0.5);
     store.setCurrentRunId(42);
     store.setAwaitingConfirm(true, 'plan', 42);
-    store.addMessage({ agent: 'system', role: 'info', content: 'kept', timestamp: 't' });
+    store.setHighlightedMessage(3);
 
     store.resetRunState();
 
@@ -33,8 +33,8 @@ describe('useEditorStore review contract', () => {
     expect(s.currentRunId).toBeNull();
     expect(s.awaitingConfirm).toBe(false);
     expect(s.awaitingAgent).toBeNull();
-    // 消息流是客户端自有状态，resetRunState 不碰它
-    expect(s.messages).toHaveLength(1);
+    // 画布/消息选中是客户端自有状态，resetRunState 不碰它
+    expect(s.highlightedMessageIndex).toBe(3);
     expect(s.currentStage).toBe('plan');
   });
 });
