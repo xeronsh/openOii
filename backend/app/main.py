@@ -235,9 +235,6 @@ def create_app() -> FastAPI:
                 )
                 return int(result.scalar() or 0)
         except Exception as exc:  # noqa: BLE001
-            # The durable event stream is a projection channel, not the command
-            # path. A transient read failure must not kill ping/confirm/cancel
-            # control messages; tailing will retry/fail independently.
             logger.warning(
                 "event watermark unavailable for project %s; starting at 0: %s",
                 project_id,
@@ -308,7 +305,8 @@ def create_app() -> FastAPI:
         try:
             await ws_manager.connect(project_id, websocket)
             head_cursor = await _engine_event_watermark(project_id)
-            raw_after = websocket.query_params.get("after")
+            query_params = getattr(websocket, "query_params", None)
+            raw_after = query_params.get("after") if query_params is not None else None
             requested_after: int | None = None
             if raw_after is not None:
                 try:
@@ -326,10 +324,6 @@ def create_app() -> FastAPI:
                 {"type": "connected", "data": {"project_id": project_id}},
             )
 
-            # First connection hydrates current state. Reconnects with a cursor
-            # replay the exact durable delta instead of mixing a current
-            # projection with older events that could temporarily roll UI state
-            # backwards.
             if requested_after is None:
                 try:
                     from app.db.session import async_session_maker
