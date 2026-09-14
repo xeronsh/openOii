@@ -98,7 +98,6 @@ _INVALIDATES_BY_STAGE: dict[str, tuple[str, ...]] = {
     ),
     "compose_videos": ("shots.videos", "project.final_video"),
     "compose_merge": ("project.final_video",),
-    "add_audio": ("project.final_video",),
     "compose_approval": ("project.final_video",),
 }
 
