@@ -4,14 +4,11 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.models.artifact import Artifact
 from app.models.artifact_version import ArtifactVersion
 from app.models.agent_run import AgentMessage, AgentRun
 from app.models.consistency_report import ConsistencyReport
 from app.models.message import Message
 from app.models.project import Character, Project, Shot, ShotCharacterBinding
-from app.models.run import Run
-from app.models.stage import Stage
 from app.models.universe import SharedCharacter, Universe, UniverseProjectLink
 from app.services import project_deletion
 from tests.factories import (
@@ -59,22 +56,6 @@ async def test_delete_project_by_id_removes_related_rows_and_files(test_session,
         ConsistencyReport(project_id=project.id, run_id=run.id, report_data={"ok": True})
     )
 
-    lineage_run = Run(project_id=project.id, thread_id=f"project-{project.id}", status="succeeded")
-    test_session.add(lineage_run)
-    await test_session.flush()
-    lineage_stage = Stage(project_id=project.id, run_id=lineage_run.id, name="plan")
-    test_session.add(lineage_stage)
-    await test_session.flush()
-    test_session.add(
-        Artifact(
-            project_id=project.id,
-            run_id=lineage_run.id,
-            stage_id=lineage_stage.id,
-            name="outline",
-            artifact_type="text",
-            uri="/static/out.txt",
-        )
-    )
 
     universe = Universe(name="Test Universe")
     test_session.add(universe)
@@ -116,9 +97,6 @@ async def test_delete_project_by_id_removes_related_rows_and_files(test_session,
     assert (await test_session.execute(select(ShotCharacterBinding))).scalars().all() == []
     assert (await test_session.execute(select(ArtifactVersion))).scalars().all() == []
     assert (await test_session.execute(select(ConsistencyReport))).scalars().all() == []
-    assert (await test_session.execute(select(Artifact))).scalars().all() == []
-    assert (await test_session.execute(select(Stage))).scalars().all() == []
-    assert (await test_session.execute(select(Run))).scalars().all() == []
     assert (await test_session.execute(select(UniverseProjectLink))).scalars().all() == []
 
     remaining_shared_character = await test_session.get(SharedCharacter, shared_character.id)

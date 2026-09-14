@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.utils import utcnow
 from app.models.universe import Universe, SharedCharacter, UniverseProjectLink
 from app.models.project import Character, Project
+from app.services.revision import commit_versioned
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ class UniverseService:
         # 软删除 universe
         universe.is_active = False
         self.session.add(universe)
-        await self.session.commit()
+        await commit_versioned(self.session, universe, entity="project")
         return True
 
     async def list_universes(self) -> list[Universe]:
@@ -138,7 +139,7 @@ class UniverseService:
                 project.chapter_title = chapter_title
             self.session.add(project)
 
-        await self.session.commit()
+        await commit_versioned(self.session, project, entity="project")
         await self.session.refresh(link)
         return link
 
@@ -160,7 +161,7 @@ class UniverseService:
             project.chapter_title = None
             self.session.add(project)
 
-        await self.session.commit()
+        await commit_versioned(self.session, project, entity="project")
         return result.rowcount > 0  # type: ignore[no-any-return]
 
     # ── 共享角色 ──────────────────────────────────────────────
@@ -238,7 +239,7 @@ class UniverseService:
             existing_char.image_url = shared_char.canonical_image_url
             existing_char.reference_images = list(shared_char.reference_images or [])
             self.session.add(existing_char)
-            await self.session.commit()
+            await commit_versioned(self.session, existing_char, entity="character")
             await self.session.refresh(existing_char)
             return existing_char
 

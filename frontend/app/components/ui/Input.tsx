@@ -14,7 +14,7 @@ export function Input({ label, error, className, ...props }: InputProps) {
     <div className="form-control w-full gap-1">
       {label && (
         <label htmlFor={id} className="label min-h-0 p-0">
-          <span className="label-text font-heading text-[length:var(--text-xs)] font-medium">
+          <span className="label-text font-heading text-xs font-medium">
             {label}
           </span>
         </label>
@@ -22,7 +22,7 @@ export function Input({ label, error, className, ...props }: InputProps) {
       <input
         id={id}
         className={clsx(
-          "input-doodle h-9 min-h-9 w-full px-2.5 py-1.5 text-[length:var(--text-base)]",
+          "input-doodle h-9 min-h-9 w-full px-2.5 py-1.5 text-base",
           error && "border-error",
           className,
         )}
@@ -30,7 +30,7 @@ export function Input({ label, error, className, ...props }: InputProps) {
       />
       {error && (
         <label className="label min-h-0 p-0">
-          <span className="label-text-alt text-[length:var(--text-2xs)] text-error">
+          <span className="label-text-alt text-2xs text-error">
             {error}
           </span>
         </label>

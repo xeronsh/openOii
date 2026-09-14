@@ -9,6 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 TextProviderKey = Literal["anthropic", "openai", "fake"]
 ImageProviderKey = Literal["modelscope", "openai", "fake"]
 VideoProviderKey = Literal["openai", "doubao", "fake"]
+RunStatus = Literal[
+    "queued",
+    "running",
+    "waiting_for_approval",
+    "cancelling",
+    "cancelled",
+    "succeeded",
+    "failed",
+]
 
 
 class ProjectProviderEntry(BaseModel):
@@ -69,6 +78,7 @@ class StoryOutlineRead(BaseModel):
 
 
 class StoryOutlineUpdate(BaseModel):
+    expected_revision: int | None = Field(default=None, ge=1)
     logline: str | None = None
     genre: list[str] | None = None
     themes: list[str] | None = None
@@ -117,6 +127,7 @@ class ProjectUpdate(BaseModel):
     chapter_number: int | None = None
     chapter_title: str | None = None
     skill_id: str | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class ProjectBatchDeleteRequest(BaseModel):
@@ -127,6 +138,7 @@ class ProjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    revision: int = 1
     title: str
     story: str | None
     style: str | None
@@ -159,6 +171,7 @@ class CharacterRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    revision: int = 1
     project_id: int
     name: str
     description: str | None
@@ -179,15 +192,11 @@ class CharacterRead(BaseModel):
         if isinstance(data, dict):
             if "has_embedding" not in data and "face_embedding" in data:
                 data["has_embedding"] = bool(data.get("face_embedding"))
-        # SQLModel object — compute from attribute
         elif hasattr(data, "face_embedding"):
-            if not isinstance(data, dict):
-                # We need to set has_embedding based on face_embedding
-                # from_attributes will pick it up if we pre-set it
-                try:
-                    data.__dict__["has_embedding"] = bool(getattr(data, "face_embedding", None))
-                except (AttributeError, TypeError):
-                    pass
+            try:
+                data.__dict__["has_embedding"] = bool(getattr(data, "face_embedding", None))
+            except (AttributeError, TypeError):
+                pass
         return data
 
 
@@ -195,6 +204,7 @@ class ShotRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    revision: int = 1
     project_id: int
     order: int
     description: str
@@ -249,6 +259,7 @@ class ShotUpdate(BaseModel):
     sfx: str | None = None
     seed: int | None = None
     character_ids: list[int] | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class ShotReorderItem(BaseModel):
@@ -270,6 +281,7 @@ class CharacterUpdate(BaseModel):
     image_url: str | None = None
     visual_notes: str | None = None
     reference_images: list[str] | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class RegenerateRequest(BaseModel):
@@ -278,12 +290,26 @@ class RegenerateRequest(BaseModel):
     image_url: str | None = None
 
 
+class CancelRunResponse(BaseModel):
+    """Cancellation is durable; cancelling means executor acknowledgement is pending."""
+
+    status: Literal["cancelling", "cancelled", "no_active_run"]
+    cancelled: int = 0
+    run_ids: list[int] = Field(default_factory=list)
+
+
+class FeedbackAcceptedResponse(BaseModel):
+    """反馈已受理；run_id 是本次反馈触发的 run。"""
+
+    status: Literal["accepted"] = "accepted"
+    run_id: int
+
+
 class GenerateRequest(BaseModel):
     seed: int | None = None
     notes: str | None = None
     auto_mode: bool = False
     skill_id: str | None = None
-    # Optional selection focus for partial re-runs (mirrors FeedbackRequest)
     entity_type: str | None = None
     entity_id: int | None = None
     entity_ids: list[int] | None = None
@@ -298,14 +324,15 @@ class AgentRunRead(BaseModel):
 
     id: int
     project_id: int
-    status: str
+    status: RunStatus
     current_agent: str | None
     progress: float
     error: str | None
-    thread_id: str | None = None
-    resource_type: str | None  # 资源类型：character|shot|project
-    resource_id: int | None  # 资源 ID
+    resource_type: str | None
+    resource_id: int | None
     provider_snapshot: ProjectProviderSettingsRead | None = None
+    workflow_version: int = 1
+    execution_attempt: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -319,7 +346,6 @@ class RecoveryStageRead(BaseModel):
 class RecoverySummaryRead(BaseModel):
     project_id: int
     run_id: int
-    thread_id: str
     current_stage: str
     next_stage: str | None = None
     preserved_stages: list[str] = Field(default_factory=list)
@@ -333,7 +359,6 @@ class RecoveryControlRead(BaseModel):
     available_actions: list[Literal["resume", "cancel"]] = Field(
         default_factory=lambda: ["resume", "cancel"]
     )
-    thread_id: str
     active_run: AgentRunRead
     recovery_summary: RecoverySummaryRead
 
@@ -421,6 +446,7 @@ class CharacterBibleUpdate(BaseModel):
 
     visual_notes: str | None = None
     reference_images: list[str] | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class ReferenceImageCreate(BaseModel):

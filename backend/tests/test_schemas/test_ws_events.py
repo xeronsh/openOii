@@ -98,7 +98,6 @@ SHOT_DATA = {
 RECOVERY_SUMMARY_DATA = {
     "project_id": 1,
     "run_id": 1,
-    "thread_id": "t1",
     "current_stage": "plan",
     "active_run": {
         "id": 1,
@@ -113,7 +112,6 @@ RECOVERY_SUMMARY_DATA = {
     "next_stage": "character",
     "completed_stages": ["plan"],
 }
-
 
 class TestWsEventSchemaRegistry:
     def test_all_event_types_have_data_models(self):
@@ -163,7 +161,6 @@ class TestWsEventSchemaRegistry:
     def test_event_registry_points_to_expected_schema(self, event_type, model):
         assert _EVENT_DATA_MODELS[event_type] is model
 
-
 def _frontend_ws_event_types() -> set[str]:
     types_file = Path(__file__).resolve().parents[3] / "frontend" / "app" / "types" / "index.ts"
     text = types_file.read_text()
@@ -174,7 +171,6 @@ def _frontend_ws_event_types() -> set[str]:
     )
     assert match is not None, "frontend WsEventType union not found"
     return set(re.findall(r'"([^"]+)"', match.group("body")))
-
 
 class TestRunStartedEventData:
     def test_valid_full(self):
@@ -214,7 +210,6 @@ class TestRunStartedEventData:
         assert d.recovery_summary is None
         assert d.preserved_stages == []
 
-
 class TestRunProgressEventData:
     def test_valid(self):
         d = RunProgressEventData.model_validate(
@@ -231,7 +226,6 @@ class TestRunProgressEventData:
     def test_progress_bounds(self):
         with pytest.raises(Exception):
             RunProgressEventData.model_validate({"run_id": 1, "progress": 1.5})
-
 
 class TestRunMessageEventData:
     def test_with_summary(self):
@@ -250,7 +244,6 @@ class TestRunMessageEventData:
         d = RunMessageEventData.model_validate({})
         assert d.content == ""
         assert d.summary is None
-
 
 class TestRunCompletedEventData:
     def test_with_current_stage_and_agent(self):
@@ -271,7 +264,6 @@ class TestRunCompletedEventData:
         d = RunCompletedEventData.model_validate({})
         assert d.run_id is None
 
-
 class TestRunFailedEventData:
     def test_valid(self):
         d = RunFailedEventData.model_validate(
@@ -288,7 +280,6 @@ class TestRunFailedEventData:
         d = RunFailedEventData.model_validate({})
         assert d.run_id is None
 
-
 class TestRunCancelledEventData:
     def test_project_level(self):
         d = RunCancelledEventData.model_validate(
@@ -304,7 +295,6 @@ class TestRunCancelledEventData:
         d = RunCancelledEventData.model_validate({"run_id": 5})
         assert d.run_id == 5
         assert d.run_ids is None
-
 
 class TestDataClearedEventData:
     def test_keeps_start_agent_and_mode(self):
@@ -334,7 +324,6 @@ class TestDataClearedEventData:
         d = DataClearedEventData.model_validate({})
         assert d.cleared_types == []
 
-
 class TestErrorEventData:
     def test_valid(self):
         d = ErrorEventData.model_validate(
@@ -351,7 +340,6 @@ class TestErrorEventData:
             ErrorEventData.model_validate({"code": "X"})
         with pytest.raises(Exception):
             ErrorEventData.model_validate({"message": "Y"})
-
 
 class TestRunAwaitingConfirmEventData:
     def test_valid(self):
@@ -376,7 +364,6 @@ class TestRunAwaitingConfirmEventData:
             }
         )
         assert d.auto_mode is True
-
 
 class TestRunConfirmedEventData:
     def test_valid(self):
@@ -403,24 +390,20 @@ class TestRunConfirmedEventData:
         )
         assert d.auto_mode is True
 
-
 class TestCharacterCreatedEventData:
     def test_valid(self):
         d = CharacterCreatedEventData.model_validate({"character": CHARACTER_DATA})
         assert d.character.name == "Alice"
-
 
 class TestCharacterDeletedEventData:
     def test_valid(self):
         d = CharacterDeletedEventData.model_validate({"character_id": 5})
         assert d.character_id == 5
 
-
 class TestShotCreatedEventData:
     def test_valid(self):
         d = ShotCreatedEventData.model_validate({"shot": SHOT_DATA})
         assert d.shot.order == 1
-
 
 class TestShotsReorderedEventData:
     def test_valid(self):
@@ -430,12 +413,10 @@ class TestShotsReorderedEventData:
         assert d.project_id == 1
         assert [shot.order for shot in d.shots] == [1, 2]
 
-
 class TestShotDeletedEventData:
     def test_valid(self):
         d = ShotDeletedEventData.model_validate({"shot_id": 3})
         assert d.shot_id == 3
-
 
 class TestProjectUpdatedEventData:
     def test_valid(self):
@@ -467,7 +448,6 @@ class TestProjectUpdatedEventData:
         d = ProjectUpdatedEventData.model_validate({"project": {"id": 1}})
         assert d.project.title is None
         assert d.project.blocking_clips is None
-
 
 class TestWsEventValidation:
     def test_send_event_validates_run_started(self):

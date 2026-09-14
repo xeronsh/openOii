@@ -1,6 +1,6 @@
 # openOii Backend
 
-FastAPI + SQLModel + PostgreSQL (asyncpg) 后端。测试使用内存 SQLite。
+FastAPI + SQLModel + SQLite(与 pi 引擎共享同一文件)后端。测试使用内存 SQLite。
 
 ## Run
 

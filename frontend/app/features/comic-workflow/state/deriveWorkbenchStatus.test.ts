@@ -9,7 +9,6 @@ function recoveryControl(
 		state,
 		detail: "run state",
 		available_actions: ["resume", "cancel"],
-		thread_id: "agent-run-9",
 		active_run: {
 			id: 9,
 			project_id: 15,
@@ -17,7 +16,6 @@ function recoveryControl(
 			current_agent: "plan",
 			progress: 0.4,
 			error: null,
-			thread_id: "agent-run-9",
 			resource_type: null,
 			resource_id: null,
 			provider_snapshot: null,
@@ -27,7 +25,6 @@ function recoveryControl(
 		recovery_summary: {
 			project_id: 15,
 			run_id: 9,
-			thread_id: "agent-run-9",
 			current_stage: "plan_outline",
 			next_stage: "outline_approval",
 			preserved_stages: [],

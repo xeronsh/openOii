@@ -1,0 +1,118 @@
+{
+  "workflow_version": 2,
+  "stages": [
+    {
+      "id": "plan_outline",
+      "kind": "production",
+      "agent": "outline",
+      "next": "outline_approval",
+      "ui_stage": "plan"
+    },
+    {
+      "id": "outline_approval",
+      "kind": "approval",
+      "agent": "outline",
+      "produced_stage": "plan_outline",
+      "next": "plan_characters",
+      "ui_stage": "plan_approval"
+    },
+    {
+      "id": "plan_characters",
+      "kind": "production",
+      "agent": "plan",
+      "next": "characters_approval",
+      "ui_stage": "plan"
+    },
+    {
+      "id": "characters_approval",
+      "kind": "approval",
+      "agent": "plan",
+      "produced_stage": "plan_characters",
+      "next": "plan_shots",
+      "ui_stage": "plan_approval"
+    },
+    {
+      "id": "plan_shots",
+      "kind": "production",
+      "agent": "plan",
+      "next": "shots_approval",
+      "ui_stage": "plan"
+    },
+    {
+      "id": "shots_approval",
+      "kind": "approval",
+      "agent": "plan",
+      "produced_stage": "plan_shots",
+      "next": "render_characters",
+      "ui_stage": "plan_approval"
+    },
+    {
+      "id": "render_characters",
+      "kind": "production",
+      "agent": "render",
+      "next": "character_images_approval",
+      "ui_stage": "render"
+    },
+    {
+      "id": "character_images_approval",
+      "kind": "approval",
+      "agent": "render",
+      "produced_stage": "render_characters",
+      "next": "critique_character_images",
+      "ui_stage": "render_approval"
+    },
+    {
+      "id": "critique_character_images",
+      "kind": "critique",
+      "agent": "critic",
+      "produced_stage": "render_characters",
+      "next": "render_shots",
+      "ui_stage": "render"
+    },
+    {
+      "id": "render_shots",
+      "kind": "production",
+      "agent": "render",
+      "next": "shot_images_approval",
+      "ui_stage": "render"
+    },
+    {
+      "id": "shot_images_approval",
+      "kind": "approval",
+      "agent": "render",
+      "produced_stage": "render_shots",
+      "next": "critique_shot_images",
+      "ui_stage": "render_approval"
+    },
+    {
+      "id": "critique_shot_images",
+      "kind": "critique",
+      "agent": "critic",
+      "produced_stage": "render_shots",
+      "next": "compose_videos",
+      "ui_stage": "render"
+    },
+    {
+      "id": "compose_videos",
+      "kind": "production",
+      "agent": "compose",
+      "next": "compose_merge",
+      "ui_stage": "compose"
+    },
+    {
+      "id": "compose_merge",
+      "kind": "production",
+      "agent": "compose",
+      "next": "compose_approval",
+      "ui_stage": "compose"
+    },
+    {
+      "id": "compose_approval",
+      "kind": "approval",
+      "agent": "compose",
+      "produced_stage": "compose_merge",
+      "next": null,
+      "ui_stage": "compose"
+    }
+  ]
+}

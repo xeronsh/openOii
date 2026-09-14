@@ -57,21 +57,21 @@ export function MobileWorkbenchPreview({
 			aria-label="项目预览"
 			data-shell="mobile-workbench-preview"
 		>
-			<p className="m-0 text-[length:var(--text-2xs)] text-bc-muted">
+			<p className="m-0 text-2xs text-bc-muted">
 				完整画布编辑请用桌面端打开
 			</p>
 
-			<div className="rounded-[var(--radius-lg)] border-2 border-base-content/12 bg-base-100 p-3 shadow-brutal-sm">
+			<div className="rounded-lg border-2 border-base-content/10 bg-base-100 p-3 shadow-brutal-sm">
 				<div className="flex items-center gap-2">
 					<span
 						className={`h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_DOT[workbenchStatus.state]}`}
 						aria-hidden="true"
 					/>
-					<h2 className="m-0 font-heading text-[length:var(--text-sm)] font-bold">
+					<h2 className="m-0 font-heading text-sm font-bold">
 						{workbenchStatus.label}
 					</h2>
 				</div>
-				<p className="m-0 mt-1 text-[length:var(--text-xs)] text-bc-muted">
+				<p className="m-0 mt-1 text-xs text-bc-muted">
 					{workbenchStatus.description}
 				</p>
 				{canRetry ? (
@@ -89,7 +89,7 @@ export function MobileWorkbenchPreview({
 			</div>
 
 			{videoSrc ? (
-				<div className="overflow-hidden rounded-[var(--radius-lg)] border-2 border-base-content/12 bg-base-100 shadow-brutal-sm">
+				<div className="overflow-hidden rounded-lg border-2 border-base-content/10 bg-base-100 shadow-brutal-sm">
 					{/* eslint-disable-next-line jsx-a11y/media-has-caption -- 成片无字幕轨 */}
 					<video
 						controls
@@ -100,7 +100,7 @@ export function MobileWorkbenchPreview({
 						data-testid="mobile-final-video"
 					/>
 					<div className="flex items-center justify-between gap-2 p-2">
-						<span className="font-mono text-[length:var(--text-2xs)] uppercase tracking-wide text-bc-muted">
+						<span className="font-mono text-2xs uppercase tracking-wide text-bc-muted">
 							final cut
 						</span>
 						<a
@@ -116,14 +116,14 @@ export function MobileWorkbenchPreview({
 			) : null}
 
 			<div>
-				<h2 className="m-0 mb-1.5 font-heading text-[length:var(--text-sm)] font-bold">
+				<h2 className="m-0 mb-1.5 font-heading text-sm font-bold">
 					分镜
-					<span className="ml-1 font-mono text-[length:var(--text-2xs)] font-normal tabular-nums text-bc-muted">
+					<span className="ml-1 font-mono text-2xs font-normal tabular-nums text-bc-muted">
 						{orderedShots.length}
 					</span>
 				</h2>
 				{orderedShots.length === 0 ? (
-					<p className="m-0 text-[length:var(--text-xs)] text-bc-muted">
+					<p className="m-0 text-xs text-bc-muted">
 						还没有分镜，开始生成后会出现在这里
 					</p>
 				) : (
@@ -133,7 +133,7 @@ export function MobileWorkbenchPreview({
 							return (
 								<li
 									key={shot.id}
-									className="relative aspect-square overflow-hidden rounded-[var(--radius-md)] border-2 border-base-content/12 bg-base-200"
+									className="relative aspect-square overflow-hidden rounded-md border-2 border-base-content/10 bg-base-200"
 								>
 									{imageUrl ? (
 										<img
@@ -143,12 +143,12 @@ export function MobileWorkbenchPreview({
 											loading="lazy"
 										/>
 									) : (
-										<span className="flex h-full items-center justify-center text-[length:var(--text-2xs)] text-bc-muted">
+										<span className="flex h-full items-center justify-center text-2xs text-bc-muted">
 											待生成
 										</span>
 									)}
 									<span
-										className="absolute left-1 top-1 rounded-full bg-neutral/80 px-1.5 font-mono text-[length:var(--text-2xs)] font-bold tabular-nums text-neutral-content"
+										className="absolute left-1 top-1 rounded-full bg-neutral/80 px-1.5 font-mono text-2xs font-bold tabular-nums text-neutral-content"
 										aria-hidden="true"
 									>
 										{shot.order}
@@ -162,7 +162,7 @@ export function MobileWorkbenchPreview({
 
 			{characters.length > 0 ? (
 				<div>
-					<h2 className="m-0 mb-1.5 font-heading text-[length:var(--text-sm)] font-bold">
+					<h2 className="m-0 mb-1.5 font-heading text-sm font-bold">
 						角色
 					</h2>
 					<ul className="m-0 flex list-none gap-2 overflow-x-auto p-0 pb-1">
@@ -175,7 +175,7 @@ export function MobileWorkbenchPreview({
 									key={character.id}
 									className="flex w-14 shrink-0 flex-col items-center gap-1"
 								>
-									<span className="h-12 w-12 overflow-hidden rounded-full border-2 border-base-content/12 bg-base-200">
+									<span className="h-12 w-12 overflow-hidden rounded-full border-2 border-base-content/10 bg-base-200">
 										{avatarUrl ? (
 											<img
 												src={avatarUrl}
@@ -185,14 +185,14 @@ export function MobileWorkbenchPreview({
 											/>
 										) : (
 											<span
-												className="flex h-full items-center justify-center font-heading text-[length:var(--text-sm)] font-bold text-bc-muted"
+												className="flex h-full items-center justify-center font-heading text-sm font-bold text-bc-muted"
 												aria-hidden="true"
 											>
 												{character.name?.slice(0, 1) || "?"}
 											</span>
 										)}
 									</span>
-									<span className="max-w-full truncate text-[length:var(--text-2xs)] font-semibold">
+									<span className="max-w-full truncate text-2xs font-semibold">
 										{character.name}
 									</span>
 								</li>

@@ -1,11 +1,12 @@
 import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense } from "react";
 
 import "./styles/globals.css";
 import { ToastContainer } from "./components/toast/ToastContainer";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { LoadingOverlay } from "./components/ui/LoadingOverlay";
+import { appQueryClient } from "./query/client";
 import { useSettingsStore } from "./stores/settingsStore";
 
 // 路由懒加载
@@ -15,19 +16,6 @@ const ProjectPage = lazy(() => import("./pages/ProjectPage").then(m => ({ defaul
 const UniversesPage = lazy(() => import("./pages/UniversesPage").then(m => ({ default: m.UniversesPage })));
 const UniverseDetailPage = lazy(() => import("./pages/UniverseDetailPage").then(m => ({ default: m.UniverseDetailPage })));
 const SettingsModal = lazy(() => import("./components/settings/SettingsModal").then(m => ({ default: m.SettingsModal })));
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5,
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-    mutations: {
-      retry: 0,
-    },
-  },
-});
 
 function SettingsModalHost() {
   const isModalOpen = useSettingsStore((state) => state.isModalOpen);
@@ -44,7 +32,7 @@ function SettingsModalHost() {
 export function App() {
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
+      <QueryClientProvider client={appQueryClient}>
         <BrowserRouter>
           {/* Viewport host: pages fill this; no document scroll */}
           <div
@@ -53,7 +41,7 @@ export function App() {
           >
             <Suspense
               fallback={
-                <LoadingOverlay text="加载中…" className="fixed inset-0 z-[var(--z-modal)]" />
+                <LoadingOverlay text="加载中…" className="fixed inset-0 z-modal" />
               }
             >
               <Routes>

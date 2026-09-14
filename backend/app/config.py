@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     environment: str = Field(default="dev", description="dev|staging|prod")
     log_level: str = Field(default="INFO", description="Uvicorn log level")
 
+    # pi engine sidecar 的 loopback 地址（编排唯一引擎）
+    engine_url: str = Field(
+        default="http://127.0.0.1:18766",
+        description="pi engine sidecar 的 loopback 地址",
+    )
+
     api_v1_prefix: str = "/api/v1"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     admin_token: str | None = Field(
@@ -23,14 +29,11 @@ class Settings(BaseSettings):
         description="Admin token for configuration updates (sent via X-Admin-Token header)",
     )
 
-    # 数据库（默认使用 PostgreSQL）
+    # 数据库：单文件 SQLite（WAL），与 pi engine sidecar 共享同一文件
     database_url: str = Field(
-        default="postgresql+asyncpg://openoii:openoii_dev@localhost:5432/openoii"
+        default="sqlite+aiosqlite:///./data/openoii.db"
     )
     db_echo: bool = False
-
-    # Redis（用于 confirm 信号共享）
-    redis_url: str = Field(default="redis://localhost:6379/0")
 
     # ============================================
     # LLM 服务 (Anthropic 兼容接口)

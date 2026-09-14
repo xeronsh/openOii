@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from typing import cast
 
@@ -10,10 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
-from app.agents.base import TargetIds
-from app.agents.compose import ComposeAgent
-from app.agents.render import RenderAgent
-from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404, require_run_id
+from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404
 from app.config import Settings
 from app.db.utils import utcnow
 from app.models.agent_run import AgentRun
@@ -37,16 +33,19 @@ from app.schemas.project import (
     StoryOutlineRead,
     StoryOutlineUpdate,
 )
-from app.services.agent_runner import run_agent_plan
+from app.services.run_lifecycle import (
+    TargetedRunSpec,
+    create_local_run,
+    project_updated_event,
+)
 from app.services.creative_control import (
-    collect_project_blocking_clips,
     invalidate_shot_clip_output,
     invalidate_shot_storyboard_outputs,
 )
 from app.services.file_cleaner import get_local_path
 from app.services.project_deletion import delete_project_by_id, delete_projects_by_ids
+from app.services.revision import assert_expected_revision, commit_versioned
 from app.services.provider_resolution import resolve_project_provider_settings_async
-from app.services.task_manager import task_manager
 from app.ws.manager import ConnectionManager
 
 router = APIRouter()
@@ -63,6 +62,7 @@ async def _project_provider_settings(
 async def _project_read_model(project: Project, settings: Settings) -> ProjectRead:
     return ProjectRead(
         id=project.id if project.id is not None else 0,
+        revision=project.revision,
         title=project.title,
         story=project.story,
         style=project.style,
@@ -130,7 +130,7 @@ async def create_project(
         skill_id=skill_defaults["skill_id"],
     )
     session.add(project)
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
     await session.refresh(project)
 
     if universe is not None:
@@ -185,6 +185,8 @@ async def update_project_outline(
     project = await get_or_404(session, Project, project_id)
     outline = dict(project.story_outline or {})
     data = payload.model_dump(exclude_unset=True)
+    data.pop("expected_revision", None)
+    assert_expected_revision(project, payload.expected_revision, entity="project")
     visual_bible = data.pop("visual_bible", None)
     summary = data.pop("summary", None)
     outline_approved = data.pop("outline_approved", None)
@@ -202,7 +204,7 @@ async def update_project_outline(
         project.outline_approved = False
     project.updated_at = utcnow()
     session.add(project)
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
     await session.refresh(project)
     return StoryOutlineRead.model_validate(project.story_outline)
 
@@ -230,13 +232,15 @@ async def update_project(
 ):
     project = await get_or_404(session, Project, project_id)
     data = payload.model_dump(exclude_unset=True)
+    data.pop("expected_revision", None)
+    assert_expected_revision(project, payload.expected_revision, entity="project")
     for k, v in data.items():
         if k == "style":
             v = (v or "").strip() or "anime"
         setattr(project, k, v)
     project.updated_at = utcnow()
     session.add(project)
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
     await session.refresh(project)
     return await _project_read_model(project, settings)
 
@@ -292,7 +296,7 @@ async def upload_reference_image(
     project.reference_images = images
     project.updated_at = utcnow()
     session.add(project)
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
 
     return {"url": url_path, "reference_images": images}
 
@@ -365,7 +369,7 @@ async def reorder_shots(
         project.status = "superseded"
         session.add(project)
 
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
 
     ordered_res = await session.execute(
         select(Shot).where(shot_project_id_col == project_id).order_by(shot_order_col.asc())
@@ -388,6 +392,7 @@ async def reorder_shots(
                 "data": {
                     "project": {
                         "id": project_id,
+                        "revision": project.revision,
                         "status": project.status,
                         "video_url": project.video_url,
                     },
@@ -417,12 +422,12 @@ async def fill_empty_shots(
     project = await get_or_404(session, Project, project_id)
 
     active = await session.execute(
-        select(AgentRun)
+        select(AgentRun.id)
         .where(AgentRun.project_id == project_id)
         .where(AgentRun.status.in_(("queued", "running")))
         .limit(1)
     )
-    if active.scalars().first() is not None:
+    if active.first() is not None:
         raise HTTPException(status_code=409, detail="Project already has an active run")
 
     shot_res = await session.execute(
@@ -438,63 +443,40 @@ async def fill_empty_shots(
             raise HTTPException(status_code=400, detail="All shot cells already have images")
         for shot in empty:
             await invalidate_shot_storyboard_outputs(session, project, shot)
-        agent_plan = [RenderAgent()]
+        stage = "render_shots"
         resource_type = "shot_fill_image"
     else:
         empty = [s for s in shots if s.id is not None and not s.video_url]
         if not empty:
             raise HTTPException(status_code=400, detail="All shot cells already have videos")
         await invalidate_shot_clip_output(session, project)
-        agent_plan = [ComposeAgent()]
+        stage = "compose_videos"
         resource_type = "shot_fill_video"
 
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
     await session.refresh(project)
-    blocking_clips = await collect_project_blocking_clips(session, project)
-    await ws.send_event(
-        project_id,
-        {
-            "type": "project_updated",
-            "data": {
-                "project": {
-                    "id": project_id,
-                    "video_url": project.video_url,
-                    "status": project.status,
-                    "blocking_clips": blocking_clips,
-                }
-            },
-        },
-    )
 
-    target_ids = TargetIds(
-        shot_ids=[s.id for s in empty if s.id is not None],
-        character_ids=[],
+    await ws.send_event(project_id, await project_updated_event(session, project))
+
+    result = await create_local_run(
+        session,
+        settings=settings,
+        ws=ws,
+        spec=TargetedRunSpec(
+            project_id=project_id,
+            resource_type="project",
+            resource_id=None,
+            stage=stage,
+            target_shot_ids=tuple(s.id for s in empty if s.id is not None),
+        ),
     )
-    run = AgentRun(
-        project_id=project_id,
-        status="running",
-        current_agent=getattr(agent_plan[0], "name", None),
-        progress=0.0,
-        error=None,
-        resource_type=resource_type,
-        resource_id=None,
-    )
+    run = result.run
+    # 保留 resource_type 细分（shot_fill_image / shot_fill_video），
+    # 前端用它区分补齐的是首帧还是视频。
+    run.resource_type = resource_type
     session.add(run)
     await session.commit()
     await session.refresh(run)
-    run_id = require_run_id(run)
-
-    task = asyncio.create_task(
-        run_agent_plan(
-            project_id=project_id,
-            run_id=run_id,
-            agent_plan=agent_plan,
-            settings=settings,
-            ws=ws,
-            target_ids=target_ids,
-        )
-    )
-    task_manager.register(project_id, task)
     return AgentRunRead.model_validate(run)
 
 

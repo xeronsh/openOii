@@ -30,8 +30,12 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              # backend 镜像内嵌 engine（Dockerfile 的 multi-stage 会编译它）
+              - 'engine/**'
+              - '.dockerignore'
             frontend:
               - 'frontend/**'
+              - '.dockerignore'
 
   # Step 2: build only the changed service(s)
   build-and-push:
@@ -49,10 +53,16 @@ jobs:
     strategy:
       matrix:
         include:
+          # backend 镜像需要仓库根作为构建上下文：它的 Dockerfile 会从 engine/
+          # 编译 sidecar 并把 node + engine 一起拷进 Python 镜像。
           - service: backend
             should_build: ${{ needs.changes.outputs.backend }}
+            context: .
+            file: backend/Dockerfile
           - service: frontend
             should_build: ${{ needs.changes.outputs.frontend }}
+            context: frontend
+            file: frontend/Dockerfile
 
     steps:
       - name: Skip if unchanged
@@ -93,8 +103,8 @@ jobs:
         if: matrix.should_build == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         uses: docker/build-push-action@v5
         with:
-          context: ./${{ matrix.service }}
-          file: ./${{ matrix.service }}/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

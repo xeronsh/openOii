@@ -56,10 +56,10 @@ export function ConfirmModal({
           </div>
 
           <div className="min-w-0 flex-1">
-            <h3 className="m-0 font-heading text-[length:var(--text-md)] font-bold">
+            <h3 className="m-0 font-heading text-md font-bold">
               {title}
             </h3>
-            <p className="m-0 mt-1 text-[length:var(--text-sm)] text-bc-muted">
+            <p className="m-0 mt-1 text-sm text-bc-muted">
               {message}
             </p>
           </div>
@@ -68,7 +68,7 @@ export function ConfirmModal({
         <div className="modal-action mt-3 gap-2">
           <button
             type="button"
-            className="btn btn-ghost h-9 min-h-9 border-2 border-base-content/20 px-3 text-[length:var(--text-sm)]"
+            className="btn btn-ghost h-9 min-h-9 border-2 border-base-content/20 px-3 text-sm"
             onClick={onClose}
             disabled={isLoading}
           >
@@ -76,7 +76,7 @@ export function ConfirmModal({
           </button>
           <button
             type="button"
-            className={`btn ${styles.button} h-9 min-h-9 border-2 border-base-content/20 px-3 text-[length:var(--text-sm)]`}
+            className={`btn ${styles.button} h-9 min-h-9 border-2 border-base-content/20 px-3 text-sm`}
             onClick={onConfirm}
             disabled={isLoading}
           >

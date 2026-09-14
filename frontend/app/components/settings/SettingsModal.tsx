@@ -310,10 +310,10 @@ export function SettingsModal() {
 	const renderConfigItem = (item: ConfigItem) => (
 		<div
 			key={item.key}
-			className="rounded-[var(--radius-md)] border-2 border-base-content/15 bg-base-200/70 p-2.5"
+			className="rounded-md border-2 border-base-content/15 bg-base-200/70 p-2.5"
 		>
 			<div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-				<span className="font-mono text-[length:var(--text-xs)] font-bold">
+				<span className="font-mono text-xs font-bold">
 					{item.key.toUpperCase()}
 				</span>
 				{item.is_sensitive && (
@@ -328,7 +328,7 @@ export function SettingsModal() {
 				value={String(formState[item.key] ?? "")}
 				onChange={handleInputChange}
 			/>
-			<p className="mt-1.5 text-[length:var(--text-2xs)] text-bc-muted">
+			<p className="mt-1.5 text-2xs text-bc-muted">
 				{getConfigDescription(item.key)}
 			</p>
 		</div>
@@ -356,7 +356,7 @@ export function SettingsModal() {
 		const providerCard = (value: string, title: string, desc: string) => (
 			<label
 				className={`
-          flex flex-1 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border-2 p-2.5 transition-all
+          flex flex-1 cursor-pointer items-center gap-2 rounded-md border-2 p-2.5 transition-all
           ${
 						textProvider === value
 							? "border-accent bg-accent/10"
@@ -373,8 +373,8 @@ export function SettingsModal() {
 					className="radio radio-accent radio-sm"
 				/>
 				<div className="min-w-0">
-					<div className="text-[length:var(--text-sm)] font-bold">{title}</div>
-					<div className="text-[length:var(--text-2xs)] text-bc-muted">
+					<div className="text-sm font-bold">{title}</div>
+					<div className="text-2xs text-bc-muted">
 						{desc}
 					</div>
 				</div>
@@ -383,15 +383,15 @@ export function SettingsModal() {
 
 		return (
 			<div className="space-y-3">
-				<div className="flex items-start gap-1.5 rounded-[var(--radius-md)] border border-info/30 bg-info/10 px-2.5 py-1.5 text-[length:var(--text-xs)] text-info">
+				<div className="flex items-start gap-1.5 rounded-md border border-info/30 bg-info/10 px-2.5 py-1.5 text-xs text-info">
 					<InformationCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 					<span>{tabConfig[activeTab]?.desc}</span>
 				</div>
 
 				{providerItem && (
-					<div className="rounded-[var(--radius-md)] border-2 border-base-content/15 bg-base-200/70 p-2.5">
+					<div className="rounded-md border-2 border-base-content/15 bg-base-200/70 p-2.5">
 						<div className="mb-2 flex items-center gap-1.5">
-							<span className="font-mono text-[length:var(--text-xs)] font-bold">
+							<span className="font-mono text-xs font-bold">
 								TEXT_PROVIDER
 							</span>
 							<span className="badge badge-primary badge-xs">必选</span>
@@ -406,11 +406,11 @@ export function SettingsModal() {
 
 				{textProvider === "anthropic" && anthropicItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-accent">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-accent">
 							<SparklesIcon className="h-3.5 w-3.5" />
 							Anthropic Claude 配置
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-accent/5 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-accent/5 py-1.5 pl-2.5">
 							{anthropicItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -418,11 +418,11 @@ export function SettingsModal() {
 
 				{textProvider === "openai" && openaiItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-accent">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-accent">
 							<SparklesIcon className="h-3.5 w-3.5" />
 							OpenAI 兼容接口配置
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-accent/5 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-accent/5 py-1.5 pl-2.5">
 							{openaiItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -430,15 +430,15 @@ export function SettingsModal() {
 
 				{textProvider === "fake" && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-accent">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-accent">
 							<SparklesIcon className="h-3.5 w-3.5" />
 							Fake 本地测试配置
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-accent/5 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-accent/5 py-1.5 pl-2.5">
 							{activeSection.items
 								.filter((i) => i.key.toLowerCase().startsWith("fake_text_"))
 								.map(renderConfigItem)}
-							<p className="m-0 px-1 text-[length:var(--text-2xs)] text-bc-muted">
+							<p className="m-0 px-1 text-2xs text-bc-muted">
 								启用后生成链路不会调用外部文本生成 API。
 							</p>
 						</div>
@@ -471,7 +471,7 @@ export function SettingsModal() {
 		const providerCard = (value: string, title: string, desc: string) => (
 			<label
 				className={`
-          flex cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border-2 p-2.5 transition-all
+          flex cursor-pointer items-center gap-2 rounded-md border-2 p-2.5 transition-all
           ${
 						imageProvider === value
 							? "border-accent bg-accent/10"
@@ -488,8 +488,8 @@ export function SettingsModal() {
 					className="radio radio-accent radio-sm"
 				/>
 				<div className="min-w-0">
-					<div className="text-[length:var(--text-sm)] font-bold">{title}</div>
-					<div className="text-[length:var(--text-2xs)] text-bc-muted">
+					<div className="text-sm font-bold">{title}</div>
+					<div className="text-2xs text-bc-muted">
 						{desc}
 					</div>
 				</div>
@@ -498,15 +498,15 @@ export function SettingsModal() {
 
 		return (
 			<div className="space-y-3">
-				<div className="flex items-start gap-1.5 rounded-[var(--radius-md)] border border-info/30 bg-info/10 px-2.5 py-1.5 text-[length:var(--text-xs)] text-info">
+				<div className="flex items-start gap-1.5 rounded-md border border-info/30 bg-info/10 px-2.5 py-1.5 text-xs text-info">
 					<InformationCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 					<span>{tabConfig[activeTab]?.desc}</span>
 				</div>
 
 				{providerItem && (
-					<div className="rounded-[var(--radius-md)] border-2 border-base-content/15 bg-base-200/70 p-2.5">
+					<div className="rounded-md border-2 border-base-content/15 bg-base-200/70 p-2.5">
 						<div className="mb-2 flex items-center gap-1.5">
-							<span className="font-mono text-[length:var(--text-xs)] font-bold">
+							<span className="font-mono text-xs font-bold">
 								IMAGE_PROVIDER
 							</span>
 							<span className="badge badge-primary badge-xs">必选</span>
@@ -522,13 +522,13 @@ export function SettingsModal() {
 				{(imageProvider === "modelscope" || imageProvider === "openai") &&
 					imageApiItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-accent">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-accent">
 							<PhotoIcon className="h-3.5 w-3.5" />
 							{imageProvider === "modelscope"
 								? "ModelScope 图像接口配置"
 								: "OpenAI 兼容接口配置"}
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-accent/5 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-accent/5 py-1.5 pl-2.5">
 							{imageApiItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -536,13 +536,13 @@ export function SettingsModal() {
 
 				{imageProvider === "fake" && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-accent">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-accent">
 							<PhotoIcon className="h-3.5 w-3.5" />
 							Fake 本地测试配置
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-accent/5 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-accent/5 py-1.5 pl-2.5">
 							{fakeItems.map(renderConfigItem)}
-							<p className="m-0 px-1 text-[length:var(--text-2xs)] text-bc-muted">
+							<p className="m-0 px-1 text-2xs text-bc-muted">
 								未配置固定 URL 时会返回内置 SVG 占位图。
 							</p>
 						</div>
@@ -551,11 +551,11 @@ export function SettingsModal() {
 
 				{commonItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-bc-muted">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-bc-muted">
 							<WrenchScrewdriverIcon className="h-3.5 w-3.5" />
 							通用配置
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-base-300/30 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-base-300/30 py-1.5 pl-2.5">
 							{commonItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -601,7 +601,7 @@ export function SettingsModal() {
 		const providerCard = (value: string, title: string, desc: string) => (
 			<label
 				className={`
-          flex flex-1 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border-2 p-2.5 transition-all
+          flex flex-1 cursor-pointer items-center gap-2 rounded-md border-2 p-2.5 transition-all
           ${
 						videoProvider === value
 							? "border-accent bg-accent/10"
@@ -618,8 +618,8 @@ export function SettingsModal() {
 					className="radio radio-accent radio-sm"
 				/>
 				<div className="min-w-0">
-					<div className="text-[length:var(--text-sm)] font-bold">{title}</div>
-					<div className="text-[length:var(--text-2xs)] text-bc-muted">
+					<div className="text-sm font-bold">{title}</div>
+					<div className="text-2xs text-bc-muted">
 						{desc}
 					</div>
 				</div>
@@ -628,15 +628,15 @@ export function SettingsModal() {
 
 		return (
 			<div className="space-y-3">
-				<div className="flex items-start gap-1.5 rounded-[var(--radius-md)] border border-info/30 bg-info/10 px-2.5 py-1.5 text-[length:var(--text-xs)] text-info">
+				<div className="flex items-start gap-1.5 rounded-md border border-info/30 bg-info/10 px-2.5 py-1.5 text-xs text-info">
 					<InformationCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 					<span>{tabConfig[activeTab]?.desc}</span>
 				</div>
 
 				{providerItem && (
-					<div className="rounded-[var(--radius-md)] border-2 border-base-content/15 bg-base-200/70 p-2.5">
+					<div className="rounded-md border-2 border-base-content/15 bg-base-200/70 p-2.5">
 						<div className="mb-2 flex items-center gap-1.5">
-							<span className="font-mono text-[length:var(--text-xs)] font-bold">
+							<span className="font-mono text-xs font-bold">
 								VIDEO_PROVIDER
 							</span>
 							<span className="badge badge-primary badge-xs">必选</span>
@@ -651,11 +651,11 @@ export function SettingsModal() {
 
 				{videoProvider === "doubao" && doubaoItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-accent">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-accent">
 							<VideoCameraIcon className="h-3.5 w-3.5" />
 							豆包视频配置
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-accent/5 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-accent/5 py-1.5 pl-2.5">
 							{doubaoItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -663,11 +663,11 @@ export function SettingsModal() {
 
 				{videoProvider === "openai" && openaiItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-accent">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-accent">
 							<VideoCameraIcon className="h-3.5 w-3.5" />
 							OpenAI 兼容接口配置
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-accent/5 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-accent/5 py-1.5 pl-2.5">
 							{openaiItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -675,11 +675,11 @@ export function SettingsModal() {
 
 				{videoProvider === "fake" && fakeItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-accent">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-accent">
 							<VideoCameraIcon className="h-3.5 w-3.5" />
 							Fake 本地测试配置
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-accent/5 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-accent/5 py-1.5 pl-2.5">
 							{fakeItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -687,11 +687,11 @@ export function SettingsModal() {
 
 				{commonItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-[length:var(--text-xs)] font-bold text-bc-muted">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-bc-muted">
 							<WrenchScrewdriverIcon className="h-3.5 w-3.5" />
 							通用配置
 						</h4>
-						<div className="space-y-2 rounded-r-[var(--radius-md)] bg-base-300/30 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-base-300/30 py-1.5 pl-2.5">
 							{commonItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -712,7 +712,7 @@ export function SettingsModal() {
 
 		return (
 			<div className="space-y-3">
-				<div className="flex items-start gap-1.5 rounded-[var(--radius-md)] border border-info/30 bg-info/10 px-2.5 py-1.5 text-[length:var(--text-xs)] text-info">
+				<div className="flex items-start gap-1.5 rounded-md border border-info/30 bg-info/10 px-2.5 py-1.5 text-xs text-info">
 					<InformationCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 					<span>{tabConfig[activeTab]?.desc}</span>
 				</div>
@@ -722,7 +722,7 @@ export function SettingsModal() {
 				</div>
 
 				{activeSection.items.length === 0 && (
-					<div className="py-8 text-center text-[length:var(--text-xs)] text-bc-muted">
+					<div className="py-8 text-center text-xs text-bc-muted">
 						<InformationCircleIcon className="mx-auto mb-1.5 h-8 w-8 opacity-50" />
 						<p className="m-0">此分类暂无配置项</p>
 					</div>
@@ -742,7 +742,7 @@ export function SettingsModal() {
 				<div className="flex shrink-0 items-center justify-between border-b-2 border-base-content/15 bg-base-200 px-3 py-2 sm:px-4">
 					<h3
 						id="settings-modal-title"
-						className="flex items-center gap-1.5 font-heading text-[length:var(--text-md)] font-bold"
+						className="flex items-center gap-1.5 font-heading text-md font-bold"
 					>
 						<Cog6ToothIcon className="h-5 w-5 text-accent" />
 						环境变量配置管理
@@ -768,7 +768,7 @@ export function SettingsModal() {
 					<div className="p-3">
 						<div
 							role="alert"
-							className="alert alert-error border-2 border-base-content/20 py-2 text-[length:var(--text-sm)]"
+							className="alert alert-error border-2 border-base-content/20 py-2 text-sm"
 						>
 							<ExclamationCircleIcon className="h-5 w-5" />
 							<span>加载配置失败，请检查后端服务是否正常运行。</span>
@@ -794,8 +794,8 @@ export function SettingsModal() {
 											aria-selected={isActive}
 											onClick={() => handleTabChange(section.key)}
 											className={`
-                        flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] px-2.5
-                        text-[length:var(--text-xs)] font-medium
+                        flex h-8 items-center gap-1.5 rounded-md px-2.5
+                        text-xs font-medium
                         border-2 border-base-content/20 transition-all
                         ${
 													isActive
@@ -808,7 +808,7 @@ export function SettingsModal() {
 											<span>{cfg?.title || section.title}</span>
 											<span
 												className={`
-                        rounded px-1 py-0.5 text-[length:var(--text-2xs)] tabular-nums
+                        rounded px-1 py-0.5 text-2xs tabular-nums
                         ${isActive ? "bg-accent-content/20" : "bg-base-300"}
                       `}
 											>
@@ -831,7 +831,7 @@ export function SettingsModal() {
 						</div>
 
 						<div className="flex shrink-0 flex-wrap items-center gap-2 border-t-2 border-base-content/15 bg-base-200 px-3 py-2 sm:px-4">
-							<div className="flex min-w-0 flex-1 items-center gap-1.5 text-[length:var(--text-2xs)] text-info">
+							<div className="flex min-w-0 flex-1 items-center gap-1.5 text-2xs text-info">
 								<InformationCircleIcon className="h-4 w-4 shrink-0" />
 								<span className="truncate">
 									大部分配置保存后立即生效，数据库/Redis 配置需重启
@@ -841,14 +841,14 @@ export function SettingsModal() {
 							<button
 								type="button"
 								onClick={handleCancel}
-								className="btn h-8 min-h-8 border-2 border-base-content/20 px-3 text-[length:var(--text-xs)]"
+								className="btn h-8 min-h-8 border-2 border-base-content/20 px-3 text-xs"
 							>
 								取消
 							</button>
 
 							<button
 								type="submit"
-								className="btn btn-primary h-8 min-h-8 border-2 border-base-content/20 px-3 text-[length:var(--text-xs)]"
+								className="btn btn-primary h-8 min-h-8 border-2 border-base-content/20 px-3 text-xs"
 								disabled={updateMutation.isPending}
 							>
 								{updateMutation.isPending && (
@@ -858,7 +858,7 @@ export function SettingsModal() {
 							</button>
 							<button
 								type="button"
-								className="btn btn-outline h-8 min-h-8 border-2 border-base-content/20 px-3 text-[length:var(--text-xs)]"
+								className="btn btn-outline h-8 min-h-8 border-2 border-base-content/20 px-3 text-xs"
 								onClick={handleTestConnection}
 								disabled={
 									updateMutation.isPending ||
@@ -897,15 +897,15 @@ export function SettingsModal() {
 							</div>
 
 							<div className="min-w-0 flex-1">
-								<h3 className="mb-1 font-heading text-[length:var(--text-md)] font-bold">
+								<h3 className="mb-1 font-heading text-md font-bold">
 									{alertState.title}
 								</h3>
-								<p className="m-0 text-[length:var(--text-sm)] text-base-content/80">
+								<p className="m-0 text-sm text-base-content/80">
 									{alertState.message}
 								</p>
 								{alertState.details && (
-									<div className="mt-2 rounded-[var(--radius-md)] border-2 border-base-content/15 bg-base-200 p-2">
-										<p className="m-0 whitespace-pre-line text-[length:var(--text-xs)]">
+									<div className="mt-2 rounded-md border-2 border-base-content/15 bg-base-200 p-2">
+										<p className="m-0 whitespace-pre-line text-xs">
 											{alertState.details}
 										</p>
 									</div>
@@ -920,7 +920,7 @@ export function SettingsModal() {
 									setAlertState({ ...alertState, show: false });
 									closeModal();
 								}}
-								className="btn btn-primary h-8 min-h-8 border-2 border-base-content/20 px-3 text-[length:var(--text-xs)]"
+								className="btn btn-primary h-8 min-h-8 border-2 border-base-content/20 px-3 text-xs"
 							>
 								确定
 							</button>
@@ -943,9 +943,8 @@ function getConfigDescription(key: string): string {
 		CORS_ORIGINS: '跨域配置，JSON 数组格式，如 ["http://localhost:3000"]',
 
 		// 数据库
-		DATABASE_URL: "PostgreSQL 数据库连接字符串（asyncpg 协议）",
+		DATABASE_URL: "SQLite 数据库连接字符串（需与 pi 引擎指向同一文件）",
 		DB_ECHO: "是否在控制台打印 SQL 语句（调试用）",
-		REDIS_URL: "Redis 连接字符串，用于跨进程信号共享",
 
 		// LLM 服务
 		ANTHROPIC_API_KEY: "Anthropic 官方 API 密钥",

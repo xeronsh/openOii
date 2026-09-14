@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import select
 
 from app.api.deps import get_app_settings, get_db_session, get_ws_manager
 from app.agents.review_rules import ReviewAgent
-from app.api.v1.routes import generation as generation_routes
+from app.api.v1.routes import runs as generation_routes
 from app.main import create_app
 from app.models.agent_run import AgentRun
 from app.schemas.project import ProjectProviderEntry
@@ -43,21 +41,6 @@ def _provider_resolution_deterministic() -> generation_routes.ProviderResolution
             reason_message=None,
         ),
     )
-
-
-def _immediate_task(coro):
-    """Helper to make asyncio.create_task synchronous for testing"""
-    loop = asyncio.get_running_loop()
-    inner = None
-    frame = getattr(coro, "cr_frame", None)
-    if frame is not None:
-        inner = frame.f_locals.get("coro")
-    coro.close()
-    if inner is not None:
-        inner.close()
-    future = loop.create_future()
-    future.set_result(None)
-    return future
 
 
 async def _noop_task() -> None:
@@ -130,40 +113,90 @@ def _video_only_invalid_provider_resolution() -> generation_routes.ProviderResol
 
 @pytest.mark.asyncio
 async def test_generate_project_not_found(async_client):
-    res = await async_client.post("/api/v1/projects/99999/generate", json={})
+    res = await async_client.post("/api/v1/projects/99999/runs", json={})
     assert res.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_start_project_task_registers_created_task(monkeypatch):
-    created_coroutines: list[object] = []
-    registered_tasks: list[tuple[int, object]] = []
+async def test_dispatch_to_engine_starts_run(monkeypatch):
+    """_dispatch_to_engine 要把 stage/auto_mode/user_feedback 透传给引擎。"""
+    captured: list[dict] = []
 
-    class DummyTask:
-        def add_done_callback(self, callback):
-            self.callback = callback
+    async def _ensure(base_url, database_url, static_dir):
+        captured.append({"ensured": True})
 
-    dummy_task = DummyTask()
+    async def _start(base_url, **kwargs):
+        captured.append(kwargs)
+        return {"status": "running"}
 
-    monkeypatch.setattr(
-        generation_routes.asyncio,
-        "create_task",
-        lambda coro: created_coroutines.append(coro) or dummy_task,
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _ensure)
+    monkeypatch.setattr(generation_routes, "engine_start_run", _start)
+
+    from app.config import Settings
+
+    settings = Settings(database_url="sqlite+aiosqlite:///:memory:")
+    await generation_routes._dispatch_to_engine(
+        settings=settings,
+        project_id=7,
+        run_id=11,
+        stage="render_shots",
+        auto_mode=True,
+        user_feedback="调整节奏",
     )
-    monkeypatch.setattr(
-        generation_routes.task_manager,
-        "register",
-        lambda project_id, task: registered_tasks.append((project_id, task)),
-    )
 
-    async def worker() -> None:
+    assert captured[0] == {"ensured": True}
+    assert captured[1]["project_id"] == 7
+    assert captured[1]["run_id"] == 11
+    assert captured[1]["stage"] == "render_shots"
+    assert captured[1]["auto_mode"] is True
+    assert captured[1]["user_feedback"] == "调整节奏"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_engine_resume_uses_resume_endpoint(monkeypatch):
+    resumed: list[dict] = []
+
+    async def _ensure(base_url, database_url, static_dir):
         return None
 
-    await generation_routes._start_project_task(42, worker())
+    async def _resume(base_url, **kwargs):
+        resumed.append(kwargs)
+        return {"status": "running"}
 
-    assert len(created_coroutines) == 1
-    assert registered_tasks == [(42, dummy_task)]
-    created_coroutines[0].close()
+    async def _start(base_url, **kwargs):  # pragma: no cover - must not be called
+        raise AssertionError("resume 不应走 start")
+
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _ensure)
+    monkeypatch.setattr(generation_routes, "engine_resume_run", _resume)
+    monkeypatch.setattr(generation_routes, "engine_start_run", _start)
+
+    from app.config import Settings
+
+    settings = Settings(database_url="sqlite+aiosqlite:///:memory:")
+    await generation_routes._dispatch_to_engine(
+        settings=settings, project_id=3, run_id=5, resume=True
+    )
+
+    assert resumed == [{"project_id": 3, "run_id": 5}]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_engine_maps_unavailable_to_503(monkeypatch):
+    from fastapi import HTTPException
+
+    async def _ensure(base_url, database_url, static_dir):
+        raise generation_routes.EngineUnavailableError("engine down")
+
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _ensure)
+
+    from app.config import Settings
+
+    settings = Settings(database_url="sqlite+aiosqlite:///:memory:")
+    with pytest.raises(HTTPException) as exc:
+        await generation_routes._dispatch_to_engine(
+            settings=settings, project_id=1, run_id=1
+        )
+    assert exc.value.status_code == 503
 
 
 @pytest.mark.asyncio
@@ -171,7 +204,6 @@ async def test_generate_project_success(async_client, test_session, monkeypatch)
     expected_snapshot = (
         _provider_resolution_deterministic().as_project_provider_settings().model_dump(mode="json")
     )
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -183,12 +215,14 @@ async def test_generate_project_success(async_client, test_session, monkeypatch)
     )
 
     project = await create_project(test_session)
-    res = await async_client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await async_client.post(f"/api/v1/projects/{project.id}/runs", json={})
     assert res.status_code == 201
     data = res.json()
     run = await test_session.get(AgentRun, data["id"])
     assert run is not None
-    assert run.status == "running"
+    # Command acceptance is durable before an executor acquires its lease.
+    assert run.status == "queued"
+    assert data["status"] == "queued"
     assert data["provider_snapshot"] == expected_snapshot
     assert run.provider_snapshot == expected_snapshot
 
@@ -197,7 +231,6 @@ async def test_generate_project_success(async_client, test_session, monkeypatch)
 async def test_generate_project_returns_provider_precheck_failed_without_creating_run(
     async_client, test_session, monkeypatch
 ):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -209,7 +242,7 @@ async def test_generate_project_returns_provider_precheck_failed_without_creatin
     project = await create_project(test_session)
     before = (await test_session.execute(select(AgentRun))).scalars().all()
 
-    res = await async_client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await async_client.post(f"/api/v1/projects/{project.id}/runs", json={})
 
     assert res.status_code == 422
     data = res.json()
@@ -225,7 +258,6 @@ async def test_generate_project_returns_provider_precheck_failed_without_creatin
 async def test_generate_project_allows_start_when_only_video_provider_is_invalid(
     async_client, test_session, monkeypatch
 ):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -236,20 +268,19 @@ async def test_generate_project_allows_start_when_only_video_provider_is_invalid
 
     project = await create_project(test_session)
 
-    res = await async_client.post(f"/api/v1/projects/{project.id}/generate", json={})
+    res = await async_client.post(f"/api/v1/projects/{project.id}/runs", json={})
 
     assert res.status_code == 201
     data = res.json()
     run = await test_session.get(AgentRun, data["id"])
     assert run is not None
-    assert run.status == "running"
+    assert run.status == "queued"
 
 
 @pytest.mark.asyncio
 async def test_generate_project_does_not_require_admin_token(
     test_session, test_settings, ws_manager, monkeypatch
 ):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -305,34 +336,51 @@ async def test_generate_project_does_not_require_admin_token(
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        res = await client.post(f"/api/v1/projects/{project.id}/generate", json={})
+        res = await client.post(f"/api/v1/projects/{project.id}/runs", json={})
 
     assert res.status_code == 201
 
 
 @pytest.mark.asyncio
-async def test_cancel_project_run_no_active(async_client, test_session):
+async def test_cancel_run_already_terminal_is_noop(async_client, test_session):
+    """按 run id 取消：已终结的 run 返回 no_active_run（不报错）。"""
     project = await create_project(test_session)
-    res = await async_client.post(f"/api/v1/projects/{project.id}/cancel")
+    run = await create_run(test_session, project_id=project.id, status="succeeded")
+
+    res = await async_client.post(f"/api/v1/runs/{run.id}/cancel")
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "no_active_run"
 
 
 @pytest.mark.asyncio
-async def test_cancel_project_run_updates(async_client, test_session):
+async def test_cancel_unleased_run_finishes_synchronously(async_client, test_session):
     project = await create_project(test_session)
-    run = await create_run(test_session, project_id=project.id, status="running")
+    run = await create_run(
+        test_session, project_id=project.id, status="running", live_lease=False
+    )
 
-    res = await async_client.post(f"/api/v1/projects/{project.id}/cancel")
+    res = await async_client.post(f"/api/v1/runs/{run.id}/cancel")
     assert res.status_code == 200
     await test_session.refresh(run)
     assert run.status == "cancelled"
+    assert res.json()["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cancel_live_run_is_cancelling_until_executor_ack(async_client, test_session):
+    project = await create_project(test_session)
+    run = await create_run(test_session, project_id=project.id, status="running")
+
+    res = await async_client.post(f"/api/v1/runs/{run.id}/cancel")
+    assert res.status_code == 200
+    await test_session.refresh(run)
+    assert run.status == "cancelling"
+    assert res.json()["status"] == "cancelling"
 
 
 @pytest.mark.asyncio
 async def test_feedback_project_success(async_client, test_session, monkeypatch):
-    monkeypatch.setattr(generation_routes.asyncio, "create_task", _immediate_task)
     monkeypatch.setattr(
         generation_routes,
         "resolve_project_provider_settings_async",
@@ -343,9 +391,15 @@ async def test_feedback_project_success(async_client, test_session, monkeypatch)
         ),
     )
 
+    # ReviewAgent 的路由决策由 LLM 承担；此处只验路由契约，不调外部模型。
+    async def _fake_route(**_kwargs) -> str:
+        return "plan_characters"
+
+    monkeypatch.setattr(generation_routes, "_route_feedback_to_stage", _fake_route)
+
     project = await create_project(test_session)
     res = await async_client.post(
-        f"/api/v1/projects/{project.id}/feedback",
+        f"/api/v1/projects/{project.id}/runs/feedback",
         json={"content": "Please adjust tone"},
     )
     assert res.status_code == 202
@@ -374,7 +428,7 @@ async def test_feedback_project_returns_409_for_active_conflict(async_client, te
     await create_run(test_session, project_id=project.id, status="running")
 
     res = await async_client.post(
-        f"/api/v1/projects/{project.id}/feedback",
+        f"/api/v1/projects/{project.id}/runs/feedback",
         json={"content": "Please adjust tone"},
     )
 
@@ -429,24 +483,17 @@ async def test_review_agent_routes_shot_feedback_to_render(test_session, test_se
 
 
 @pytest.mark.asyncio
-async def test_resume_run_mismatched_project_id(async_client, test_session):
-    """Resume a run that belongs to a different project → 404."""
-    project = await create_project(test_session)
-    other_project = await create_project(test_session)
-    run = await create_run(test_session, project_id=other_project.id, status="failed")
-
-    res = await async_client.post(
-        f"/api/v1/projects/{project.id}/resume",
-        json={"run_id": run.id},
-    )
+async def test_resume_unknown_run_returns_404(async_client, test_session):
+    """按 run id 寻址后，「run 属于别的项目」不再是一个概念：只有存在与否。"""
+    res = await async_client.post("/api/v1/runs/424242/resume")
     assert res.status_code == 404
-    assert "Run not found" in res.json()["detail"]
+    assert "not found" in res.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
 async def test_generation_state_none_when_no_runs(async_client, test_session):
     project = await create_project(test_session)
-    res = await async_client.get(f"/api/v1/projects/{project.id}/generation-state")
+    res = await async_client.get(f"/api/v1/projects/{project.id}/runs/current")
     assert res.status_code == 200
     assert res.json() is None
 
@@ -456,7 +503,7 @@ async def test_generation_state_recoverable_for_failed_run(async_client, test_se
     project = await create_project(test_session)
     run = await create_run(test_session, project_id=project.id, status="failed")
 
-    res = await async_client.get(f"/api/v1/projects/{project.id}/generation-state")
+    res = await async_client.get(f"/api/v1/projects/{project.id}/runs/current")
     assert res.status_code == 200
     data = res.json()
     assert data is not None
@@ -467,11 +514,13 @@ async def test_generation_state_recoverable_for_failed_run(async_client, test_se
 
 @pytest.mark.asyncio
 async def test_generation_state_recoverable_for_stale_running_run(async_client, test_session):
-    """DB 里是 running 但进程内没有任务（如中途崩溃）→ 应视为可恢复而非活跃。"""
+    """DB 里是 running 但没有有效 lease（如中途崩溃）→ 应视为可恢复而非活跃。"""
     project = await create_project(test_session)
-    await create_run(test_session, project_id=project.id, status="running")
+    await create_run(
+        test_session, project_id=project.id, status="running", live_lease=False
+    )
 
-    res = await async_client.get(f"/api/v1/projects/{project.id}/generation-state")
+    res = await async_client.get(f"/api/v1/projects/{project.id}/runs/current")
     assert res.status_code == 200
     data = res.json()
     assert data is not None
@@ -480,5 +529,5 @@ async def test_generation_state_recoverable_for_stale_running_run(async_client, 
 
 @pytest.mark.asyncio
 async def test_generation_state_project_not_found(async_client):
-    res = await async_client.get("/api/v1/projects/999999/generation-state")
+    res = await async_client.get("/api/v1/projects/999999/runs/current")
     assert res.status_code == 404

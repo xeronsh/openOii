@@ -1,3 +1,6 @@
+.pi-glla/
+.env.local
+!.env.local.example
 .ace-tool/
 .claude
 .logs

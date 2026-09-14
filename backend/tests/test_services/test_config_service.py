@@ -36,7 +36,7 @@ def test_masked_input_detection():
 
 def test_requires_restart_detection():
     assert _requires_restart("DATABASE_URL") is True
-    assert _requires_restart("redis_url") is True
+    assert _requires_restart("database_url") is True
     assert _requires_restart("PUBLIC_BASE_URL") is True
     assert _requires_restart("IMAGE_API_KEY") is False
 
@@ -148,6 +148,9 @@ async def test_config_service_build_and_apply_overrides(test_session, monkeypatc
 async def test_config_service_ensure_initialized_creates_env_items(
     test_session, monkeypatch, tmp_path
 ):
+    monkeypatch.setattr(
+        "app.services.config_service._load_process_env_values", dict
+    )
     env_path = tmp_path / "provider.env"
     env_path.write_text(
         "TEXT_API_KEY=env-key\nPUBLIC_BASE_URL=https://env.example.com\n", encoding="utf-8"
@@ -166,6 +169,9 @@ async def test_config_service_ensure_initialized_creates_env_items(
 async def test_config_service_ensure_initialized_skips_existing_items(
     test_session, monkeypatch, tmp_path
 ):
+    monkeypatch.setattr(
+        "app.services.config_service._load_process_env_values", dict
+    )
     env_path = tmp_path / "provider.env"
     env_path.write_text("TEXT_API_KEY=env-key\n", encoding="utf-8")
     monkeypatch.setenv("ENV_FILE", str(env_path))
@@ -181,6 +187,9 @@ async def test_config_service_ensure_initialized_skips_existing_items(
 async def test_config_service_ensure_initialized_returns_zero_when_env_missing(
     test_session, monkeypatch, tmp_path
 ):
+    monkeypatch.setattr(
+        "app.services.config_service._load_process_env_values", dict
+    )
     monkeypatch.setenv("ENV_FILE", str(tmp_path / "missing.env"))
 
     service = ConfigService(test_session)
@@ -190,9 +199,33 @@ async def test_config_service_ensure_initialized_returns_zero_when_env_missing(
 
 
 @pytest.mark.asyncio
+async def test_config_service_ensure_initialized_process_env_beats_env_file(
+    test_session, monkeypatch, tmp_path
+):
+    """进程 env 优先于 .env 文件（与 get_settings 的 pydantic 优先级一致）。"""
+    env_path = tmp_path / "provider.env"
+    env_path.write_text("TEXT_API_KEY=file-key\n", encoding="utf-8")
+    monkeypatch.setenv("ENV_FILE", str(env_path))
+    monkeypatch.setattr(
+        "app.services.config_service._load_process_env_values",
+        lambda: {"TEXT_API_KEY": "process-key"},
+    )
+
+    service = ConfigService(test_session)
+    created = await service.ensure_initialized()
+
+    assert created == 1
+    item = await test_session.get(ConfigItem, "TEXT_API_KEY")
+    assert item is not None and item.value == "process-key"
+
+
+@pytest.mark.asyncio
 async def test_config_service_ensure_initialized_returns_zero_when_env_empty(
     test_session, monkeypatch, tmp_path
 ):
+    monkeypatch.setattr(
+        "app.services.config_service._load_process_env_values", dict
+    )
     env_path = tmp_path / "provider.env"
     env_path.write_text("# only comments\n", encoding="utf-8")
     monkeypatch.setenv("ENV_FILE", str(env_path))

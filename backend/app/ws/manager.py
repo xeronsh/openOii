@@ -19,8 +19,8 @@ from app.schemas.ws import (
     CritiqueResultEventData,
     DataClearedEventData,
     ErrorEventData,
-    ProjectUpdatedEventData,
     OutlineUpdatedEventData,
+    ProjectUpdatedEventData,
     RunAwaitingConfirmEventData,
     RunCancelledEventData,
     RunCompletedEventData,
@@ -87,7 +87,8 @@ class ConnectionManager:
                 if not self._conns[project_id]:
                     self._conns.pop(project_id, None)
 
-    async def send_event(self, project_id: int, event: dict[str, Any] | WsEvent) -> None:
+    @staticmethod
+    def _validated_payload(event: dict[str, Any] | WsEvent) -> dict[str, Any]:
         if isinstance(event, dict):
             event = WsEvent.model_validate(event)
 
@@ -95,7 +96,37 @@ class ConnectionManager:
         if data_model is not None:
             validated_data = data_model.model_validate(event.data)
             event = WsEvent(type=event.type, data=validated_data.model_dump(mode="json"))
-        payload = event.model_dump()
+        return event.model_dump()
+
+    async def send_event_to(self, websocket: WebSocket, event: dict[str, Any] | WsEvent) -> None:
+        if websocket.client_state != WebSocketState.CONNECTED:
+            return
+        await websocket.send_json(self._validated_payload(event))
+
+    async def send_durable_event_to(
+        self,
+        websocket: WebSocket,
+        *,
+        event_id: int,
+        event_type: str,
+        data: dict[str, Any],
+    ) -> None:
+        """Validate event data, then attach transport-level durable cursor.
+
+        ``event_id`` is transport metadata rather than business payload. Keeping
+        it outside the Pydantic event-data models means generated/replayed
+        events retain the exact same domain schema while clients still get a
+        monotonic cursor for dedupe and reconnect replay.
+        """
+        if websocket.client_state != WebSocketState.CONNECTED:
+            return
+        event = WsEvent.model_validate({"type": event_type, "data": data})
+        payload = self._validated_payload(event)
+        payload["event_id"] = event_id
+        await websocket.send_json(payload)
+
+    async def send_event(self, project_id: int, event: dict[str, Any] | WsEvent) -> None:
+        payload = self._validated_payload(event)
         conns = list(self._conns.get(project_id, set()))
         for ws in conns:
             if ws.client_state != WebSocketState.CONNECTED:

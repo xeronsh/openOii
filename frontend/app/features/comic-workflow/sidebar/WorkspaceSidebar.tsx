@@ -129,13 +129,13 @@ export function WorkspaceSidebar({
 	return (
 		<aside
 			className={clsx(
-				"z-[var(--z-sticky)] flex shrink-0 flex-col border-base-content/12 bg-base-100 transition-[width] duration-[var(--duration-normal)]",
+				"z-sticky flex shrink-0 flex-col border-base-content/10 bg-base-100 transition-[width] duration-normal",
 				// <lg：参与布局的普通块（与预览区上下分栏），不再是遮住画布的底部浮层；折叠只在 lg+ 生效
 				"relative h-[min(58vh,520px)] w-full border-t-2 lg:h-full lg:border-t-0",
 				isLeft ? "lg:border-r" : "lg:border-l",
 				collapsed
-					? "lg:w-[var(--workbench-sidebar-collapsed)]"
-					: "lg:w-[var(--workbench-sidebar)]",
+					? "lg:w-sidebar-collapsed"
+					: "lg:w-sidebar",
 			)}
 			aria-label="Agent 工作区"
 			data-shell="agent-column"
@@ -165,7 +165,7 @@ export function WorkspaceSidebar({
 							}}
 							id={tabId(tab.key)}
 							className={clsx(
-								"touch-target-dense flex items-center justify-center gap-1 rounded-[var(--radius-sm)] text-[length:var(--text-2xs)] font-semibold transition-colors duration-[var(--duration-fast)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+								"touch-target-dense flex items-center justify-center gap-1 rounded-sm text-2xs font-semibold transition-colors duration-fast",
 								activeTab === tab.key
 									? "bg-primary text-primary-content"
 									: "text-bc-muted hover:bg-base-200",
@@ -186,7 +186,7 @@ export function WorkspaceSidebar({
 				<button
 					type="button"
 					// <lg 收起后没有任何入口能再展开，因此折叠按钮只在 lg+ 出现
-					className="touch-target-dense hidden items-center justify-center rounded-[var(--radius-sm)] text-bc-muted transition-colors duration-[var(--duration-fast)] hover:bg-base-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 lg:flex"
+					className="touch-target-dense hidden items-center justify-center rounded-sm text-bc-muted transition-colors duration-fast hover:bg-base-200 lg:flex"
 					onClick={() => onCollapsedChange?.(!collapsed)}
 					aria-label={collapsed ? "展开工作区" : "收起工作区"}
 					title={collapsed ? "展开工作区" : "收起工作区"}
@@ -195,7 +195,7 @@ export function WorkspaceSidebar({
 						name="chevron-right"
 						size={13}
 						className={clsx(
-							"transition-transform duration-[var(--duration-fast)]",
+							"transition-transform duration-fast",
 							isLeft
 								? collapsed
 									? ""
@@ -219,7 +219,7 @@ export function WorkspaceSidebar({
 					<div className="flex h-full min-h-0 flex-col">
 						{selectionLabel ? (
 							<div className="shrink-0 border-b border-accent/25 bg-accent/10 px-2 py-1">
-								<p className="m-0 truncate text-[length:var(--text-2xs)] font-bold text-accent">
+								<p className="m-0 truncate text-2xs font-bold text-accent">
 									<span className="font-mono font-normal text-bc-muted">
 										绑定 ·{" "}
 									</span>
@@ -229,6 +229,7 @@ export function WorkspaceSidebar({
 						) : null}
 						<div className="min-h-0 flex-1 overscroll-contain">
 							<ChatPanel
+								projectId={projectId}
 								onSendFeedback={onSendFeedback}
 								onConfirm={onConfirm}
 								onCancel={onCancel}
@@ -306,21 +307,21 @@ function AssetsPanel({ projectId, active }: { projectId: number; active: boolean
 			<div className="border-b border-base-content/10 px-2 py-1.5">
 				<div className="mb-1.5 flex items-center justify-between gap-2">
 					<div className="min-w-0">
-						<p className="m-0 font-mono text-[length:var(--text-2xs)] uppercase tracking-wide text-bc-muted">
+						<p className="m-0 font-mono text-2xs uppercase tracking-wide text-bc-muted">
 							assets
 						</p>
-						<h2 className="m-0 font-heading text-[length:var(--text-sm)] font-bold">
+						<h2 className="m-0 font-heading text-sm font-bold">
 							资产库
 						</h2>
 					</div>
-					<span className="rounded-full border border-base-content/12 bg-base-200 px-2 py-0.5 font-mono text-[length:var(--text-2xs)] tabular-nums text-bc-muted">
+					<span className="rounded-full border border-base-content/10 bg-base-200 px-2 py-0.5 font-mono text-2xs tabular-nums text-bc-muted">
 						{data?.total ?? 0}
 					</span>
 				</div>
 				<input
 					id="workspace-asset-search"
 					name="assetSearch"
-					className="input input-bordered input-sm h-8 min-h-8 w-full bg-base-100 text-[length:var(--text-xs)]"
+					className="input input-bordered input-sm h-8 min-h-8 w-full bg-base-100 text-xs"
 					placeholder="搜索资产"
 					value={search}
 					onChange={(event) => setSearch(event.target.value)}
@@ -331,7 +332,7 @@ function AssetsPanel({ projectId, active }: { projectId: number; active: boolean
 							key={type}
 							type="button"
 							className={clsx(
-								"touch-target-dense h-8 min-h-8 rounded-[var(--radius-sm)] text-[length:var(--text-2xs)] font-semibold transition-colors duration-[var(--duration-fast)]",
+								"touch-target-dense h-8 min-h-8 rounded-sm text-2xs font-semibold transition-colors duration-fast",
 								assetType === type
 									? "bg-primary text-primary-content"
 									: "bg-base-200 text-bc-muted hover:bg-base-300",
@@ -387,7 +388,7 @@ function AssetTile({
 }) {
 	const imageUrl = getStaticUrl(asset.image_url);
 	return (
-		<div className="overflow-hidden rounded-[var(--radius-md)] border-2 border-base-content/12 bg-base-100 shadow-brutal-sm">
+		<div className="overflow-hidden rounded-md border-2 border-base-content/10 bg-base-100 shadow-brutal-sm">
 			<div className="aspect-[4/3] bg-base-200">
 				{imageUrl ? (
 					<img
@@ -404,10 +405,10 @@ function AssetTile({
 			</div>
 			<div className="p-1.5">
 				<div className="flex items-center gap-1">
-					<span className="rounded-full border border-base-content/12 bg-base-200 px-1.5 py-px font-mono text-[length:var(--text-2xs)] font-bold text-bc-muted">
+					<span className="rounded-full border border-base-content/10 bg-base-200 px-1.5 py-px font-mono text-2xs font-bold text-bc-muted">
 						{asset.asset_type === "character" ? "角色" : "场景"}
 					</span>
-					<h3 className="m-0 min-w-0 flex-1 truncate font-heading text-[length:var(--text-2xs)] font-bold">
+					<h3 className="m-0 min-w-0 flex-1 truncate font-heading text-2xs font-bold">
 						{asset.name}
 					</h3>
 				</div>
@@ -415,7 +416,7 @@ function AssetTile({
 					<Button
 						variant="ghost"
 						size="sm"
-						className="!h-7 !min-h-7 gap-1 !px-1.5 text-[length:var(--text-2xs)]"
+						className="!h-7 !min-h-7 gap-1 !px-1.5 text-2xs"
 						disabled={busy}
 						onClick={onUse}
 					>

@@ -1,0 +1,19 @@
+# 构建上下文是仓库根（backend Dockerfile 需要 engine/ 源码一起打进镜像）。
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/dist
+**/playwright-report
+**/test-results
+.git
+.pi-glla
+.impeccable
+docs
+doc
+frontend
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/.env

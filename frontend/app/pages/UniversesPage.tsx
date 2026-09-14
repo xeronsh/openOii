@@ -114,12 +114,12 @@ export function UniversesPage() {
 
 					{/* 服务故障时不渲染空态，避免把加载失败说成「还没有数据」 */}
 					{!isLoading && isError && (
-						<div className="flex min-h-[10rem] flex-col items-center justify-center gap-3 rounded-[var(--radius-lg)] border-2 border-error/25 bg-error/5 px-3 text-center">
+						<div className="flex min-h-[10rem] flex-col items-center justify-center gap-3 rounded-lg border-2 border-error/25 bg-error/5 px-3 text-center">
 							<div>
-								<p className="m-0 font-heading text-[length:var(--text-md)] font-bold text-error">
+								<p className="m-0 font-heading text-md font-bold text-error">
 									宇宙列表加载失败
 								</p>
-								<p className="m-0 mt-0.5 text-[length:var(--text-xs)] text-bc-muted">
+								<p className="m-0 mt-0.5 text-xs text-bc-muted">
 									服务暂时不可用，数据还在，稍后重试
 								</p>
 							</div>
@@ -150,7 +150,7 @@ export function UniversesPage() {
 					)}
 
 					{!isLoading && !isError && universes.length > 0 && (
-						<div className="grid grid-cols-1 gap-[var(--rhythm-block)] sm:grid-cols-2 lg:grid-cols-3">
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 							{universes.map((u) => (
 								<UniverseCard key={u.id} universe={u} onDelete={setDeleteTarget} />
 							))}

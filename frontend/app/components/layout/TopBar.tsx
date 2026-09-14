@@ -16,7 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { projectsApi, universesApi } from "~/services/api";
 import { useThemeStore } from "~/stores/themeStore";
 import { useSettingsStore } from "~/stores/settingsStore";
-import { useEditorStore, useShallow } from "~/stores/editorStore";
+import { projectQueryKeys } from "~/query/queryKeys";
 import type { Project } from "~/types";
 import { getProjectStatusMeta } from "~/features/projects/statusMeta";
 import { Button } from "~/components/ui/Button";
@@ -55,7 +55,7 @@ function ProjectDropdown({ currentId }: { currentId?: number }) {
 				<button
 					type="button"
 					onClick={() => setOpen(!open)}
-					className="touch-target-dense flex max-w-[6rem] items-center gap-1 rounded-[var(--radius-md)] px-1.5 text-sm font-heading font-bold transition-colors duration-[var(--duration-fast)] hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:max-w-[14rem]"
+					className="touch-target-dense flex max-w-[6rem] items-center gap-1 rounded-md px-1.5 text-sm font-heading font-bold transition-colors duration-fast hover:bg-base-200 sm:max-w-[14rem]"
 					aria-expanded={open}
 					aria-haspopup="listbox"
 				>
@@ -67,7 +67,7 @@ function ProjectDropdown({ currentId }: { currentId?: number }) {
 						{currentTitle}
 					</span>
 					<ChevronDownIcon
-						className={`h-3 w-3 flex-shrink-0 transition-transform duration-[var(--duration-fast)] ${open ? "rotate-180" : ""}`}
+						className={`h-3 w-3 flex-shrink-0 transition-transform duration-fast ${open ? "rotate-180" : ""}`}
 						aria-hidden="true"
 					/>
 				</button>
@@ -75,14 +75,14 @@ function ProjectDropdown({ currentId }: { currentId?: number }) {
 
 			{open && (
 				<div
-					className="absolute left-0 top-full z-[var(--z-dropdown)] mt-1 max-h-80 w-64 overflow-y-auto overscroll-contain rounded-[var(--radius-lg)] border-2 border-base-content/15 bg-base-200 py-1 shadow-comic"
+					className="absolute left-0 top-full z-dropdown mt-1 max-h-80 w-64 overflow-y-auto overscroll-contain rounded-lg border-2 border-base-content/15 bg-base-200 py-1 shadow-comic"
 					role="listbox"
 					aria-label="项目列表"
 				>
 					<Link
 						to="/projects"
 						onClick={() => setOpen(false)}
-						className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-bc-muted transition-colors duration-[var(--duration-fast)] hover:bg-base-300"
+						className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-bc-muted transition-colors duration-fast hover:bg-base-300"
 					>
 						<RectangleStackIcon className="h-3 w-3" aria-hidden="true" />
 						全部项目
@@ -97,7 +97,7 @@ function ProjectDropdown({ currentId }: { currentId?: number }) {
 								onClick={() => setOpen(false)}
 								role="option"
 								aria-selected={p.id === currentId}
-								className={`flex items-center justify-between px-3 py-1.5 text-xs transition-colors duration-[var(--duration-fast)] hover:bg-base-300 ${
+								className={`flex items-center justify-between px-3 py-1.5 text-xs transition-colors duration-fast hover:bg-base-300 ${
 									p.id === currentId
 										? "bg-primary/10 font-bold text-primary-ink"
 										: ""
@@ -105,7 +105,7 @@ function ProjectDropdown({ currentId }: { currentId?: number }) {
 							>
 								<span className="min-w-0 flex-1 truncate">{p.title}</span>
 								<span
-									className={`ml-1.5 flex-shrink-0 font-mono text-[length:var(--text-2xs)] tabular-nums ${st.textCls}`}
+									className={`ml-1.5 flex-shrink-0 font-mono text-2xs tabular-nums ${st.textCls}`}
 								>
 									{st.label}
 								</span>
@@ -116,7 +116,7 @@ function ProjectDropdown({ currentId }: { currentId?: number }) {
 					<Link
 						to="/"
 						onClick={() => setOpen(false)}
-						className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-primary-ink transition-colors duration-[var(--duration-fast)] hover:bg-base-300"
+						className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-primary-ink transition-colors duration-fast hover:bg-base-300"
 					>
 						<PlusIcon className="h-3 w-3" aria-hidden="true" />
 						新建项目
@@ -127,14 +127,15 @@ function ProjectDropdown({ currentId }: { currentId?: number }) {
 	);
 }
 
-function UniverseChip() {
-	const { universeId, chapterNumber, chapterTitle } = useEditorStore(
-		useShallow((s) => ({
-			universeId: s.projectUniverseId,
-			chapterNumber: s.projectChapterNumber,
-			chapterTitle: s.projectChapterTitle,
-		})),
-	);
+function UniverseChip({ projectId }: { projectId: number }) {
+	const { data: project } = useQuery({
+		queryKey: projectQueryKeys.project(projectId),
+		queryFn: () => projectsApi.get(projectId),
+		enabled: projectId > 0,
+	});
+	const universeId = project?.universe_id ?? null;
+	const chapterNumber = project?.chapter_number ?? null;
+	const chapterTitle = project?.chapter_title ?? null;
 
 	const { data: universe } = useQuery({
 		queryKey: ["universe-chip", universeId],
@@ -153,7 +154,7 @@ function UniverseChip() {
 	return (
 		<Link
 			to={`/universes/${universeId}`}
-			className="touch-target-dense hidden max-w-[11rem] items-center gap-1 truncate rounded-full border border-primary/25 bg-primary/10 px-2 text-[length:var(--text-2xs)] font-bold text-primary-ink transition-colors hover:bg-primary/15 sm:inline-flex"
+			className="touch-target-dense hidden max-w-[11rem] items-center gap-1 truncate rounded-full border border-primary/25 bg-primary/10 px-2 text-2xs font-bold text-primary-ink transition-colors hover:bg-primary/15 sm:inline-flex"
 			title={chapterTitle || universe?.name || "IP 宇宙"}
 		>
 			<SparklesIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
@@ -178,10 +179,10 @@ function NavLink({
 			to={to}
 			aria-current={active ? "page" : undefined}
 			className={clsx(
-				"touch-target-dense inline-flex h-8 items-center gap-1 rounded-[var(--radius-md)] px-2 text-[length:var(--text-xs)] font-bold transition-colors duration-[var(--duration-fast)]",
+				"touch-target-dense inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-bold transition-colors duration-fast",
 				active
 					? // 文字用 primary-ink 保证可读，底部内阴影提供颜色之外的第二视觉通道
-						"bg-primary/12 text-primary-ink shadow-[inset_0_-3px_0_0_oklch(var(--p))]"
+						"bg-primary/10 text-primary-ink shadow-[inset_0_-3px_0_0_oklch(var(--p))]"
 					: "text-bc-muted hover:bg-base-200 hover:text-base-content",
 			)}
 		>
@@ -198,7 +199,7 @@ export function TopBar({ projectId }: TopBarProps) {
 	const { pathname } = useLocation();
 
 	const chromeBtn =
-		"touch-target-dense !h-8 !min-h-8 gap-1 !px-2 transition-colors duration-[var(--duration-fast)]";
+		"touch-target-dense !h-8 !min-h-8 gap-1 !px-2 transition-colors duration-fast";
 
 	const homeActive = pathname === "/";
 	const projectsActive =
@@ -207,13 +208,13 @@ export function TopBar({ projectId }: TopBarProps) {
 
 	return (
 		<header
-			className="chrome-row z-[var(--z-fixed)] gap-1.5 border-b border-base-content/12 bg-base-100 px-2 sm:gap-2 sm:px-3"
+			className="chrome-row z-fixed gap-1.5 border-b border-base-content/10 bg-base-100 px-2 sm:gap-2 sm:px-3"
 			data-shell="topbar"
 		>
 			<div className="flex min-w-0 items-center gap-1.5">
 				<Link
 					to="/"
-					className="touch-target-dense inline-flex items-center rounded-[var(--radius-md)] px-1.5 font-comic text-base tracking-wide text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:text-lg sm:font-bold sm:tracking-wider"
+					className="touch-target-dense inline-flex items-center rounded-md px-1.5 font-comic text-base tracking-wide text-primary sm:text-lg sm:font-bold sm:tracking-wider"
 					aria-label="openOii 首页"
 				>
 					openOii
@@ -225,7 +226,7 @@ export function TopBar({ projectId }: TopBarProps) {
 							/
 						</span>
 						<ProjectDropdown currentId={projectId} />
-						<UniverseChip />
+						<UniverseChip projectId={projectId} />
 					</>
 				) : null}
 

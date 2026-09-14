@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getStaticUrl } from "./api";
+import { getStaticUrl, runsApi } from "./api";
 
 vi.mock("~/utils/runtimeBase", () => ({
 	getApiBase: () => "http://localhost:18765",
@@ -176,27 +176,42 @@ describe("projectsApi", () => {
 		);
 	});
 
-	it("generate sends POST", async () => {
+	it("startRun sends POST to the runs collection", async () => {
 		mockFetch.mockResolvedValueOnce(
 			new Response(JSON.stringify({ id: 1, status: "running" }), {
 				status: 200,
 			}),
 		);
-		await projectsApi.generate(1);
+		await projectsApi.startRun(1);
 		expect(mockFetch).toHaveBeenCalledWith(
-			expect.stringContaining("/api/v1/projects/1/generate"),
+			expect.stringContaining("/api/v1/projects/1/runs"),
 			expect.objectContaining({ method: "POST" }),
 		);
 	});
 
-	it("cancel sends POST", async () => {
+	it("cancel addresses a run by id", async () => {
 		mockFetch.mockResolvedValueOnce(
 			new Response(JSON.stringify({ status: "cancelled", cancelled: 1 }), {
 				status: 200,
 			}),
 		);
-		const result = await projectsApi.cancel(1);
+		const result = await runsApi.cancel(42);
 		expect(result).toEqual({ status: "cancelled", cancelled: 1 });
+		expect(mockFetch).toHaveBeenCalledWith(
+			expect.stringContaining("/api/v1/runs/42/cancel"),
+			expect.objectContaining({ method: "POST" }),
+		);
+	});
+
+	it("resume addresses a run by id", async () => {
+		mockFetch.mockResolvedValueOnce(
+			new Response(JSON.stringify({ id: 42, status: "running" }), { status: 200 }),
+		);
+		await runsApi.resume(42);
+		expect(mockFetch).toHaveBeenCalledWith(
+			expect.stringContaining("/api/v1/runs/42/resume"),
+			expect.objectContaining({ method: "POST" }),
+		);
 	});
 
 	it("feedback sends POST with content", async () => {
@@ -205,7 +220,7 @@ describe("projectsApi", () => {
 		);
 		await projectsApi.feedback(1, "good");
 		expect(mockFetch).toHaveBeenCalledWith(
-			expect.stringContaining("/api/v1/projects/1/feedback"),
+			expect.stringContaining("/api/v1/projects/1/runs/feedback"),
 			expect.objectContaining({ method: "POST" }),
 		);
 	});

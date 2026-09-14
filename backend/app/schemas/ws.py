@@ -194,6 +194,7 @@ class BlockingClipPayload(BaseModel):
 
 class ProjectUpdatedPayload(BaseModel):
     id: int
+    revision: int | None = None
     title: str | None = None
     story: str | None = None
     style: str | None = None

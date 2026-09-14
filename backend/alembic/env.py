@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from app.models import agent_run, artifact, config_item, consistency_report, message, project, run, stage, style_template  # noqa: F401,E402
+from app.models import agent_run, config_item, consistency_report, message, project, style_template  # noqa: F401,E402
 
 config = context.config
 
@@ -37,21 +37,14 @@ def _database_url() -> str:
 def _sync_driver_url(database_url: str) -> str:
     """Return a URL usable by Alembic's synchronous migration engine.
 
-    The application runtime uses async SQLAlchemy drivers such as
-    ``postgresql+asyncpg`` and ``sqlite+aiosqlite``. Alembic's env.py builds a
-    synchronous engine with ``engine_from_config``; feeding it an async driver
-    raises ``MissingGreenlet`` before migrations can run.
+    The application runtime uses the async ``sqlite+aiosqlite`` driver. Alembic's
+    env.py builds a synchronous engine with ``engine_from_config``; feeding it an
+    async driver raises ``MissingGreenlet`` before migrations can run.
     """
     url = make_url(database_url)
-    drivername = url.drivername
-    replacements = {
-        "postgresql+asyncpg": "postgresql+psycopg2",
-        "sqlite+aiosqlite": "sqlite+pysqlite",
-    }
-    sync_driver = replacements.get(drivername)
-    if sync_driver is None:
-        return database_url
-    return url.set(drivername=sync_driver).render_as_string(hide_password=False)
+    if url.drivername == "sqlite+aiosqlite":
+        return url.set(drivername="sqlite+pysqlite").render_as_string(hide_password=False)
+    return database_url
 
 
 def run_migrations_offline() -> None:
@@ -80,20 +73,9 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         # Ensure alembic_version.version_num column is wide enough for long revision IDs.
         # Alembic creates this table with VARCHAR(32) by default, but our revision
-        # IDs (e.g. "0003_phase7_project_provider_contracts") exceed 32 chars.
-        # We either alter the existing PostgreSQL column, or pre-create the
-        # table with a wider column. Tests run migrations against SQLite, so
-        # table existence must use SQLAlchemy inspection instead of
-        # PostgreSQL-only information_schema.
-        if inspect(connection).has_table("alembic_version"):
-            if connection.dialect.name == "postgresql":
-                connection.execute(
-                    text(
-                        "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"
-                    )
-                )
-                connection.commit()
-        else:
+        # IDs (e.g. "0003_phase7_project_provider_contracts") exceed 32 chars, so
+        # pre-create it with a wider column before Alembic auto-creates its own.
+        if not inspect(connection).has_table("alembic_version"):
             # Pre-create alembic_version with a wider version_num column before
             # Alembic auto-creates it with VARCHAR(32).
             connection.execute(

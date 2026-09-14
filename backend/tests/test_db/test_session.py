@@ -23,7 +23,6 @@ async def test_init_db_runs_schema_check_and_config(monkeypatch):
         "ensure_initialized": False,
         "ensure_provider_configs": False,
         "apply_overrides": False,
-        "checkpointer": False,
     }
 
     class FakeConfigService:
@@ -65,10 +64,6 @@ async def test_init_db_runs_schema_check_and_config(monkeypatch):
     def fake_alembic_upgrade():
         calls["alembic_upgrade"] = True
     monkeypatch.setattr(session_module, "_run_alembic_upgrade", fake_alembic_upgrade)
-    async def fake_checkpointer(url):
-        calls["checkpointer"] = True
-    monkeypatch.setattr(session_module, "ensure_postgres_checkpointer_setup", fake_checkpointer)
-
     await session_module.init_db()
 
     assert calls == {
@@ -76,7 +71,6 @@ async def test_init_db_runs_schema_check_and_config(monkeypatch):
         "ensure_initialized": True,
         "ensure_provider_configs": True,
         "apply_overrides": True,
-        "checkpointer": True,
     }
 
 

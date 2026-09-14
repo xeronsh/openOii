@@ -277,7 +277,7 @@ async def test_test_connection_rejects_unknown_override_field(async_client):
     )
 
     assert res.status_code == 400
-    assert "不允许覆盖配置字段" in res.json()["detail"]
+    assert "不允许覆盖配置字段" in res.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -291,7 +291,7 @@ async def test_test_connection_rejects_unsafe_base_url(async_client):
     )
 
     assert res.status_code == 400
-    assert "不安全的 URL" in res.json()["detail"]
+    assert "不安全的 URL" in res.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

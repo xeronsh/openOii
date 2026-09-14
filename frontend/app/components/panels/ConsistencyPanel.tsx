@@ -321,10 +321,10 @@ export function ConsistencyPanel({ projectId, onClose }: ConsistencyPanelProps) 
 		}));
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-			<div className="bg-base-100 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+		<div className="fixed inset-0 z-modal flex items-center justify-center bg-neutral/70">
+			<div className="bg-base-100 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
 				{/* Header */}
-				<div className="sticky top-0 bg-base-100 z-10 flex items-center justify-between p-6 border-b border-base-content/10">
+				<div className="sticky top-0 z-sticky flex items-center justify-between border-b border-base-content/10 bg-base-100 p-6">
 					<div>
 						<h2 className="text-xl font-bold">角色一致性评估</h2>
 						<p className="text-sm text-bc-muted mt-1">

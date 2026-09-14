@@ -47,7 +47,6 @@
   .card-doodle,
   .card-comic,
   .btn-doodle,
-  .btn-comic,
   .input-doodle,
   a,
   button,
@@ -56,7 +55,7 @@
   textarea,
   summary {
     transition-property: background-color, border-color, color, fill, stroke;
-    transition-duration: 200ms;
+    transition-duration: var(--duration-normal);
     transition-timing-function: ease-in-out;
   }
 
@@ -96,7 +95,7 @@
 
 @layer components {
   .card-doodle {
-    @apply bg-base-100 border-3 border-base-content/30 rounded-xl transition-all duration-200;
+    @apply bg-base-100 border-3 border-base-content/30 rounded-xl transition-all duration-normal;
     box-shadow: 4px 4px 0px 0px oklch(var(--bc) / 0.3);
   }
   .card-doodle:hover {
@@ -105,7 +104,7 @@
   }
 
   .card-comic {
-    @apply bg-base-100 border-3 border-base-content/40 rounded-lg transition-all duration-150;
+    @apply bg-base-100 border-3 border-base-content/40 rounded-lg transition-all duration-fast;
     box-shadow: 4px 4px 0px 0px oklch(var(--cmyk-cyan) / 0.7), 7px 7px 0px 0px oklch(var(--cmyk-magenta) / 0.5);
   }
   .card-comic:hover {
@@ -118,7 +117,7 @@
   }
 
   .btn-doodle {
-    @apply border-3 border-base-content/30 rounded-lg font-bold uppercase tracking-wide transition-all duration-150 flex items-center whitespace-nowrap gap-1;
+    @apply border-3 border-base-content/30 rounded-lg font-bold uppercase tracking-wide transition-all duration-fast flex items-center whitespace-nowrap gap-1;
     box-shadow: 4px 4px 0px 0px oklch(var(--bc) / 0.3);
   }
   .btn-doodle:hover:not(:disabled) {
@@ -131,19 +130,6 @@
   }
   .btn-doodle:disabled {
     @apply cursor-not-allowed;
-  }
-
-  .btn-comic {
-    @apply border-3 border-base-content/40 rounded-lg font-bold tracking-wide transition-all duration-150;
-    box-shadow: 4px 4px 0px 0px oklch(var(--cmyk-cyan) / 0.7), 7px 7px 0px 0px oklch(var(--cmyk-magenta) / 0.5);
-  }
-  .btn-comic:hover:not(:disabled) {
-    @apply -translate-x-0.5 -translate-y-0.5;
-    box-shadow: 5px 5px 0px 0px oklch(var(--cmyk-cyan) / 0.8), 9px 9px 0px 0px oklch(var(--cmyk-magenta) / 0.6);
-  }
-  .btn-comic:active:not(:disabled) {
-    @apply translate-x-1 translate-y-1;
-    box-shadow: none;
   }
 
   .input-doodle {
@@ -160,16 +146,8 @@
     background-size: 7px 7px;
   }
 
-  .halftone-bg-dense {
-    background-image: radial-gradient(circle, oklch(var(--bc) / 0.1) 1.4px, transparent 1.4px);
-    background-size: 5px 5px;
-  }
-
   [data-theme="doodle-dark"] .halftone-bg {
     background-image: radial-gradient(circle, oklch(var(--bc) / 0.2) 1.2px, transparent 1.2px);
-  }
-  [data-theme="doodle-dark"] .halftone-bg-dense {
-    background-image: radial-gradient(circle, oklch(var(--bc) / 0.25) 1.4px, transparent 1.4px);
   }
   [data-theme="doodle-dark"] .halftone-bg-accent {
     background-image: radial-gradient(circle, oklch(var(--p) / 0.3) 1.2px, transparent 1.2px);
@@ -191,11 +169,11 @@
   }
 
   .workbench-canvas-frame {
-    background-image: radial-gradient(circle, oklch(var(--bc) / 0.06) 1px, transparent 1px);
-    background-size: 12px 12px;
+    background-image: radial-gradient(circle, oklch(var(--bc) / 0.05) 1.2px, transparent 1.2px);
+    background-size: 7px 7px;
   }
   [data-theme="doodle-dark"] .workbench-canvas-frame {
-    background-image: radial-gradient(circle, oklch(var(--bc) / 0.14) 1px, transparent 1px);
+    background-image: radial-gradient(circle, oklch(var(--bc) / 0.15) 1.2px, transparent 1.2px);
   }
 
   .speech-bubble {
@@ -239,129 +217,13 @@
      padding-bottom: 8px;
    }
 
-  .doodle-star::before {
-     content: "✦";
-    @apply absolute -top-2 -right-2 text-primary text-xl animate-pulse;
-   }
-
-  .doodle-circle {
-    @apply relative;
-   }
-  .doodle-circle::after {
-    content: "";
-    @apply absolute -inset-2 border-2 border-dashed border-secondary rounded-full opacity-50;
-   }
 }
 
 @layer utilities {
- /* 手绘边框效果 */
- .border-sketch {
-    border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
-  }
-
- /* 抖动动画 */
- .animate-wiggle {
-    animation: wiggle 0.3s ease-in-out infinite;
-    will-change: transform;
-  }
-
- @keyframes wiggle {
-    0%, 100% { transform: rotate(-1deg); }
-    50% { transform: rotate(1deg); }
-  }
-
- /* 弹跳进入 */
- .animate-bounce-in {
-    animation: bounce-in 0.5s cubic-bezier(0.25, 1, 0.5, 1);
-    will-change: transform, opacity;
-  }
-
-  @keyframes bounce-in {
-     0% { transform: scale(0) rotate(-5deg); opacity: 0; }
-     60% { transform: scale(1.02) rotate(0.5deg); }
-     100% { transform: scale(1) rotate(0deg); opacity: 1; }
-   }
-
- /* 手绘描边动画 */
- .animate-draw-in {
-    animation: draw-in 0.8s cubic-bezier(0.25, 1, 0.5, 1);
-    will-change: transform, opacity;
-  }
-
- @keyframes draw-in {
-    0% {
-      opacity: 0;
-      transform: scale(0.8) rotate(-3deg);
-      filter: blur(4px);
-    }
-    50% {
-      opacity: 0.5;
-      transform: scale(1.02) rotate(1deg);
-      filter: blur(2px);
-    }
-    100% {
-      opacity: 1;
-      transform: scale(1) rotate(0deg);
-      filter: blur(0);
-    }
-  }
-
- /* 涂鸦浮现 */
- .animate-doodle-pop {
-    animation: doodle-pop 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: transform, opacity;
-  }
-
- @keyframes doodle-pop {
-    0% {
-      transform: scale(0) rotate(-12deg);
-      opacity: 0;
-    }
-    70% {
-      transform: scale(1.08) rotate(3deg);
-    }
-    100% {
-      transform: scale(1) rotate(0deg);
-      opacity: 1;
-    }
-  }
-
- /* 水平弹跳动画 */
- .animate-bounce-x {
-    animation: bounce-x 1s infinite;
-    will-change: transform;
-  }
-
- @keyframes bounce-x {
-    0%, 100% { transform: translateX(0); }
-    50% { transform: translateX(-8px); }
-  }
-
- /* 淡入动画 */
- .animate-fade-in {
-    animation: fade-in 0.3s cubic-bezier(0.25, 1, 0.5, 1);
-    will-change: opacity, transform;
-  }
-
- @keyframes fade-in {
-    0% { opacity: 0; transform: translateY(-4px); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
-
- /* 消息滑入动画 */
- .animate-slide-in-left {
-    animation: slide-in-left 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    will-change: opacity, transform;
-  }
 
  .animate-slide-in-right {
     animation: slide-in-right 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     will-change: opacity, transform;
-  }
-
- @keyframes slide-in-left {
-    0% { opacity: 0; transform: translateX(-16px); }
-    100% { opacity: 1; transform: translateX(0); }
   }
 
  @keyframes slide-in-right {
@@ -369,59 +231,10 @@
     100% { opacity: 1; transform: translateX(0); }
   }
 
- /* 进度条闪光效果 */
- .animate-shimmer {
-    animation: shimmer 2s infinite;
-    will-change: opacity;
-  }
-
- @keyframes shimmer {
-    0% { opacity: 0; }
-    50% { opacity: 1; }
-    100% { opacity: 0; }
-  }
-
- /* 成功庆祝动画 */
- .animate-success-celebration {
-    animation: success-celebration 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-    will-change: transform;
-  }
-
- @keyframes success-celebration {
-    0% { transform: scale(1); }
-    25% { transform: scale(1.1) rotate(5deg); }
-    50% { transform: scale(0.95) rotate(-5deg); }
-    75% { transform: scale(1.05) rotate(3deg); }
-    100% { transform: scale(1) rotate(0deg); }
-  }
-
- /* 脉冲高亮 */
- .animate-pulse-highlight {
-    animation: pulse-highlight 0.8s cubic-bezier(0.25, 1, 0.5, 1);
-  }
-
- @keyframes pulse-highlight {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--color-primary-rgb), 0); }
-    50% { box-shadow: 0 0 0 8px rgba(var(--color-primary-rgb), 0.3); }
-  }
-
- /* 触摸目标最小尺寸 */
- .touch-target {
-   @apply min-w-[44px] min-h-[44px];
-  }
 }
 
- /* 减少动画偏好 */
+ /* 减少动画偏好（仅剩 animate-slide-in-right 在用）*/
 @media (prefers-reduced-motion: reduce) {
- .animate-wiggle,
- .animate-bounce-in,
- .animate-bounce-x,
- .animate-fade-in,
- .animate-slide-in-left,
- .animate-slide-in-right,
- .animate-shimmer {
-    animation: none;
-  }
 
  [data-theme],
  .btn,
@@ -433,17 +246,6 @@
  textarea {
     transition-duration: 0.01ms !important;
   }
-}
-
-/* 键盘焦点指示器 */
-:focus-visible {
-  outline: 2px solid oklch(var(--p));
-  outline-offset: 2px;
-}
-
-.btn:focus-visible {
-  outline: 2px solid oklch(var(--p));
-  outline-offset: 2px;
 }
 
 /* ========== tldraw 无限画布样式覆盖 ========== */
@@ -497,13 +299,8 @@
   display: none !important;
 }
 
-/* 禁用 tldraw 内部的 hover 效果，使用自定义的 card-doodle hover */
-.infinite-canvas-container .tl-shape:hover {
-  /* 不添加额外效果 */
-}
-
-/* 确保 Modal 在 tldraw 之上 */
+/* 确保 Modal 在 tldraw 之上（tldraw 内部最高 z-index 为 10） */
 .infinite-canvas-container ~ [class*="modal"],
 .infinite-canvas-container ~ [class*="fixed"] {
-  z-index: 9999 !important;
+  z-index: var(--z-corner) !important;
 }

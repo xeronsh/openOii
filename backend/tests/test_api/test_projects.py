@@ -365,7 +365,7 @@ async def test_create_project_rejects_unknown_universe_id(async_client):
     )
 
     assert res.status_code == 404
-    assert res.json()["detail"] == "Universe not found"
+    assert res.json()["error"]["message"] == "Universe not found"
 
 
 @pytest.mark.asyncio
@@ -512,7 +512,7 @@ async def test_get_final_video_no_video_url(async_client, test_session):
 
     res = await async_client.get(f"/api/v1/projects/{project.id}/final-video")
     assert res.status_code == 404
-    assert "Final video not found" in res.json()["detail"]
+    assert "Final video not found" in res.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -566,7 +566,7 @@ async def test_upload_reference_image_rejects_non_image(async_client, test_sessi
     )
 
     assert res.status_code == 400
-    assert "Only image files" in res.json()["detail"]
+    assert "Only image files" in res.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

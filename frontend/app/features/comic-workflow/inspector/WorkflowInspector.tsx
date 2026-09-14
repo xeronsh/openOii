@@ -12,7 +12,13 @@ import {
 	shotsApi,
 	universesApi,
 } from "~/services/api";
-import { useEditorStore } from "~/stores/editorStore";
+import {
+	removeCharacterFromCache,
+	removeShotFromCache,
+	upsertCharacterInCache,
+	upsertShotInCache,
+} from "~/query/applyServerEvent";
+import { projectQueryKeys } from "~/query/queryKeys";
 import type {
 	Character,
 	CharacterUpdatePayload,
@@ -91,13 +97,13 @@ export function WorkflowInspector({
 	return (
 		<div className="flex h-full min-h-0 flex-col bg-base-100" data-shell="inspector">
 			<div className="border-b border-base-content/10 px-2 py-1.5">
-				<p className="m-0 font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted">
+				<p className="m-0 font-mono text-2xs uppercase text-bc-muted">
 					{selectedNode.kind}
 				</p>
-				<h2 className="m-0 truncate font-heading text-[length:var(--text-sm)] font-bold">
+				<h2 className="m-0 truncate font-heading text-sm font-bold">
 					{selectedNode.title}
 				</h2>
-				<p className="m-0 truncate text-[length:var(--text-2xs)] text-bc-muted">
+				<p className="m-0 truncate text-2xs text-bc-muted">
 					{selectedNode.subtitle}
 				</p>
 			</div>
@@ -107,7 +113,7 @@ export function WorkflowInspector({
 					<button
 						key={tab}
 						type="button"
-						className={`touch-target-dense flex-1 rounded-[var(--radius-sm)] text-[length:var(--text-2xs)] font-semibold transition-colors duration-[var(--duration-fast)] ${
+						className={`touch-target-dense flex-1 rounded-sm text-2xs font-semibold transition-colors duration-fast ${
 							activeTab === tab
 								? "bg-primary text-primary-content"
 								: "text-bc-muted hover:bg-base-200"
@@ -207,9 +213,9 @@ function FieldList({ items }: { items: Array<[string, string | number]> }) {
 			{items.map(([label, value]) => (
 				<div
 					key={label}
-					className="flex items-start justify-between gap-3 border-b border-base-content/8 pb-1.5 text-[length:var(--text-sm)]"
+					className="flex items-start justify-between gap-3 border-b border-base-content/10 pb-1.5 text-sm"
 				>
-					<span className="font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted">
+					<span className="font-mono text-2xs uppercase text-bc-muted">
 						{label}
 					</span>
 					<span className="min-w-0 text-right text-base-content/75">{value}</span>
@@ -284,12 +290,15 @@ function ProjectDraftForm({
 		setSaving(true);
 		try {
 			const updated = await projectsApi.update(projectId, {
+				expected_revision: project.revision,
 				title: title.trim() || project.title,
 				story: story.trim() || null,
 			});
-			const store = useEditorStore.getState();
-			store.setProjectTitle(updated.title ?? null);
-			store.setProjectStory(updated.story ?? null);
+			queryClient.setQueryData(
+				projectQueryKeys.project(projectId),
+				(current: typeof project | undefined) =>
+					current ? { ...current, title: updated.title, story: updated.story } : current,
+			);
 			queryClient.invalidateQueries({ queryKey: ["project", projectId] });
 			queryClient.invalidateQueries({ queryKey: ["projects"] });
 			toast.success({ title: "Brief", message: "已保存" });
@@ -336,11 +345,12 @@ function CharacterDraftForm({
 		setSaving(true);
 		try {
 			const updated = await charactersApi.update(character.id, {
+				expected_revision: character.revision,
 				name: textOrNull(draft.name),
 				description: textOrNull(draft.description),
 				visual_notes: textOrNull(draft.visual_notes),
 			});
-			useEditorStore.getState().updateCharacter(updated);
+			upsertCharacterInCache(queryClient, character.project_id, updated);
 			queryClient.invalidateQueries({ queryKey: ["characters", character.project_id] });
 			toast.success({ title: "角色", message: "已保存" });
 		} catch (error) {
@@ -419,6 +429,7 @@ function ShotDraftForm({ shot, disabled }: { shot: Shot; disabled: boolean }) {
 		setSaving(true);
 		try {
 			const updated = await shotsApi.update(shot.id, {
+				expected_revision: shot.revision,
 				description: textOrNull(draft.description),
 				scene: textOrNull(draft.scene),
 				action: textOrNull(draft.action),
@@ -428,7 +439,7 @@ function ShotDraftForm({ shot, disabled }: { shot: Shot; disabled: boolean }) {
 				image_prompt: textOrNull(draft.image_prompt),
 				prompt: textOrNull(draft.prompt),
 			});
-			useEditorStore.getState().updateShot(updated);
+			upsertShotInCache(queryClient, shot.project_id, updated);
 			queryClient.invalidateQueries({ queryKey: ["shots", shot.project_id] });
 			toast.success({ title: "镜头", message: "已保存" });
 		} catch (error) {
@@ -536,18 +547,18 @@ function MultiShotActions({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col bg-base-100 p-2" data-shell="inspector-multi">
-			<p className="m-0 font-mono text-[length:var(--text-2xs)] uppercase tracking-wide text-bc-muted">
+			<p className="m-0 font-mono text-2xs uppercase tracking-wide text-bc-muted">
 				multi-shot
 			</p>
-			<h2 className="m-0 font-heading text-[length:var(--text-sm)] font-bold">
+			<h2 className="m-0 font-heading text-sm font-bold">
 				已选 {shotIds.length} 格
 			</h2>
-			<p className="m-0 mt-1 text-[length:var(--text-2xs)] text-bc-muted">
+			<p className="m-0 mt-1 text-2xs text-bc-muted">
 				批量只动选中格 · 不改其他分镜
 			</p>
 			<div className="mt-2 space-y-1.5">
 				{structureLocked ? (
-					<div className="rounded-[var(--radius-md)] border border-warning/25 bg-warning/10 px-2 py-1.5 text-[length:var(--text-2xs)] text-warning">
+					<div className="rounded-md border border-warning/25 bg-warning/10 px-2 py-1.5 text-2xs text-warning">
 						生成运行中，批量操作已锁定。
 					</div>
 				) : null}
@@ -657,10 +668,10 @@ function ActionsTab({
 		runAction("approve", async () => {
 			if (node.kind === "character") {
 				const updated = await charactersApi.approve(entityId);
-				useEditorStore.getState().updateCharacter(updated);
+				upsertCharacterInCache(queryClient, updated.project_id, updated);
 			} else {
 				const updated = await shotsApi.approve(entityId);
-				useEditorStore.getState().updateShot(updated);
+				upsertShotInCache(queryClient, updated.project_id, updated);
 			}
 			toast.success({ title: "审阅", message: "已批准" });
 		});
@@ -725,10 +736,10 @@ function ActionsTab({
 			if (!confirmed) return;
 			if (node.kind === "character") {
 				await charactersApi.delete(entityId);
-				useEditorStore.getState().removeCharacter(entityId);
+				removeCharacterFromCache(queryClient, projectId, entityId);
 			} else {
 				await shotsApi.delete(entityId);
-				useEditorStore.getState().removeShot(entityId);
+				removeShotFromCache(queryClient, projectId, entityId);
 			}
 			toast.success({ title: "删除", message: "已删除" });
 		});
@@ -739,12 +750,12 @@ function ActionsTab({
 	return (
 		<ActionStack>
 			{structureLocked ? (
-				<div className="rounded-[var(--radius-md)] border border-warning/25 bg-warning/10 px-2 py-1.5 text-[length:var(--text-2xs)] text-warning">
+				<div className="rounded-md border border-warning/25 bg-warning/10 px-2 py-1.5 text-2xs text-warning">
 					生成运行中，结构写入操作已锁定。
 				</div>
 			) : null}
 			{shotCellLabel ? (
-				<div className="rounded-[var(--radius-md)] border border-accent/30 bg-accent/10 px-2 py-1.5 text-[length:var(--text-2xs)] leading-relaxed text-bc-muted">
+				<div className="rounded-md border border-accent/30 bg-accent/10 px-2 py-1.5 text-2xs leading-relaxed text-bc-muted">
 					<strong className="text-accent">{shotCellLabel}</strong>
 					{" · "}
 					重做只刷新这一格，不影响其他分镜与角色资产。也可在对话里绑定本格发反馈；可多选多格批量重做。
@@ -867,7 +878,7 @@ function ActionButton({
 		<Button
 			variant={danger ? "error" : primary ? "primary" : "ghost"}
 			size="sm"
-			className={`w-full justify-start gap-1.5 !h-8 !min-h-8 text-[length:var(--text-xs)] ${danger ? "text-error" : ""}`}
+			className={`w-full justify-start gap-1.5 !h-8 !min-h-8 text-xs ${danger ? "text-error" : ""}`}
 			disabled={disabled}
 			loading={loading}
 			onClick={onClick}
@@ -888,7 +899,7 @@ function FormShell({
 	return (
 		<fieldset className="space-y-3" disabled={disabled}>
 			{disabled ? (
-				<div className="rounded-[var(--radius-md)] border border-warning/25 bg-warning/10 px-2 py-1.5 text-[length:var(--text-2xs)] text-warning">
+				<div className="rounded-md border border-warning/25 bg-warning/10 px-2 py-1.5 text-2xs text-warning">
 					生成运行中，保存操作已锁定。
 				</div>
 			) : null}

@@ -1,5 +1,10 @@
+import { appQueryClient } from "~/query/client";
+import {
+	upsertCharacterInCache,
+	upsertShotInCache,
+} from "~/query/applyServerEvent";
+import { projectQueryKeys } from "~/query/queryKeys";
 import { assetsApi, charactersApi, projectsApi, shotsApi } from "~/services/api";
-import { useEditorStore } from "~/stores/editorStore";
 import { toast } from "~/utils/toast";
 import type { Character, Shot, ShotUpdatePayload } from "~/types";
 
@@ -7,20 +12,16 @@ import type { Character, Shot, ShotUpdatePayload } from "~/types";
  * 画布卡片的业务动作。
  *
  * 画布 shape 组件渲染在 tldraw 内部，不依赖 react-query context——
- * 这里直接调 API 并回写 zustand store，让 graph 投影自然重建。
- * WS 事件（shot_updated / character_updated）到达时会覆盖为服务端权威态。
+ * 这里直接调 API 并写回应用级 QueryClient，让 graph 投影自然重建。
+ * WS 事件到达时 applyServerEvent 会以同样的方式覆盖为服务端权威态。
  */
 
 function upsertShot(next: Shot) {
-	const s = useEditorStore.getState();
-	s.setShots(s.shots.map((item) => (item.id === next.id ? next : item)));
+	upsertShotInCache(appQueryClient, next.project_id, next);
 }
 
 function upsertCharacter(next: Character) {
-	const s = useEditorStore.getState();
-	s.setCharacters(
-		s.characters.map((item) => (item.id === next.id ? next : item)),
-	);
+	upsertCharacterInCache(appQueryClient, next.project_id, next);
 }
 
 function reportError(title: string, error: unknown) {
@@ -90,10 +91,10 @@ export async function regenerateCharacter(characterId: number): Promise<boolean>
 	}
 }
 
-/** 参考图操作后刷新整份角色列表：bible 接口只返回 bible，store 里是 Character */
+/** 参考图操作后重拉整份角色列表：bible 接口只返回 bible，Query 里是 Character */
 async function refreshCharacters(projectId: number) {
 	const list = await projectsApi.getCharacters(projectId);
-	useEditorStore.getState().setCharacters(list);
+	appQueryClient.setQueryData<Character[]>(projectQueryKeys.characters(projectId), list);
 }
 
 export async function addCharacterReference(

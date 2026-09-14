@@ -1,81 +1,35 @@
+import { STAGE_TO_UI, type StageId } from "~/generated/workflowContract";
 import type { WorkflowStage } from "~/types";
 
-const WORKFLOW_STAGE_UNLOCK_RANK: Record<WorkflowStage, number> = {
-	plan: 0,
-	plan_approval: 0,
-	render: 1,
-	render_approval: 1,
-	compose: 2,
-	review: -1,
-};
+const UI_STAGES = new Set<WorkflowStage>([
+	"plan",
+	"plan_approval",
+	"render",
+	"render_approval",
+	"compose",
+	"review",
+]);
 
 /**
- * Backend sends granular Phase2Stage names (e.g. "plan_characters",
- * "render_shots", "compose_merge").  Frontend UI uses simplified names.
- * This map collapses any granular or simplified name to the UI-level name.
- */
-const GRANULAR_TO_SIMPLIFIED: Record<string, WorkflowStage> = {
-	// plan phase
-	plan_outline: "plan",
-	outline_approval: "plan_approval",
-	plan_characters: "plan",
-	plan_shots: "plan",
-	characters_approval: "plan_approval",
-	shots_approval: "plan_approval",
-	// render phase
-	render_characters: "render",
-	render_shots: "render",
-	character_images_approval: "render_approval",
-	shot_images_approval: "render_approval",
-	critique_character_images: "render",
-	critique_shot_images: "render",
-	// compose phase
-	compose_videos: "compose",
-	compose_merge: "compose",
-	add_audio: "compose",
-	compose_approval: "compose",
-	// passthrough for already-simplified names
-	plan: "plan",
-	plan_approval: "plan_approval",
-	render: "render",
-	render_approval: "render_approval",
-	compose: "compose",
-	review: "review",
-};
-
-/**
- * Resolve any stage string (granular backend name or simplified UI name)
- * to the simplified WorkflowStage used by the UI.  Returns `undefined`
- * for completely unknown values.
+ * Resolve a canonical backend/engine stage or an already-simplified UI stage.
+ * Granular stage topology is generated from contracts/workflow.json; this file
+ * only owns presentation copy for the simplified UI phases.
  */
 export function toSimplifiedStage(value: unknown): WorkflowStage | undefined {
 	if (typeof value !== "string") return undefined;
-	return GRANULAR_TO_SIMPLIFIED[value];
+	if (UI_STAGES.has(value as WorkflowStage)) return value as WorkflowStage;
+	if (Object.hasOwn(STAGE_TO_UI, value)) {
+		return STAGE_TO_UI[value as StageId] as WorkflowStage;
+	}
+	return undefined;
 }
 
-export function isWorkflowStage(value: unknown): value is WorkflowStage {
-	return toSimplifiedStage(value) !== undefined;
-}
-
-/**
- * Resolve a stage from WS event data.  Tries `stage` then `current_stage`,
- * mapping granular backend names to simplified UI names.
- */
+/** Resolve `stage` then `current_stage` from a realtime event. */
 export function resolveEventStage(
 	data: Record<string, unknown>,
 ): WorkflowStage | undefined {
 	const raw = data.stage ?? data.current_stage;
 	return toSimplifiedStage(raw);
-}
-
-export function getWorkflowStageUnlockRank(
-	stage: string | null | undefined,
-): number {
-	if (!isWorkflowStage(stage)) {
-		return -1;
-	}
-
-	return WORKFLOW_STAGE_UNLOCK_RANK[stage];
 }
 
 export function getWorkflowStageInfo(stage: WorkflowStage): {

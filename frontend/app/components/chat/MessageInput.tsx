@@ -28,7 +28,7 @@ export function MessageInput({
 				id="chat-message-input"
 				name="message"
 				type="text"
-				className="input input-bordered h-9 min-h-9 flex-1 bg-base-200 text-[length:var(--text-sm)]"
+				className="input input-bordered h-9 min-h-9 flex-1 bg-base-200 text-sm"
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
 				onKeyDown={handleKeyDown}

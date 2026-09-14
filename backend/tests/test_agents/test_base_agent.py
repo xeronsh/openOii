@@ -14,11 +14,8 @@ from app.config import Settings
 from app.services.llm import LLMResponse
 from app.models import (  # noqa: F401
     agent_run,
-    artifact,
     message,
     project as _project_models,
-    run as _run_models,
-    stage,
 )
 from app.models.message import Message
 from app.ws.manager import ws_manager

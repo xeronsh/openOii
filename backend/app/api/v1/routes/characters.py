@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import InstrumentedAttribute
 
-from app.agents.base import TargetIds
-from app.agents.render import RenderAgent
-from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404, require_run_id
+from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404
 from app.config import Settings
-from app.models.agent_run import AgentRun
 from app.models.project import Character, Project
 from app.schemas.project import (
     AgentRunRead,
@@ -27,21 +21,22 @@ from app.services.character_bible import (
     compute_face_embedding,
     find_similar_characters,
 )
+from app.services.run_lifecycle import (
+    TargetedRunSpec,
+    RunConflict,
+    assert_resource_idle,
+    create_local_run,
+    project_updated_event,
+)
 from app.services.creative_control import (
     apply_character_rerun_edits,
-    collect_project_blocking_clips,
     invalidate_character_downstream_outputs,
 )
-from app.services.agent_runner import run_agent_plan
 from app.services.file_cleaner import delete_file
-from app.services.task_manager import task_manager
+from app.services.revision import assert_expected_revision, commit_versioned
 from app.ws.manager import ConnectionManager
 
 router = APIRouter()
-
-
-def _require_run_id(run: AgentRun) -> int:
-    return require_run_id(run)
 
 
 def _character_read(character: Character) -> dict[str, Any]:
@@ -59,11 +54,13 @@ async def update_character(
     character = await get_or_404(session, Character, character_id)
 
     data = payload.model_dump(exclude_unset=True)
+    data.pop("expected_revision", None)
+    assert_expected_revision(character, payload.expected_revision, entity="character")
     for k, v in data.items():
         setattr(character, k, v)
 
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     await ws.send_event(
@@ -83,7 +80,7 @@ async def approve_character(
 
     character.freeze_approval()
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     payload = _character_read(character)
@@ -115,23 +112,12 @@ async def regenerate_character(
     project = await get_or_404(session, Project, character.project_id)
     project_id = character.project_id
 
-    # 检查是否有针对该角色的运行中任务（细粒度锁）
-    project_id_col = cast(InstrumentedAttribute[int], cast(object, AgentRun.project_id))
-    status_col = cast(InstrumentedAttribute[str], cast(object, AgentRun.status))
-    resource_type_col = cast(
-        InstrumentedAttribute[str | None], cast(object, AgentRun.resource_type)
-    )
-    resource_id_col = cast(InstrumentedAttribute[int | None], cast(object, AgentRun.resource_id))
-    res = await session.execute(
-        select(AgentRun)
-        .where(project_id_col == project_id)
-        .where(status_col.in_(("queued", "running")))
-        .where(resource_type_col == "character")
-        .where(resource_id_col == character_id)
-        .limit(1)
-    )
-    if res.scalars().first() is not None:
-        raise HTTPException(status_code=409, detail="This character is already being regenerated")
+    try:
+        await assert_resource_idle(
+            session, project_id=project_id, resource_type="character", resource_id=character_id
+        )
+    except RunConflict as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
 
     await apply_character_rerun_edits(
         session,
@@ -140,58 +126,29 @@ async def regenerate_character(
         image_url=payload.image_url,
     )
     await invalidate_character_downstream_outputs(session, project, character_id)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
     await session.refresh(project)
-    blocking_clips = await collect_project_blocking_clips(session, project)
 
     await ws.send_event(
         project_id,
         {"type": "character_updated", "data": {"character": _character_read(character)}},
     )
-    await ws.send_event(
-        project_id,
-        {
-            "type": "project_updated",
-            "data": {
-                "project": {
-                    "id": project_id,
-                    "video_url": project.video_url,
-                    "status": project.status,
-                    "blocking_clips": blocking_clips,
-                }
-            },
-        },
-    )
+    await ws.send_event(project_id, await project_updated_event(session, project))
 
-    agent_plan: list[Any] = [RenderAgent()]
-    target_ids = TargetIds(character_ids=[character_id])
-    run = AgentRun(
-        project_id=project_id,
-        status="running",
-        current_agent=getattr(agent_plan[0], "name", None),
-        progress=0.0,
-        error=None,
-        resource_type="character",  # 设置资源类型
-        resource_id=character_id,  # 设置资源 ID
-    )
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-    run_id = _require_run_id(run)
-
-    task = asyncio.create_task(
-        run_agent_plan(
+    result = await create_local_run(
+        session,
+        settings=settings,
+        ws=ws,
+        spec=TargetedRunSpec(
             project_id=project_id,
-            run_id=run_id,
-            agent_plan=agent_plan,
-            settings=settings,
-            ws=ws,
-            target_ids=target_ids,
-        )
+            resource_type="character",
+            resource_id=character_id,
+            stage="render_characters",
+            target_character_ids=(character_id,),
+        ),
     )
-    task_manager.register(project_id, task)
-    return AgentRunRead.model_validate(run)
+    return AgentRunRead.model_validate(result.run)
 
 
 @router.delete("/{character_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -209,7 +166,7 @@ async def delete_character(
 
     # 删除数据库记录
     await session.delete(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
 
     # 发送 WebSocket 事件
     await ws.send_event(
@@ -290,6 +247,8 @@ async def update_character_bible(
 
     visual_notes_updated = False
     data = payload.model_dump(exclude_unset=True)
+    data.pop("expected_revision", None)
+    assert_expected_revision(character, payload.expected_revision, entity="character")
 
     if "visual_notes" in data:
         character.visual_notes = data["visual_notes"]
@@ -298,7 +257,7 @@ async def update_character_bible(
         character.reference_images = data["reference_images"]
 
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     await _send_bible_updated_event(ws, character, visual_notes_updated=visual_notes_updated)
@@ -333,7 +292,7 @@ async def add_reference_image(
     character.reference_images = images
 
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     await _send_bible_updated_event(ws, character)
@@ -371,7 +330,7 @@ async def delete_reference_image(
     character.reference_images = images
 
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
 
     await _send_bible_updated_event(ws, character)
 
@@ -410,7 +369,7 @@ async def compute_character_embedding(
 
     character.face_embedding = _json.dumps(embedding)
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     await _send_bible_updated_event(ws, character)

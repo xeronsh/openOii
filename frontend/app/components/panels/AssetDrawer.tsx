@@ -138,14 +138,14 @@ function CreateAssetForm({ isOpen, onClose, onCreated }: CreateAssetFormProps) {
 	return (
 		<>
 			<div
-				className="fixed inset-0 z-[var(--z-popover)] bg-neutral/45"
+				className="fixed inset-0 z-modal-backdrop bg-neutral/45"
 				onClick={handleClose}
 			/>
-			<div className="fixed right-0 top-0 z-[calc(var(--z-popover)+1)] flex h-full w-72 flex-col border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm">
+			<div className="fixed right-0 top-0 z-modal flex h-full w-72 flex-col border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm">
 				<div className="flex items-center justify-between border-b-2 border-base-content/10 px-2.5 py-2">
 					<div className="flex items-center gap-1.5">
 						<SvgIcon name="plus" size={14} className="text-primary" />
-						<h3 className="m-0 font-heading text-[length:var(--text-sm)] font-bold">
+						<h3 className="m-0 font-heading text-sm font-bold">
 							新建资产
 						</h3>
 					</div>
@@ -434,17 +434,17 @@ export function AssetDrawer({ open, onClose, projectId }: AssetDrawerProps) {
 		<>
 			{open && (
 				<div
-					className="fixed inset-0 z-[var(--z-modal-backdrop)] bg-neutral/40"
+					className="fixed inset-0 z-modal-backdrop bg-neutral/40"
 					onClick={onClose}
 				/>
 			)}
 			<div
-				className={`fixed right-0 top-0 z-[var(--z-modal)] h-full w-72 transform border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm transition-transform duration-200 ${open ? "translate-x-0" : "translate-x-full"}`}
+				className={`fixed right-0 top-0 z-modal h-full w-72 transform border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm transition-transform duration-normal ${open ? "translate-x-0" : "translate-x-full"}`}
 			>
 				<div className="flex items-center justify-between border-b-2 border-base-content/10 px-2.5 py-2">
 					<div className="flex items-center gap-1.5">
 						<SvgIcon name="archive" size={14} className="text-primary" />
-						<h3 className="m-0 font-heading text-[length:var(--text-sm)] font-bold">
+						<h3 className="m-0 font-heading text-sm font-bold">
 							资产库
 						</h3>
 						<span className="badge badge-xs badge-ghost tabular-nums">

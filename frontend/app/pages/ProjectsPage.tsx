@@ -160,11 +160,11 @@ export function ProjectsPage() {
 				/>
 
 				<section
-					className="rounded-[var(--radius-lg)] border-2 border-base-content/15 bg-base-200/45"
+					className="rounded-lg border-2 border-base-content/15 bg-base-200/45"
 					aria-label="项目批量操作"
 				>
 					<div className="flex flex-col gap-2 p-2 sm:flex-row sm:items-center sm:justify-between">
-						<label className="touch-target-dense flex cursor-pointer select-none items-center gap-2 rounded-[var(--radius-md)] px-1.5 text-[length:var(--text-xs)] font-semibold text-bc-muted">
+						<label className="touch-target-dense flex cursor-pointer select-none items-center gap-2 rounded-md px-1.5 text-xs font-semibold text-bc-muted">
 							<input
 								type="checkbox"
 								checked={allSelected}
@@ -175,7 +175,7 @@ export function ProjectsPage() {
 							<span>全选</span>
 						</label>
 						<div className="flex flex-wrap items-center gap-1.5">
-							<span className="rounded-full border border-base-content/15 bg-base-100 px-2 py-0.5 text-[length:var(--text-2xs)] font-semibold tabular-nums text-bc-muted">
+							<span className="rounded-full border border-base-content/15 bg-base-100 px-2 py-0.5 text-2xs font-semibold tabular-nums text-bc-muted">
 								{selectedCount > 0
 									? `已选 ${selectedCount}`
 									: "未选择"}
@@ -201,9 +201,9 @@ export function ProjectsPage() {
 					) : visibleProjects.length === 0 ? (
 						<EmptyState />
 					) : (
-						<div className="overflow-hidden rounded-[var(--radius-lg)] border-2 border-base-content/15 bg-base-100 shadow-brutal-sm">
+						<div className="overflow-hidden rounded-lg border-2 border-base-content/15 bg-base-100 shadow-brutal-sm">
 							{/* 表头只服务 sm+ 的表格网格；<sm 是卡片式行，表头隐藏 */}
-							<div className="hidden border-b border-base-content/10 bg-base-200/65 py-1.5 font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted sm:grid sm:grid-cols-[2.75rem_minmax(0,1fr)_7rem_7rem_2.75rem] sm:gap-3 sm:px-3">
+							<div className="hidden border-b border-base-content/10 bg-base-200/70 py-1.5 font-mono text-2xs uppercase text-bc-muted sm:grid sm:grid-cols-[2.75rem_minmax(0,1fr)_7rem_7rem_2.75rem] sm:gap-3 sm:px-3">
 								<span />
 								<span>项目</span>
 								<span>状态</span>
@@ -246,11 +246,11 @@ export function ProjectsPage() {
 
 function Metric({ label, value }: { label: string; value: number }) {
 	return (
-		<div className="rounded-[var(--radius-md)] border border-base-content/10 bg-base-200 px-2 py-1.5">
-			<p className="m-0 font-mono text-[length:var(--text-2xs)] uppercase text-bc-muted">
+		<div className="rounded-md border border-base-content/10 bg-base-200 px-2 py-1.5">
+			<p className="m-0 font-mono text-2xs uppercase text-bc-muted">
 				{label}
 			</p>
-			<p className="m-0 font-heading text-[length:var(--text-md)] font-bold leading-none tabular-nums">
+			<p className="m-0 font-heading text-md font-bold leading-none tabular-nums">
 				{value}
 			</p>
 		</div>
@@ -273,8 +273,8 @@ function ProjectRow({
 
 	return (
 		// <sm 卡片式三列（勾选｜内容｜删除，状态行落到第二行）；sm+ 维持五列表格网格
-		<article className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 px-2 py-2 transition-colors duration-[var(--duration-fast)] hover:bg-base-200/45 sm:grid-cols-[2.75rem_minmax(0,1fr)_7rem_7rem_2.75rem] sm:items-center sm:gap-3 sm:px-3">
-			<label className="touch-target-dense flex cursor-pointer items-center justify-center rounded-[var(--radius-md)] hover:bg-base-200">
+		<article className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 px-2 py-2 transition-colors duration-fast hover:bg-base-200/45 sm:grid-cols-[2.75rem_minmax(0,1fr)_7rem_7rem_2.75rem] sm:items-center sm:gap-3 sm:px-3">
+			<label className="touch-target-dense flex cursor-pointer items-center justify-center rounded-md hover:bg-base-200">
 				<input
 					type="checkbox"
 					aria-label={`选择项目 ${project.title}`}
@@ -286,7 +286,7 @@ function ProjectRow({
 
 			<Link
 				to={`/project/${project.id}`}
-				className="min-w-0 rounded-[var(--radius-md)] py-0.5 pr-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+				className="min-w-0 rounded-md py-0.5 pr-2"
 			>
 				<div className="flex min-w-0 items-center gap-1.5">
 					<FolderOpenIcon
@@ -294,14 +294,14 @@ function ProjectRow({
 						aria-hidden="true"
 					/>
 					{/* <sm 标题完整换行展示，sm+ 才单行截断 */}
-					<h2 className="m-0 break-words font-heading text-[length:var(--text-sm)] font-bold sm:truncate">
+					<h2 className="m-0 break-words font-heading text-sm font-bold sm:truncate">
 						{project.title}
 					</h2>
 				</div>
-				<p className="m-0 mt-0.5 truncate text-[length:var(--text-xs)] text-bc-muted">
+				<p className="m-0 mt-0.5 truncate text-xs text-bc-muted">
 					{story || "尚未填写故事内容"}
 				</p>
-				<div className="mt-1 flex flex-wrap gap-1.5 text-[length:var(--text-2xs)] font-semibold text-bc-muted">
+				<div className="mt-1 flex flex-wrap gap-1.5 text-2xs font-semibold text-bc-muted">
 					<span>{project.style || "未设风格"}</span>
 					<span className="tabular-nums">
 						{project.target_shot_count ?? "自动"} 镜头
@@ -313,12 +313,12 @@ function ProjectRow({
 			{/* <sm 状态胶囊+时间戳合并为一行小字；sm+ 用 contents 还原为两个独立网格单元 */}
 			<div className="col-start-2 row-start-2 flex flex-wrap items-center gap-x-2 gap-y-1 sm:contents">
 				<span
-					className={`inline-flex min-h-7 items-center justify-center rounded-full border px-2 text-[length:var(--text-2xs)] font-bold ${status.badgeCls}`}
+					className={`inline-flex min-h-7 items-center justify-center rounded-full border px-2 text-2xs font-bold ${status.badgeCls}`}
 				>
 					{status.label}
 				</span>
 
-				<span className="font-mono text-[length:var(--text-2xs)] tabular-nums text-bc-muted">
+				<span className="font-mono text-2xs tabular-nums text-bc-muted">
 					{formatDate(project.updated_at)}
 				</span>
 			</div>
@@ -338,12 +338,12 @@ function ProjectRow({
 
 function LoadingState() {
 	return (
-		<div className="flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-[var(--radius-lg)] border-2 border-dashed border-base-content/15 bg-base-200/35">
+		<div className="flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-base-content/15 bg-base-200/35">
 			<ArrowPathIcon
 				className="h-5 w-5 animate-spin text-primary"
 				aria-hidden="true"
 			/>
-			<p className="m-0 text-[length:var(--text-sm)] font-semibold text-bc-muted">
+			<p className="m-0 text-sm font-semibold text-bc-muted">
 				正在加载项目…
 			</p>
 		</div>
@@ -352,13 +352,13 @@ function LoadingState() {
 
 function ErrorState() {
 	return (
-		<div className="flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-[var(--radius-lg)] border-2 border-error/25 bg-error/5 px-3 text-center">
+		<div className="flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-lg border-2 border-error/25 bg-error/5 px-3 text-center">
 			<FaceFrownIcon className="h-6 w-6 text-error" aria-hidden="true" />
 			<div>
-				<p className="m-0 font-heading text-[length:var(--text-md)] font-bold text-error">
+				<p className="m-0 font-heading text-md font-bold text-error">
 					加载失败，请重试
 				</p>
-				<p className="m-0 mt-0.5 text-[length:var(--text-xs)] text-bc-muted">
+				<p className="m-0 mt-0.5 text-xs text-bc-muted">
 					刷新页面或检查后端是否可用
 				</p>
 			</div>
@@ -368,7 +368,7 @@ function ErrorState() {
 
 function EmptyState() {
 	return (
-		<div className="min-h-[10rem] rounded-[var(--radius-lg)] border-2 border-dashed border-base-content/15 bg-base-200/35">
+		<div className="min-h-[10rem] rounded-lg border-2 border-dashed border-base-content/15 bg-base-200/35">
 			<SharedEmptyState
 				icon={<DocumentTextIcon className="h-5 w-5" aria-hidden="true" />}
 				title="暂无项目"

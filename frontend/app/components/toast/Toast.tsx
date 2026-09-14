@@ -36,7 +36,7 @@ export function Toast({ toast }: ToastProps) {
       role="status"
     >
       <div className="mb-1 flex items-start justify-between gap-2">
-        <h4 className="m-0 font-heading text-[length:var(--text-sm)] font-bold leading-snug">
+        <h4 className="m-0 font-heading text-sm font-bold leading-snug">
           {toast.title}
         </h4>
         <button
@@ -49,7 +49,7 @@ export function Toast({ toast }: ToastProps) {
         </button>
       </div>
 
-      <p className="m-0 text-[length:var(--text-xs)] leading-snug text-base-content/75">
+      <p className="m-0 text-xs leading-snug text-base-content/75">
         {toast.message}
       </p>
 

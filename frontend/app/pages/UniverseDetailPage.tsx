@@ -146,7 +146,7 @@ export function UniverseDetailPage() {
 			<PageShell data-shell="universe-detail-missing">
 				<TopBar />
 				<div className="flex flex-1 flex-col items-center justify-center gap-3">
-					<p className="m-0 text-[length:var(--text-sm)] text-bc-muted">宇宙不存在</p>
+					<p className="m-0 text-sm text-bc-muted">宇宙不存在</p>
 					<Link to="/universes">
 						<Button size="sm" variant="secondary">返回宇宙列表</Button>
 					</Link>
@@ -160,12 +160,12 @@ export function UniverseDetailPage() {
 			<PageShell data-shell="universe-detail-error">
 				<TopBar />
 				<div className="flex flex-1 items-center justify-center p-4">
-					<div className="flex min-h-[10rem] w-full max-w-md flex-col items-center justify-center gap-3 rounded-[var(--radius-lg)] border-2 border-error/25 bg-error/5 px-4 text-center">
+					<div className="flex min-h-[10rem] w-full max-w-md flex-col items-center justify-center gap-3 rounded-lg border-2 border-error/25 bg-error/5 px-4 text-center">
 						<div>
-							<p className="m-0 font-heading text-[length:var(--text-md)] font-bold text-error">
+							<p className="m-0 font-heading text-md font-bold text-error">
 								宇宙加载失败
 							</p>
-							<p className="m-0 mt-0.5 text-[length:var(--text-xs)] text-bc-muted">
+							<p className="m-0 mt-0.5 text-xs text-bc-muted">
 								服务暂时不可用，数据还在，稍后重试
 							</p>
 						</div>
@@ -264,7 +264,7 @@ export function UniverseDetailPage() {
 				{u.world_setting || u.style_rules ? (
 					<div
 						className={clsx(
-							"grid gap-[var(--rhythm-zone)]",
+							"grid gap-5",
 							// 两段设定并存时桌面端并排，避免全宽长行难读
 							u.world_setting && u.style_rules && "lg:grid-cols-2",
 						)}
@@ -274,7 +274,7 @@ export function UniverseDetailPage() {
 								title="世界观设定"
 								icon={<GlobeAltIcon className="h-4 w-4" aria-hidden="true" />}
 							>
-								<p className="m-0 whitespace-pre-wrap text-[length:var(--text-sm)] text-bc-muted">
+								<p className="m-0 whitespace-pre-wrap text-sm text-bc-muted">
 									{u.world_setting}
 								</p>
 							</DeskSection>
@@ -285,7 +285,7 @@ export function UniverseDetailPage() {
 								title="统一风格规则"
 								icon={<PaintBrushIcon className="h-4 w-4" aria-hidden="true" />}
 							>
-								<p className="m-0 whitespace-pre-wrap text-[length:var(--text-sm)] text-bc-muted">
+								<p className="m-0 whitespace-pre-wrap text-sm text-bc-muted">
 									{u.style_rules}
 								</p>
 							</DeskSection>
@@ -294,7 +294,7 @@ export function UniverseDetailPage() {
 				) : null}
 
 				{/* 桌面端双栏：章节列表 7fr | 共享角色库 5fr；<lg 回落单列堆叠 */}
-				<div className="grid items-start gap-[var(--rhythm-zone)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+				<div className="grid items-start gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
 					<DeskSection
 						title="章节列表"
 						icon={<BookOpenIcon className="h-4 w-4" aria-hidden="true" />}
@@ -312,7 +312,7 @@ export function UniverseDetailPage() {
 								}
 							/>
 						) : (
-							<div className="flex flex-col gap-[var(--rhythm-item)]">
+							<div className="flex flex-col gap-2">
 								{[...u.chapters]
 									.sort(
 										(a, b) =>
@@ -321,7 +321,7 @@ export function UniverseDetailPage() {
 									.map((ch) => (
 										<div
 											key={ch.id}
-											className="flex min-h-10 items-center justify-between gap-2 rounded-[var(--radius-md)] border border-base-content/8 bg-base-200/50 px-2 py-1.5 transition-colors duration-[var(--duration-fast)] hover:bg-base-200"
+											className="flex min-h-10 items-center justify-between gap-2 rounded-md border border-base-content/10 bg-base-200/50 px-2 py-1.5 transition-colors duration-fast hover:bg-base-200"
 										>
 											<div className="flex min-w-0 items-center gap-2">
 												{ch.chapter_number != null ? (
@@ -335,11 +335,11 @@ export function UniverseDetailPage() {
 												)}
 												<Link
 													to={`/project/${ch.project_id}`}
-													className="truncate font-heading text-[length:var(--text-sm)] font-bold transition-colors hover:text-primary-ink"
+													className="truncate font-heading text-sm font-bold transition-colors hover:text-primary-ink"
 												>
 													{ch.chapter_title || ch.project_title || "未命名"}
 												</Link>
-												<span className="font-mono text-[length:var(--text-2xs)] text-bc-muted">
+												<span className="font-mono text-2xs text-bc-muted">
 													#{ch.project_id}
 												</span>
 												{!ch.is_main_story ? (
@@ -371,7 +371,7 @@ export function UniverseDetailPage() {
 						meta={`${u.shared_characters.length} 个`}
 						actions={
 							<>
-								<label className="flex items-center gap-1 text-[length:var(--text-2xs)] text-bc-muted">
+								<label className="flex items-center gap-1 text-2xs text-bc-muted">
 									导入到
 									<select
 										className="select select-bordered select-xs h-7 max-w-40 bg-base-200"
@@ -415,7 +415,7 @@ export function UniverseDetailPage() {
 							/>
 						) : (
 							// lg 下坐在 5fr 窄栏里，收窄为两列
-							<div className="grid grid-cols-2 gap-[var(--rhythm-item)] sm:grid-cols-3 lg:grid-cols-2">
+							<div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2">
 								{u.shared_characters.map((sc) => (
 									<SharedCharacterCard
 										key={sc.id}

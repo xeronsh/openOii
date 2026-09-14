@@ -187,6 +187,24 @@ async function fetchFormApi<T>(
 }
 
 // Projects API
+/**
+ * run 级操作。run 是一等资源，取消/恢复按 run id 寻址 ——
+ * 旧接口是 /projects/{id}/cancel|resume，服务端只能「猜该项目最新的活跃 run」，
+ * 同项目存在多个 run（例如并行重绘）时会点错目标。
+ */
+export const runsApi = {
+	cancel: (runId: number) =>
+		fetchApi<{ status: string; cancelled: number; run_ids?: number[] }>(
+			`/api/v1/runs/${runId}/cancel`,
+			{ method: "POST" },
+		),
+
+	resume: (runId: number) =>
+		fetchApi<import("~/types").AgentRun>(`/api/v1/runs/${runId}/resume`, {
+			method: "POST",
+		}),
+};
+
 export const projectsApi = {
 	list: async () => {
 		const data = await fetchApi<{ items: Project[]; total: number }>(
@@ -259,7 +277,8 @@ export const projectsApi = {
 	getMessages: (id: number) =>
 		fetchApi<import("~/types").Message[]>(`/api/v1/projects/${id}/messages`),
 
-	generate: (
+	/** 创建一次生成 run（POST /projects/{id}/runs）。409 时返回恢复控制面。 */
+	startRun: (
 		id: number,
 		data?: {
 			seed?: number;
@@ -271,29 +290,15 @@ export const projectsApi = {
 			entity_ids?: number[];
 		},
 	) =>
-		fetchApi<import("~/types").AgentRun>(`/api/v1/projects/${id}/generate`, {
+		fetchApi<import("~/types").AgentRun>(`/api/v1/projects/${id}/runs`, {
 			method: "POST",
 			body: JSON.stringify(data || {}),
 		}),
 
-	cancel: (id: number) =>
-		fetchApi<{ status: string; cancelled: number }>(
-			`/api/v1/projects/${id}/cancel`,
-			{
-				method: "POST",
-			},
-		),
-
-	resume: (id: number, runId: number) =>
-		fetchApi<import("~/types").AgentRun>(`/api/v1/projects/${id}/resume`, {
-			method: "POST",
-			body: JSON.stringify({ run_id: runId }),
-		}),
-
-	/** 页面加载时水合运行态：与 /generate 409 分支同构的 RecoveryControlRead */
-	generationState: (id: number) =>
+	/** 页面加载时水合运行态：与创建 run 的 409 分支同构的 RecoveryControlRead */
+	currentRun: (id: number) =>
 		fetchApi<import("~/types").RecoveryControlRead | null>(
-			`/api/v1/projects/${id}/generation-state`,
+			`/api/v1/projects/${id}/runs/current`,
 		),
 
 	feedback: (
@@ -306,7 +311,7 @@ export const projectsApi = {
 		entityIds?: number[],
 	) =>
 		fetchApi<{ status: string; run_id?: number }>(
-			`/api/v1/projects/${id}/feedback`,
+			`/api/v1/projects/${id}/runs/feedback`,
 			{
 				method: "POST",
 				body: JSON.stringify({

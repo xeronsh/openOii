@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "~/components/ui/Button";
 import { SvgIcon } from "~/components/ui/SvgIcon";
-import { getStaticUrl, versionsApi } from "~/services/api";
-import { useEditorStore } from "~/stores/editorStore";
+import { projectQueryKeys } from "~/query/queryKeys";
+import { getStaticUrl, projectsApi, versionsApi } from "~/services/api";
 import type { ArtifactVersion, VersionDiff, VersionEntityType } from "~/types";
 import { toast } from "~/utils/toast";
 
@@ -59,13 +59,13 @@ function versionLabel(version: ArtifactVersion): string {
 function VersionColumn({ title, version }: { title: string; version?: ArtifactVersion }) {
 	const imageUrl = getStaticUrl(version?.snapshot.image_url as string | null | undefined);
 	return (
-		<section className="min-w-0 rounded-[var(--radius-md)] border-2 border-base-content/15 bg-base-200/60 p-2.5">
-			<h3 className="m-0 font-heading text-[length:var(--text-xs)] font-bold">{title}</h3>
-			<div className="mt-1.5 aspect-video overflow-hidden rounded-[var(--radius-sm)] border border-base-content/10 bg-base-300">
+		<section className="min-w-0 rounded-md border-2 border-base-content/15 bg-base-200/60 p-2.5">
+			<h3 className="m-0 font-heading text-xs font-bold">{title}</h3>
+			<div className="mt-1.5 aspect-video overflow-hidden rounded-sm border border-base-content/10 bg-base-300">
 				{imageUrl ? (
 					<img src={imageUrl} alt={title} className="h-full w-full object-cover" />
 				) : (
-					<div className="flex h-full items-center justify-center text-[length:var(--text-2xs)] text-bc-muted">
+					<div className="flex h-full items-center justify-center text-2xs text-bc-muted">
 						图片不存在或未生成
 					</div>
 				)}
@@ -75,7 +75,7 @@ function VersionColumn({ title, version }: { title: string; version?: ArtifactVe
 					const value = version?.snapshot[field];
 					if (value === undefined || value === null || value === "") return null;
 					return (
-						<div key={field} className="text-[length:var(--text-2xs)]">
+						<div key={field} className="text-2xs">
 							<div className="font-semibold text-bc-muted">{LABELS[field] || field}</div>
 							<div className="whitespace-pre-wrap break-words">{valueToText(value)}</div>
 						</div>
@@ -111,11 +111,19 @@ export function VersionCompareDrawer({
 	initialEntityId = null,
 	onClose,
 }: VersionCompareDrawerProps) {
-	const characters = useEditorStore((state) => state.characters);
-	const shots = useEditorStore((state) => state.shots);
 	const [entityType, setEntityType] = useState<VersionEntityType>(initialEntityType);
 	const [entityId, setEntityId] = useState<number | null>(initialEntityId);
 	const queryClient = useQueryClient();
+	const { data: characters = [] } = useQuery({
+		queryKey: projectQueryKeys.characters(projectId),
+		queryFn: () => projectsApi.getCharacters(projectId),
+		enabled: open && projectId > 0,
+	});
+	const { data: shots = [] } = useQuery({
+		queryKey: projectQueryKeys.shots(projectId),
+		queryFn: () => projectsApi.getShots(projectId),
+		enabled: open && projectId > 0,
+	});
 
 	useEffect(() => {
 		if (!open) return;
@@ -163,7 +171,9 @@ export function VersionCompareDrawer({
 		onSuccess: (result) => {
 			toast.success({ title: "版本回滚", message: result.message });
 			queryClient.invalidateQueries({ queryKey: ["versions"] });
-			queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+			queryClient.invalidateQueries({ queryKey: projectQueryKeys.project(projectId) });
+			queryClient.invalidateQueries({ queryKey: projectQueryKeys.characters(projectId) });
+			queryClient.invalidateQueries({ queryKey: projectQueryKeys.shots(projectId) });
 		},
 		onError: () => toast.error({ title: "版本回滚", message: "回滚失败" }),
 	});
@@ -178,15 +188,13 @@ export function VersionCompareDrawer({
 
 	return (
 		<aside
-			className={`fixed right-0 top-0 z-[var(--z-modal)] h-full w-full max-w-5xl transform overflow-y-auto border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm transition-transform duration-200 ${
+			className={`fixed right-0 top-0 z-modal h-full w-full max-w-5xl transform overflow-y-auto border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm transition-transform duration-normal ${
 				open ? "translate-x-0" : "translate-x-full"
 			}`}
 		>
-			<div className="sticky top-0 z-[var(--z-sticky)] flex items-center gap-2 border-b-2 border-base-content/10 bg-base-100 px-3 py-2">
+			<div className="sticky top-0 z-sticky flex items-center gap-2 border-b-2 border-base-content/10 bg-base-100 px-3 py-2">
 				<SvgIcon name="clock-3" size={16} />
-				<h2 className="m-0 font-heading text-[length:var(--text-md)] font-bold">
-					版本对比
-				</h2>
+				<h2 className="m-0 font-heading text-md font-bold">版本对比</h2>
 				<button
 					type="button"
 					className="btn btn-ghost btn-circle touch-target-dense ml-auto h-8 min-h-8 w-8"
@@ -223,13 +231,9 @@ export function VersionCompareDrawer({
 					</select>
 				</div>
 
-				{versionsQuery.isLoading && (
-					<div className="text-[length:var(--text-xs)] text-bc-muted">
-						加载版本中...
-					</div>
-				)}
+				{versionsQuery.isLoading && <div className="text-xs text-bc-muted">加载版本中...</div>}
 				{!versionsQuery.isLoading && versions.length === 0 && (
-					<div className="rounded-[var(--radius-md)] border border-base-content/10 p-4 text-[length:var(--text-xs)] text-bc-muted">
+					<div className="rounded-md border border-base-content/10 p-4 text-xs text-bc-muted">
 						暂无版本快照。生成或重新生成后会自动记录。
 					</div>
 				)}
@@ -262,19 +266,11 @@ export function VersionCompareDrawer({
 							<VersionColumn title={`新版本 v${effectiveRight ?? "—"}`} version={effectiveRight ? versionByNumber.get(effectiveRight) : undefined} />
 						</div>
 
-						<section className="rounded-[var(--radius-md)] border-2 border-base-content/10 bg-base-200/40 p-2.5">
-							<h3 className="mb-1.5 font-heading text-[length:var(--text-xs)] font-bold">
-								差异
-							</h3>
-							{compareQuery.isLoading && (
-								<div className="text-[length:var(--text-2xs)] text-bc-muted">
-									计算差异中...
-								</div>
-							)}
+						<section className="rounded-md border-2 border-base-content/10 bg-base-200/40 p-2.5">
+							<h3 className="mb-1.5 font-heading text-xs font-bold">差异</h3>
+							{compareQuery.isLoading && <div className="text-2xs text-bc-muted">计算差异中...</div>}
 							{!compareQuery.isLoading && (compareQuery.data?.diffs.length ?? 0) === 0 && (
-								<div className="text-[length:var(--text-2xs)] text-bc-muted">
-									两个版本内容相同。
-								</div>
+								<div className="text-2xs text-bc-muted">两个版本内容相同。</div>
 							)}
 							<ul className="space-y-1.5">
 								{compareQuery.data?.diffs.map((diff) => (

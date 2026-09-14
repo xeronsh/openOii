@@ -47,10 +47,16 @@ class NotFoundError(AppException):
 class ConflictError(AppException):
     """冲突错误 (409)"""
 
-    def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        details: dict[str, Any] | None = None,
+        *,
+        code: str = "CONFLICT",
+    ) -> None:
         super().__init__(
             message=message,
-            code="CONFLICT",
+            code=code,
             status_code=409,
             details=details,
         )

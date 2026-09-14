@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.orchestration.state import workflow_progress_for_stage, PRODUCTION_STAGE_SEQUENCE
+from app.orchestration import workflow_progress_for_stage, PRODUCTION_STAGE_SEQUENCE
 
 
 TOTAL = len(PRODUCTION_STAGE_SEQUENCE)
@@ -22,12 +22,13 @@ def test_first_stage_full_within():
 
 
 def test_last_stage_zero_within():
-    result = workflow_progress_for_stage("add_audio")
+    # add_audio was removed: compose_merge is the final production stage.
+    result = workflow_progress_for_stage(PRODUCTION_STAGE_SEQUENCE[-1])
     assert result == pytest.approx((TOTAL - 1) / TOTAL)
 
 
 def test_last_stage_full_within():
-    result = workflow_progress_for_stage("add_audio", within_stage=1.0)
+    result = workflow_progress_for_stage(PRODUCTION_STAGE_SEQUENCE[-1], within_stage=1.0)
     assert result == 1.0
 
 

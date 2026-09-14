@@ -156,7 +156,10 @@ async def delete_asset(asset_id: int, session: AsyncSession = SessionDep):
     return None
 
 
-@router.post("/{asset_id}/use-in-project")
+@router.post(
+    "/{asset_id}/use-in-project",
+    response_model=CharacterRead | ShotRead,
+)
 async def use_asset_in_project(
     asset_id: int,
     payload: UseAssetInProjectRequest,

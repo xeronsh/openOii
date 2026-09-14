@@ -82,6 +82,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
+    maxWorkers: 4,
     setupFiles: "./app/setupTests.ts",
     css: true,
     exclude: ["tests/e2e/**", "node_modules/**"],

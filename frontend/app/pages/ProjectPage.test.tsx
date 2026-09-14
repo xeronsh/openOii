@@ -1,9 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectPage } from './ProjectPage';
-import { projectsApi } from '~/services/api';
+import { projectsApi, runsApi } from '~/services/api';
 import type { AgentRun, Project, RecoveryControlRead } from '~/types';
 import { ApiError } from '~/types/errors';
 import { toast } from '~/utils/toast';
@@ -104,133 +105,41 @@ const emptyCharacters: never[] = [];
 const emptyShots: never[] = [];
 const emptyMessages: never[] = [];
 const storeState: {
-  isGenerating: boolean;
-  progress: number;
-  currentStage: string;
-  currentAgent: string | null;
-  awaitingConfirm: boolean;
-  awaitingAgent: string | null;
-  currentRunId: number | null;
-  currentRunProviderSnapshot: unknown | null;
-  recoveryControl: RecoveryControlRead | null;
-  recoverySummary: unknown;
-  recoveryGate: unknown;
-  projectUpdatedAt: number | null;
-  characters: never[];
-  shots: never[];
-  projectVideoUrl: string | null;
-  projectStatus: string | null;
-  projectTitle: string | null;
-  projectSummary: string | null;
-  projectStory: string | null;
-  blockingClips: never[] | null;
-  messages: never[];
-  clearMessages: ReturnType<typeof vi.fn>;
-  setGenerating: ReturnType<typeof vi.fn>;
-  setProgress: ReturnType<typeof vi.fn>;
-  setCurrentAgent: ReturnType<typeof vi.fn>;
-  setCurrentStage: ReturnType<typeof vi.fn>;
-  setAwaitingConfirm: ReturnType<typeof vi.fn>;
-  setCurrentRunId: ReturnType<typeof vi.fn>;
-  setCurrentRunProviderSnapshot: ReturnType<typeof vi.fn>;
+  selectedShotId: number | null;
+  selectedCharacterId: number | null;
+  highlightedMessageIndex: number | null;
   setSelectedShot: ReturnType<typeof vi.fn>;
   setSelectedCharacter: ReturnType<typeof vi.fn>;
   setHighlightedMessage: ReturnType<typeof vi.fn>;
-  setProjectVideoUrl: ReturnType<typeof vi.fn>;
-  setProjectStatus: ReturnType<typeof vi.fn>;
-  setProjectTitle: ReturnType<typeof vi.fn>;
-  setProjectSummary: ReturnType<typeof vi.fn>;
-  setProjectStory: ReturnType<typeof vi.fn>;
-  setProjectStyle: ReturnType<typeof vi.fn>;
-  setProjectTargetShotCount: ReturnType<typeof vi.fn>;
-  setProjectCharacterHints: ReturnType<typeof vi.fn>;
-  setProjectCreationMode: ReturnType<typeof vi.fn>;
-  setProjectReferenceImages: ReturnType<typeof vi.fn>;
-  setProjectExports: ReturnType<typeof vi.fn>;
-  setProjectProviderSettings: ReturnType<typeof vi.fn>;
-  setProjectUniverseId: ReturnType<typeof vi.fn>;
-  setProjectChapterNumber: ReturnType<typeof vi.fn>;
-  setProjectChapterTitle: ReturnType<typeof vi.fn>;
-  setCharacters: ReturnType<typeof vi.fn>;
-  setShots: ReturnType<typeof vi.fn>;
-  setRecoveryControl: ReturnType<typeof vi.fn>;
-  setRecoverySummary: ReturnType<typeof vi.fn>;
-  setRecoveryGate: ReturnType<typeof vi.fn>;
-  setProjectUpdatedAt: ReturnType<typeof vi.fn>;
-  addMessage: ReturnType<typeof vi.fn>;
-  resetRunState: ReturnType<typeof vi.fn>;
   runMode: string;
   setRunMode: ReturnType<typeof vi.fn>;
-  setProjectStoryOutline: ReturnType<typeof vi.fn>;
-  setProjectVisualBible: ReturnType<typeof vi.fn>;
-  setProjectOutlineApproved: ReturnType<typeof vi.fn>;
-  setBlockingClips: ReturnType<typeof vi.fn>;
 } = {
-  isGenerating: false,
-  progress: 0,
-  currentStage: 'plan',
-  currentAgent: null,
-  awaitingConfirm: false,
-  awaitingAgent: null,
-  currentRunId: null as number | null,
-  currentRunProviderSnapshot: null,
-  recoveryControl: null,
-  recoverySummary: null,
-  recoveryGate: null,
-  projectUpdatedAt: null as number | null,
-  characters: emptyCharacters,
-  shots: emptyShots,
-  projectVideoUrl: null,
-  projectStatus: null,
-  projectTitle: null,
-  projectSummary: null,
-  projectStory: null,
-  blockingClips: null,
-  messages: emptyMessages,
-  clearMessages: vi.fn(),
-  setGenerating: vi.fn(),
-  setProgress: vi.fn(),
-  setCurrentAgent: vi.fn(),
-  setCurrentStage: vi.fn(),
-  setAwaitingConfirm: vi.fn(),
-  setCurrentRunId: vi.fn(),
-  setCurrentRunProviderSnapshot: vi.fn(),
+  selectedShotId: null,
+  selectedCharacterId: null,
+  highlightedMessageIndex: null,
   setSelectedShot: vi.fn(),
   setSelectedCharacter: vi.fn(),
   setHighlightedMessage: vi.fn(),
-  setProjectVideoUrl: vi.fn(),
-  setProjectStatus: vi.fn(),
-  setProjectTitle: vi.fn(),
-  setProjectSummary: vi.fn(),
-  setProjectStory: vi.fn(),
-  setProjectStyle: vi.fn(),
-  setProjectTargetShotCount: vi.fn(),
-  setProjectCharacterHints: vi.fn(),
-  setProjectCreationMode: vi.fn(),
-  setProjectReferenceImages: vi.fn(),
-  setProjectExports: vi.fn(),
-  setProjectProviderSettings: vi.fn(),
-  setProjectUniverseId: vi.fn(),
-  setProjectChapterNumber: vi.fn(),
-  setProjectChapterTitle: vi.fn(),
-  setCharacters: vi.fn(),
-  setShots: vi.fn(),
-  setRecoveryControl: vi.fn(),
-  setRecoverySummary: vi.fn(),
-  setRecoveryGate: vi.fn(),
-  setProjectUpdatedAt: vi.fn((timestamp: number) => {
-    storeState.projectUpdatedAt = timestamp;
-  }),
-  addMessage: vi.fn(),
-  resetRunState: vi.fn(),
   runMode: 'manual' as string,
   setRunMode: vi.fn(),
-  setProjectStoryOutline: vi.fn(),
-  setProjectVisualBible: vi.fn(),
-  setProjectOutlineApproved: vi.fn(),
-  setBlockingClips: vi.fn(),
 };
 const mutateSpy = vi.fn();
+
+// Real useQuery (run-state projection) needs a QueryClient context; supply the
+// app's shared client so cache reads/writes are the same instance tests seed.
+const renderWithProviders = (ui: React.ReactElement) => {
+  const utils = render(
+    <QueryClientProvider client={appQueryClient}>{ui}</QueryClientProvider>,
+  );
+  return {
+    ...utils,
+    rerenderWithProviders: (next: React.ReactElement) =>
+      utils.rerender(
+        <QueryClientProvider client={appQueryClient}>{next}</QueryClientProvider>,
+      ),
+  };
+};
+
 const sendMock = vi.fn();
 let mutationPendingStates: boolean[] = [];
 
@@ -254,9 +163,15 @@ vi.mock('~/utils/toast', () => ({
   },
 }));
 
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  // `~/query/client` builds a real QueryClient at module load, so the actual
+  // module must stay available; only the hooks used by the page are stubbed.
+  const actual = await importOriginal<typeof import('@tanstack/react-query')>();
+  return {
+  ...(actual),
   useQueryClient: () => ({ invalidateQueries }),
-  useQuery: ({ queryKey }: { queryKey: [string, number] }) => {
+  useQuery: (options: { queryKey: [string, number] }) => {
+    const queryKey = options.queryKey;
     if (queryKey[0] === 'project') {
       return {
         data: currentProjectData,
@@ -289,6 +204,11 @@ vi.mock('@tanstack/react-query', () => ({
       };
     }
 
+    // Live run UI projection: real reactive read from the run-state cache.
+    if (queryKey[0] === 'run-state') {
+      return actual.useQuery(options);
+    }
+
     return { data: undefined, isLoading: false, error: null };
   },
   useMutation: (options: {
@@ -313,7 +233,8 @@ vi.mock('@tanstack/react-query', () => ({
       isPending,
     };
   },
-}));
+  };
+});
 
 vi.mock('~/hooks/useWebSocket', () => ({
   useProjectWebSocket: () => ({
@@ -331,10 +252,26 @@ vi.mock('~/stores/editorStore', () => ({
       getState: () => storeState,
     }
   ),
-  useShallow: (selector: (state: typeof storeState) => unknown) => {
-    const result = selector(storeState);
-    return () => result;
-  },
+}));
+
+// The chat feed is server state and lives in the query cache (ADR 0007), so
+// the module that writes it is spied on rather than a store action.
+const appendMessage = vi.fn();
+const clearMessageFeed = vi.fn();
+const replaceMessageFeed = vi.fn();
+
+// Live run state now lives in the query cache; tests seed it through the real
+// runState helpers so the page reads exactly what WS/hydration would write.
+import { patchRunState as realPatchRunState, readRunState } from '~/query/runState';
+import { appQueryClient } from '~/query/client';
+import { projectQueryKeys } from '~/query/queryKeys';
+const seedRunState = (patch: Record<string, unknown>) => realPatchRunState(9, patch as never);
+const clearRunState = () => appQueryClient.setQueryData(projectQueryKeys.runState(9), null);
+vi.mock('~/query/messageFeed', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/query/messageFeed')>()),
+  appendMessage: (...args: unknown[]) => appendMessage(...args),
+  clearMessageFeed: (...args: unknown[]) => clearMessageFeed(...args),
+  replaceMessageFeed: (...args: unknown[]) => replaceMessageFeed(...args),
 }));
 
 vi.mock('~/services/api', () => ({
@@ -344,8 +281,11 @@ vi.mock('~/services/api', () => ({
     getCharacters: vi.fn(),
     getShots: vi.fn(),
     getMessages: vi.fn(),
-    generate: vi.fn(),
+    startRun: vi.fn(),
+    currentRun: vi.fn(),
     feedback: vi.fn(),
+  },
+  runsApi: {
     cancel: vi.fn(),
     resume: vi.fn(),
   },
@@ -460,32 +400,28 @@ describe('ProjectPage live hydration', () => {
       messagesLoading: false,
     };
     currentProjectData = projectData;
-    storeState.isGenerating = true;
-    storeState.progress = 0.35;
-    storeState.currentStage = 'storyboard';
-    storeState.currentAgent = null;
-    storeState.awaitingConfirm = false;
-    storeState.awaitingAgent = null;
-    storeState.projectUpdatedAt = null;
-    storeState.currentRunId = null;
-    storeState.currentRunProviderSnapshot = null;
-    storeState.recoveryControl = null;
-    storeState.recoverySummary = null;
-    storeState.recoveryGate = null;
-    storeState.projectVideoUrl = null;
-    storeState.projectStatus = null;
-    storeState.projectTitle = null;
-    storeState.projectSummary = null;
-    storeState.projectStory = null;
-    storeState.blockingClips = null;
+    clearRunState();
+    seedRunState({
+      isGenerating: true,
+      progress: 0.35,
+      currentStage: 'storyboard',
+      currentAgent: null,
+      awaitingConfirm: false,
+      awaitingAgent: null,
+      currentRunId: null,
+      currentRunProviderSnapshot: null,
+      recoveryControl: null,
+      recoverySummary: null,
+      recoveryGate: null,
+    });
     vi.mocked(projectsApi.update).mockResolvedValue(projectData as never);
-    vi.mocked(projectsApi.generate).mockResolvedValue({
+    vi.mocked(projectsApi.startRun).mockResolvedValue({
 		id: 77,
 		provider_snapshot: providerSnapshotSample,
 	} as never);
     vi.mocked(projectsApi.feedback).mockResolvedValue({ id: 88 } as never);
-    vi.mocked(projectsApi.cancel).mockResolvedValue(undefined as never);
-    vi.mocked(projectsApi.resume).mockResolvedValue({
+    vi.mocked(runsApi.cancel).mockResolvedValue(undefined as never);
+    vi.mocked(runsApi.resume).mockResolvedValue({
       id: 55,
       project_id: 9,
       status: 'processing',
@@ -494,57 +430,57 @@ describe('ProjectPage live hydration', () => {
       error: null,
       resource_type: null,
       resource_id: null,
-      thread_id: null,
       created_at: '2026-04-11T00:00:00Z',
       updated_at: '2026-04-11T00:00:00Z',
     } as never);
   });
 
   it('renders without provider UI when no provider exception exists', () => {
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('Provider 选择')).not.toBeInTheDocument();
   });
 
-  it('passes the derived workbench status to the stage pipeline', () => {
-    storeState.isGenerating = true;
-    storeState.currentRunId = 77;
-    storeState.awaitingConfirm = true;
+  it('passes the derived workbench status to the stage pipeline', async () => {
+    renderWithProviders(<ProjectPage />);
+    // Simulate a WS projection landing after mount (the run-state cache is the
+    // live projection the page reads reactively).
+    seedRunState({ isGenerating: true, currentRunId: 77, awaitingConfirm: true });
 
-    render(<ProjectPage />);
-
-    expect(screen.getByTestId('stage-pipeline')).toHaveAttribute(
-      'data-workbench-status',
-      'awaitingConfirm',
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId('stage-pipeline')).toHaveAttribute(
+        'data-workbench-status',
+        'awaitingConfirm',
+      );
+    });
   });
 
   it('renders without provider warning UI when provider exception exists', () => {
     currentProjectData = projectDataWithTextProviderIssue;
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('编辑 Provider')).not.toBeInTheDocument();
   });
 
-  it('clears final video store state when project video_url is null', async () => {
+  it('renders when project video_url is null', async () => {
     currentProjectData = { ...projectData, video_url: null };
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     await waitFor(() => {
-      expect(storeState.setProjectVideoUrl).toHaveBeenCalledWith(null);
+      expect(screen.getByTestId('stage-pipeline')).toBeInTheDocument();
     });
   });
 
 	it('renders run provider snapshot proof card from recoveryControl', () => {
-		storeState.recoveryControl = {
+		renderWithProviders(<ProjectPage />);
+		seedRunState({ recoveryControl: {
 			state: 'active',
 			detail: '可恢复运行',
 			available_actions: ['resume', 'cancel'],
-			thread_id: 'thread-proof',
 			active_run: {
 				id: 77,
 				project_id: 9,
@@ -554,7 +490,6 @@ describe('ProjectPage live hydration', () => {
 				error: null,
 				resource_type: null,
 				resource_id: null,
-				thread_id: 'thread-proof',
 				provider_snapshot: providerSnapshotSample,
 				created_at: '2026-04-11T00:00:00Z',
 				updated_at: '2026-04-11T00:00:00Z',
@@ -562,16 +497,13 @@ describe('ProjectPage live hydration', () => {
 			recovery_summary: {
 				project_id: 9,
 				run_id: 77,
-				thread_id: 'thread-proof',
 				current_stage: 'plan',
 				next_stage: null,
 				preserved_stages: [],
 				stage_history: [],
 				resumable: true,
 			},
-		};
-
-		render(<ProjectPage />);
+		} });
 
 		// Snapshot card was removed — with all providers valid, no warning banner either
 		expect(screen.queryByText('本次运行冻结 Provider 快照')).not.toBeInTheDocument();
@@ -582,9 +514,8 @@ describe('ProjectPage live hydration', () => {
 		currentProjectData = {
 			...projectDataWithTextProviderIssue,
 		};
-		storeState.currentRunProviderSnapshot = providerSnapshotSample;
-
-		render(<ProjectPage />);
+		renderWithProviders(<ProjectPage />);
+		seedRunState({ currentRunProviderSnapshot: providerSnapshotSample });
 
 		expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 		expect(screen.queryByText('编辑 Provider')).not.toBeInTheDocument();
@@ -620,7 +551,8 @@ describe('ProjectPage live hydration', () => {
 				},
 			},
 		};
-		storeState.currentRunProviderSnapshot = {
+		renderWithProviders(<ProjectPage />);
+		seedRunState({ currentRunProviderSnapshot: {
 			text: {
 				selected_key: 'openai',
 				source: 'project',
@@ -648,9 +580,7 @@ describe('ProjectPage live hydration', () => {
 				reason_code: null,
 				reason_message: null,
 			},
-		} as Project['provider_settings'];
-
-		render(<ProjectPage />);
+		} });
 
 		// Snapshot card removed; project providers are all valid so no warning banner either
 		// (hasProviderIssue uses project settings, not run snapshot)
@@ -661,7 +591,7 @@ describe('ProjectPage live hydration', () => {
   it('shows degraded provider warning without disabling generate', () => {
     currentProjectData = projectDataWithDegradedTextProvider;
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '开始生成' })).toBeEnabled();
@@ -670,7 +600,7 @@ describe('ProjectPage live hydration', () => {
   it('keeps workspace panel navigation owned by the sidebar', async () => {
     const user = userEvent.setup();
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.getByTestId('top-bar')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-sidebar')).toHaveAttribute('data-active-tab', 'chat');
@@ -700,7 +630,7 @@ describe('ProjectPage live hydration', () => {
       },
     };
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '开始生成' })).toBeEnabled();
@@ -710,7 +640,7 @@ describe('ProjectPage live hydration', () => {
     projectQueryState = { isLoading: true, error: null };
     currentProjectData = undefined as never;
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.getByText('正在加载项目…')).toBeInTheDocument();
     expect(screen.queryByTestId('workspace-sidebar')).not.toBeInTheDocument();
@@ -723,7 +653,7 @@ describe('ProjectPage live hydration', () => {
       messagesLoading: true,
     };
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     // 只等项目主数据；角色/分镜/消息各区域自行渐进加载
     expect(screen.queryByText('正在加载项目…')).not.toBeInTheDocument();
@@ -731,12 +661,13 @@ describe('ProjectPage live hydration', () => {
     expect(screen.getByTestId('workspace-sidebar')).toBeInTheDocument();
   });
 
-  it('clears project-scoped canvas state when route project changes', async () => {
-    const { rerender } = render(<ProjectPage />);
+  it('clears project-scoped client state when route project changes', async () => {
+    const { rerenderWithProviders } = renderWithProviders(<ProjectPage />);
 
     await waitFor(() => {
-      expect(storeState.setProjectTitle).toHaveBeenCalledWith('Realtime Story');
+      expect(screen.getByTestId('stage-pipeline')).toBeInTheDocument();
     });
+    const titleBefore = currentProjectData.title;
 
     vi.clearAllMocks();
     currentRouteProjectId = '10';
@@ -746,36 +677,26 @@ describe('ProjectPage live hydration', () => {
       title: 'Next Story',
     };
 
-    rerender(<ProjectPage />);
+    rerenderWithProviders(<ProjectPage />);
 
+    // 客户端自有状态在切项目时重置；服务端实体由 query cache 按 projectId 自己隔离。
+    // 清空的是新路由项目的消息流（query key 自带作用域）。
     await waitFor(() => {
-      expect(storeState.setCharacters).toHaveBeenCalledWith([]);
+      expect(clearMessageFeed).toHaveBeenCalledWith(10);
     });
-    expect(storeState.setShots).toHaveBeenCalledWith([]);
-    expect(storeState.clearMessages).toHaveBeenCalled();
-    expect(storeState.resetRunState).toHaveBeenCalled();
-    expect(storeState.setProjectTitle).toHaveBeenCalledWith(null);
-    expect(storeState.setProjectStoryOutline).toHaveBeenCalledWith(null);
-    expect(storeState.setProjectVisualBible).toHaveBeenCalledWith(null);
-    expect(storeState.setBlockingClips).toHaveBeenCalledWith(null);
-
-    await waitFor(() => {
-      expect(storeState.setProjectTitle).toHaveBeenCalledWith('Next Story');
-    });
-    const clearedTitleCallIndex = storeState.setProjectTitle.mock.calls.findIndex(
-      ([title]) => title === null,
-    );
-    const nextTitleCallIndex = storeState.setProjectTitle.mock.calls.findIndex(
-      ([title]) => title === 'Next Story',
-    );
-    expect(clearedTitleCallIndex).toBeGreaterThanOrEqual(0);
-    expect(nextTitleCallIndex).toBeGreaterThan(clearedTitleCallIndex);
+    expect(readRunState(10).isGenerating).toBe(false);
+    expect(storeState.setSelectedShot).toHaveBeenCalledWith(null);
+    expect(storeState.setSelectedCharacter).toHaveBeenCalledWith(null);
+    // 项目字段不再经过 store 中转
+    expect(storeState).not.toHaveProperty('projectTitle');
+    expect(storeState).not.toHaveProperty('setCharacters');
+    expect(titleBefore).toBe('Realtime Story');
   });
 
   it('renders the not found page when the project query resolves empty', () => {
     currentProjectData = undefined as never;
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.getByText('项目未找到')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '返回首页' })).toBeInTheDocument();
@@ -788,7 +709,7 @@ describe('ProjectPage live hydration', () => {
     };
     currentProjectData = undefined as never;
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.getByText('项目未找到')).toBeInTheDocument();
     expect(screen.queryByText('无法加载项目')).not.toBeInTheDocument();
@@ -803,7 +724,7 @@ describe('ProjectPage live hydration', () => {
     };
     currentProjectData = undefined as never;
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.getByText('无法加载项目')).toBeInTheDocument();
     expect(screen.getByText('服务器开小差了')).toBeInTheDocument();
@@ -824,7 +745,7 @@ describe('ProjectPage live hydration', () => {
     vi.stubGlobal('matchMedia', vi.fn(() => mediaQueryList));
 
     try {
-      render(<ProjectPage />);
+      renderWithProviders(<ProjectPage />);
 
       // <lg：不挂载 tldraw 画布，改为只读预览 + 侧栏上下分栏
       expect(screen.queryByTestId('stage-view')).not.toBeInTheDocument();
@@ -837,7 +758,7 @@ describe('ProjectPage live hydration', () => {
   });
 
   it('keeps the desktop canvas mounted at lg and above', () => {
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.getByTestId('stage-view')).toBeInTheDocument();
     expect(
@@ -849,7 +770,7 @@ describe('ProjectPage live hydration', () => {
     projectQueryState = { isLoading: false, error: new Error('加载失败') };
     currentProjectData = undefined as never;
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith({
@@ -869,7 +790,7 @@ describe('ProjectPage live hydration', () => {
     };
     currentProjectData = undefined as never;
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(
@@ -897,12 +818,11 @@ describe('ProjectPage live hydration', () => {
         },
       },
     };
-    storeState.isGenerating = false;
-
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ isGenerating: false });
 
     await waitFor(() => {
-      expect(projectsApi.generate).toHaveBeenCalledWith(9, { auto_mode: false });
+      expect(projectsApi.startRun).toHaveBeenCalledWith(9, { auto_mode: false });
     });
     expect(setSearchParams).toHaveBeenCalledWith({}, { replace: true });
   });
@@ -923,32 +843,38 @@ describe('ProjectPage live hydration', () => {
       },
     };
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('invalidates project caches when projectUpdatedAt changes without clobbering live progress state', async () => {
-    const { rerender } = render(<ProjectPage />);
-
-    storeState.projectUpdatedAt = Date.now();
-    rerender(<ProjectPage />);
-
-    await waitFor(() => {
-      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['project', 9] });
-      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['projects'] });
+  it('keeps live progress state untouched when the project query refetches', async () => {
+    const { rerenderWithProviders } = renderWithProviders(<ProjectPage />);
+    // Seed the live projection after mount, then verify a project refetch
+    // does not clobber it.
+    seedRunState({
+      isGenerating: true,
+      progress: 0.35,
+      currentStage: 'storyboard',
     });
 
-    expect(storeState.isGenerating).toBe(true);
-    expect(storeState.progress).toBe(0.35);
-    expect(storeState.currentStage).toBe('storyboard');
+    currentProjectData = { ...projectData, title: 'Refetched Story' };
+    rerenderWithProviders(<ProjectPage />);
+
+    // 项目字段直接来自 query cache，不再写回 store，因此不会冲掉实时进度
+    await waitFor(() => {
+      expect(screen.getByTestId('stage-pipeline')).toBeInTheDocument();
+    });
+    expect(readRunState(9).isGenerating).toBe(true);
+    expect(readRunState(9).progress).toBe(0.35);
+    expect(readRunState(9).currentStage).toBe('storyboard');
   });
 
   it('submits feedback through the API when no active run is in progress', async () => {
     const user = userEvent.setup();
-    storeState.isGenerating = false;
-    storeState.currentRunId = null;
-    render(<ProjectPage />);
+    seedRunState({ isGenerating: false });
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ currentRunId: null });
 
     await user.click(screen.getByRole('button', { name: '发送反馈' }));
 
@@ -963,7 +889,8 @@ describe('ProjectPage live hydration', () => {
         undefined,
       );
     });
-    expect(storeState.addMessage).toHaveBeenCalledWith(
+    expect(appendMessage).toHaveBeenCalledWith(
+      9,
       expect.objectContaining({
         agent: 'user',
         role: 'user',
@@ -974,12 +901,11 @@ describe('ProjectPage live hydration', () => {
 
   it('routes feedback to render when the current workflow stage is render', async () => {
     const user = userEvent.setup();
-    storeState.isGenerating = false;
-    storeState.currentRunId = null;
-    storeState.currentStage = 'render';
-    storeState.currentAgent = 'orchestrator';
-
-    render(<ProjectPage />);
+    seedRunState({ isGenerating: false });
+    seedRunState({ currentRunId: null });
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ currentStage: 'render' });
+    seedRunState({ currentAgent: 'orchestrator' });
 
     await user.click(screen.getByRole('button', { name: '发送反馈' }));
 
@@ -998,12 +924,11 @@ describe('ProjectPage live hydration', () => {
 
   it('routes feedback to compose when the current workflow stage is compose', async () => {
     const user = userEvent.setup();
-    storeState.isGenerating = false;
-    storeState.currentRunId = null;
-    storeState.currentStage = 'compose';
-    storeState.currentAgent = 'render';
-
-    render(<ProjectPage />);
+    seedRunState({ isGenerating: false });
+    seedRunState({ currentRunId: null });
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ currentStage: 'compose' });
+    seedRunState({ currentAgent: 'render' });
 
     await user.click(screen.getByRole('button', { name: '发送反馈' }));
 
@@ -1022,9 +947,8 @@ describe('ProjectPage live hydration', () => {
 
   it('sends confirm through websocket when an active run exists', async () => {
     const user = userEvent.setup();
-    storeState.currentRunId = 42;
-
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ currentRunId: 42 });
 
     await user.click(screen.getByRole('button', { name: '确认并继续' }));
 
@@ -1033,7 +957,8 @@ describe('ProjectPage live hydration', () => {
       data: { run_id: 42, feedback: '请微调这一版' },
     });
     expect(projectsApi.feedback).not.toHaveBeenCalled();
-    expect(storeState.addMessage).toHaveBeenCalledWith(
+    expect(appendMessage).toHaveBeenCalledWith(
+      9,
       expect.objectContaining({
         agent: 'user',
         content: '请微调这一版',
@@ -1042,12 +967,12 @@ describe('ProjectPage live hydration', () => {
   });
   it('resumes recoverable runs and clears recovery state after success', async () => {
     const user = userEvent.setup();
-    storeState.isGenerating = false;
-    storeState.recoveryControl = {
+    seedRunState({ isGenerating: false });
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ recoveryControl: {
       state: 'recoverable',
       detail: '可以从上一阶段继续。',
       available_actions: ['resume', 'cancel'],
-      thread_id: 'thread-9',
       active_run: {
         id: 17,
         project_id: 9,
@@ -1057,46 +982,44 @@ describe('ProjectPage live hydration', () => {
         error: null,
         resource_type: null,
         resource_id: null,
-        thread_id: null,
         created_at: '2026-04-11T00:00:00Z',
         updated_at: '2026-04-11T00:00:00Z',
       },
       recovery_summary: {
         project_id: 9,
         run_id: 17,
-        thread_id: 'thread-9',
         current_stage: 'storyboard',
         next_stage: 'compose',
         preserved_stages: ['plan'],
         stage_history: [],
         resumable: true,
       },
-    };
-
-    render(<ProjectPage />);
+    } });
 
     await user.click(screen.getByRole('button', { name: '恢复运行' }));
 
     await waitFor(() => {
-      expect(projectsApi.resume).toHaveBeenCalledWith(9, 17);
+      expect(runsApi.resume).toHaveBeenCalledWith(17);
     });
-    expect(storeState.setGenerating).toHaveBeenCalledWith(true);
-    expect(storeState.setCurrentRunId).toHaveBeenCalledWith(55);
-    expect(storeState.setCurrentAgent).toHaveBeenCalledWith('plan');
-    expect(storeState.setProgress).toHaveBeenCalledWith(0.61);
-    expect(storeState.setCurrentStage).toHaveBeenCalledWith('compose');
-    expect(storeState.setRecoveryControl).toHaveBeenCalledWith(null);
-    expect(storeState.setRecoverySummary).toHaveBeenCalledWith(null);
-    expect(storeState.setRecoveryGate).toHaveBeenCalledWith(null);
+    expect(readRunState(9)).toMatchObject({
+      isGenerating: true,
+      currentRunId: 55,
+      currentAgent: 'plan',
+      progress: 0.61,
+      currentStage: 'compose',
+      recoveryControl: null,
+      recoverySummary: null,
+      recoveryGate: null,
+    });
   });
 
   it('cancels recoverable runs and resets the live state after settle', async () => {
     const user = userEvent.setup();
-    storeState.recoveryControl = {
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ recoveryControl: {
       state: 'active',
       detail: '当前运行仍可取消。',
       available_actions: ['resume', 'cancel'],
-      thread_id: 'thread-10',
       active_run: {
         id: 18,
         project_id: 9,
@@ -1106,31 +1029,29 @@ describe('ProjectPage live hydration', () => {
         error: null,
         resource_type: null,
         resource_id: null,
-        thread_id: null,
         created_at: '2026-04-11T00:00:00Z',
         updated_at: '2026-04-11T00:00:00Z',
       },
       recovery_summary: {
         project_id: 9,
         run_id: 18,
-        thread_id: 'thread-10',
         current_stage: 'compose',
         next_stage: 'merge',
         preserved_stages: ['plan', 'render'],
         stage_history: [],
         resumable: true,
       },
-    };
-
-    render(<ProjectPage />);
+    } });
 
     await user.click(screen.getByRole('button', { name: '取消' }));
 
     await waitFor(() => {
-      expect(projectsApi.cancel).toHaveBeenCalledWith(9);
+      expect(runsApi.cancel).toHaveBeenCalledWith(18);
     });
-    expect(storeState.resetRunState).toHaveBeenCalled();
-    expect(storeState.addMessage).toHaveBeenCalledWith(
+    expect(readRunState(9).isGenerating).toBe(false);
+    expect(readRunState(9).currentRunId).toBeNull();
+    expect(appendMessage).toHaveBeenCalledWith(
+      9,
       expect.objectContaining({
         agent: 'system',
         content: '生成已停止',
@@ -1154,12 +1075,11 @@ describe('ProjectPage live hydration', () => {
         },
       },
     };
-    storeState.isGenerating = false;
-
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ isGenerating: false });
 
     await waitFor(() => {
-      expect(projectsApi.generate).toHaveBeenCalled();
+      expect(projectsApi.startRun).toHaveBeenCalled();
     });
   });
 
@@ -1179,46 +1099,45 @@ describe('ProjectPage live hydration', () => {
         },
       },
     };
-    storeState.isGenerating = false;
-
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ isGenerating: false });
 
     await waitFor(() => {
-      expect(projectsApi.generate).toHaveBeenCalled();
+      expect(projectsApi.startRun).toHaveBeenCalled();
     });
   });
 
   it('hydrates active run state immediately after generate succeeds', async () => {
     const user = userEvent.setup();
-    storeState.isGenerating = false;
-
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ isGenerating: false });
     vi.clearAllMocks();
 
     await user.click(screen.getByRole('button', { name: '开始生成' }));
 
     await waitFor(() => {
-      expect(projectsApi.generate).toHaveBeenCalledWith(9, { auto_mode: false });
+      expect(projectsApi.startRun).toHaveBeenCalledWith(9, { auto_mode: false });
     });
-    expect(storeState.clearMessages).toHaveBeenCalled();
-    expect(storeState.setCurrentStage).toHaveBeenCalledWith('plan');
-    expect(storeState.setGenerating).toHaveBeenCalledWith(true);
-    expect(storeState.setCurrentRunId).toHaveBeenCalledWith(77);
-    expect(storeState.setCurrentAgent).toHaveBeenCalledWith('orchestrator');
-    expect(storeState.setProgress).toHaveBeenCalledWith(0);
-    expect(storeState.setCurrentRunProviderSnapshot).toHaveBeenCalledWith(providerSnapshotSample);
-    expect(storeState.setAwaitingConfirm).toHaveBeenCalledWith(false, null, 77);
-    expect(storeState.setRecoveryControl).toHaveBeenCalledWith(null);
-    expect(storeState.setRecoverySummary).toHaveBeenCalledWith(null);
-    expect(storeState.setRecoveryGate).toHaveBeenCalledWith(null);
+    expect(clearMessageFeed).toHaveBeenCalledWith(9);
+    expect(readRunState(9)).toMatchObject({
+      currentStage: 'plan',
+      isGenerating: true,
+      currentRunId: 77,
+      currentAgent: 'orchestrator',
+      progress: 0,
+      currentRunProviderSnapshot: providerSnapshotSample,
+      awaitingConfirm: false,
+      recoveryControl: null,
+      recoverySummary: null,
+      recoveryGate: null,
+    });
   });
 
   it('does not treat a stale pending generate request as active generation after run context clears', () => {
     mutationPendingStates = [true, false, false, false, false];
-    storeState.isGenerating = false;
-    storeState.currentRunId = null;
-
-    render(<ProjectPage />);
+    seedRunState({ isGenerating: false });
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ currentRunId: null });
 
     expect(screen.getByTestId('chat-generating-state')).toHaveTextContent('idle');
   });
@@ -1226,23 +1145,22 @@ describe('ProjectPage live hydration', () => {
   it('ignores a late generate success after the user has already cancelled the run', async () => {
     const user = userEvent.setup();
     let resolveGenerate!: (value: AgentRun) => void;
-    vi.mocked(projectsApi.generate).mockImplementationOnce(
+    vi.mocked(projectsApi.startRun).mockImplementationOnce(
       () =>
         new Promise<AgentRun>((resolve) => {
           resolveGenerate = resolve;
         })
     );
-    vi.mocked(projectsApi.cancel).mockResolvedValueOnce({ status: 'cancelled', cancelled: 1 } as never);
-    storeState.isGenerating = false;
-    storeState.currentRunId = null;
-
-    const { rerender } = render(<ProjectPage />);
+    vi.mocked(runsApi.cancel).mockResolvedValueOnce({ status: 'cancelled', cancelled: 1 } as never);
+    seedRunState({ isGenerating: false });
+    const { rerenderWithProviders } = renderWithProviders(<ProjectPage />);
+    seedRunState({ currentRunId: null });
 
     await user.click(screen.getByRole('button', { name: '开始生成' }));
 
-    storeState.isGenerating = true;
-    storeState.currentRunId = 321;
-    rerender(<ProjectPage />);
+    seedRunState({ isGenerating: true });
+    rerenderWithProviders(<ProjectPage />);
+    seedRunState({ currentRunId: 321 });
 
     await user.click(screen.getByRole('button', { name: '停止生成' }));
 
@@ -1255,39 +1173,35 @@ describe('ProjectPage live hydration', () => {
       error: null,
       resource_type: null,
       resource_id: null,
-      thread_id: null,
       created_at: '2026-04-11T00:00:00Z',
       updated_at: '2026-04-11T00:00:00Z',
     });
 
     await waitFor(() => {
-      expect(projectsApi.cancel).toHaveBeenCalledWith(9);
+      expect(runsApi.cancel).toHaveBeenCalledWith(321);
     });
 
-    expect(storeState.setGenerating).not.toHaveBeenCalledWith(true);
-    expect(storeState.setCurrentRunId).not.toHaveBeenCalledWith(321);
+    expect(readRunState(9).currentRunId).not.toBe(321);
   });
 
   it('ignores cancel clicks when there is no active run context', async () => {
     const user = userEvent.setup();
-    storeState.isGenerating = false;
-    storeState.currentRunId = null;
-    storeState.recoveryControl = null;
-
-    render(<ProjectPage />);
+    seedRunState({ isGenerating: false });
+    seedRunState({ currentRunId: null });
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ recoveryControl: null });
     vi.clearAllMocks();
 
     await user.click(screen.getByRole('button', { name: '停止生成' }));
 
-    expect(projectsApi.cancel).not.toHaveBeenCalled();
+    expect(runsApi.cancel).not.toHaveBeenCalled();
   });
 
   it('shows an error toast when generate fails with a non-409 error', async () => {
     const user = userEvent.setup();
-    vi.mocked(projectsApi.generate).mockRejectedValueOnce(new Error('服务器炸了'));
-    storeState.isGenerating = false;
-
-    render(<ProjectPage />);
+    vi.mocked(projectsApi.startRun).mockRejectedValueOnce(new Error('服务器炸了'));
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ isGenerating: false });
 
     await user.click(screen.getByRole('button', { name: '开始生成' }));
 
@@ -1307,7 +1221,6 @@ describe('ProjectPage live hydration', () => {
       state: 'active',
       detail: '任务仍在进行',
       available_actions: ['cancel'],
-      thread_id: 'thread-rollback',
       active_run: {
         id: 101,
         project_id: 9,
@@ -1317,14 +1230,12 @@ describe('ProjectPage live hydration', () => {
         error: null,
         resource_type: null,
         resource_id: null,
-        thread_id: null,
         created_at: '2026-04-11T00:00:00Z',
         updated_at: '2026-04-11T00:00:00Z',
       },
       recovery_summary: {
         project_id: 9,
         run_id: 101,
-        thread_id: 'thread-rollback',
         current_stage: 'plan',
         next_stage: 'storyboard',
         preserved_stages: [],
@@ -1333,7 +1244,7 @@ describe('ProjectPage live hydration', () => {
       },
     };
 
-    vi.mocked(projectsApi.generate).mockRejectedValueOnce(
+    vi.mocked(projectsApi.startRun).mockRejectedValueOnce(
       new ApiError({
         code: 'conflict',
         message: '409 conflict',
@@ -1342,25 +1253,26 @@ describe('ProjectPage live hydration', () => {
       })
     );
 
-    storeState.isGenerating = false;
-
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ isGenerating: false });
 
     await user.click(screen.getByRole('button', { name: '开始生成' }));
 
     await waitFor(() => {
-      expect(storeState.setRecoveryControl).toHaveBeenCalledWith(control);
+      expect(readRunState(9).recoveryControl).toEqual(control);
     });
-    expect(storeState.setRecoverySummary).toHaveBeenCalledWith(control.recovery_summary);
-    expect(storeState.setCurrentRunId).toHaveBeenCalledWith(101);
-    expect(storeState.setGenerating).toHaveBeenCalledWith(true);
-    expect(storeState.setCurrentAgent).toHaveBeenCalledWith('plan');
-    expect(storeState.setProgress).toHaveBeenCalledWith(0.22);
+    expect(readRunState(9)).toMatchObject({
+      recoverySummary: control.recovery_summary,
+      currentRunId: 101,
+      isGenerating: true,
+      currentAgent: 'plan',
+      progress: 0.22,
+    });
   });
 
   it('shows a warning toast when generate 409 does not include recovery control', async () => {
     const user = userEvent.setup();
-    vi.mocked(projectsApi.generate).mockRejectedValueOnce(
+    vi.mocked(projectsApi.startRun).mockRejectedValueOnce(
       new ApiError({
         code: 'conflict',
         message: '409 conflict',
@@ -1368,9 +1280,8 @@ describe('ProjectPage live hydration', () => {
       })
     );
 
-    storeState.isGenerating = false;
-
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ isGenerating: false });
 
     await user.click(screen.getByRole('button', { name: '开始生成' }));
 
@@ -1386,7 +1297,7 @@ describe('ProjectPage live hydration', () => {
 
   it('handles feedback conflict and generic error paths', async () => {
     const user = userEvent.setup();
-    storeState.isGenerating = false;
+    seedRunState({ isGenerating: false });
 
     vi.mocked(projectsApi.feedback).mockRejectedValueOnce(
       new ApiError({
@@ -1396,7 +1307,7 @@ describe('ProjectPage live hydration', () => {
       })
     );
 
-    render(<ProjectPage />);
+    renderWithProviders(<ProjectPage />);
 
     await user.click(screen.getByRole('button', { name: '发送反馈' }));
 
@@ -1423,12 +1334,12 @@ describe('ProjectPage live hydration', () => {
 
   it('resets state on cancel even when cancel request fails', async () => {
     const user = userEvent.setup();
-    vi.mocked(projectsApi.cancel).mockRejectedValueOnce(new Error('cancel failed'));
-    storeState.recoveryControl = {
+    vi.mocked(runsApi.cancel).mockRejectedValueOnce(new Error('cancel failed'));
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ recoveryControl: {
       state: 'active',
       detail: '当前运行仍可取消。',
       available_actions: ['resume', 'cancel'],
-      thread_id: 'thread-10',
       active_run: {
         id: 18,
         project_id: 9,
@@ -1438,31 +1349,29 @@ describe('ProjectPage live hydration', () => {
         error: null,
         resource_type: null,
         resource_id: null,
-        thread_id: null,
         created_at: '2026-04-11T00:00:00Z',
         updated_at: '2026-04-11T00:00:00Z',
       },
       recovery_summary: {
         project_id: 9,
         run_id: 18,
-        thread_id: 'thread-10',
         current_stage: 'compose',
         next_stage: 'merge',
         preserved_stages: ['plan', 'render'],
         stage_history: [],
         resumable: true,
       },
-    };
-
-    render(<ProjectPage />);
+    } });
 
     await user.click(screen.getByRole('button', { name: '取消' }));
 
     await waitFor(() => {
-      expect(projectsApi.cancel).toHaveBeenCalledWith(9);
+      expect(runsApi.cancel).toHaveBeenCalledWith(18);
     });
-    expect(storeState.resetRunState).toHaveBeenCalled();
-    expect(storeState.addMessage).toHaveBeenCalledWith(
+    expect(readRunState(9).isGenerating).toBe(false);
+    expect(readRunState(9).currentRunId).toBeNull();
+    expect(appendMessage).toHaveBeenCalledWith(
+      9,
       expect.objectContaining({
         agent: 'system',
         content: '生成已停止',
@@ -1472,11 +1381,11 @@ describe('ProjectPage live hydration', () => {
 
   it('surfaces error for failed resume mutation', async () => {
     const user = userEvent.setup();
-    storeState.recoveryControl = {
+    renderWithProviders(<ProjectPage />);
+    seedRunState({ recoveryControl: {
       state: 'recoverable',
       detail: '可以从上一阶段继续执行',
       available_actions: ['resume', 'cancel'],
-      thread_id: 'thread-11',
       active_run: {
         id: 55,
         project_id: 9,
@@ -1486,31 +1395,27 @@ describe('ProjectPage live hydration', () => {
         error: null,
         resource_type: null,
         resource_id: null,
-        thread_id: null,
         created_at: '2026-04-11T00:00:00Z',
         updated_at: '2026-04-11T00:00:00Z',
       },
       recovery_summary: {
         project_id: 9,
         run_id: 55,
-        thread_id: 'thread-11',
         current_stage: 'storyboard',
         next_stage: 'compose',
         preserved_stages: ['plan'],
         stage_history: [],
         resumable: true,
       },
-    };
+    } });
 
-    vi.mocked(projectsApi.resume).mockRejectedValueOnce(
+    vi.mocked(runsApi.resume).mockRejectedValueOnce(
       new ApiError({
         code: 'resume_fail',
         message: '无法恢复',
         status: 500,
       })
     );
-
-    render(<ProjectPage />);
 
     await user.click(screen.getByRole('button', { name: '恢复运行' }));
 

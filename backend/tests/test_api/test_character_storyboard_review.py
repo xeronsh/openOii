@@ -118,7 +118,7 @@ async def test_shot_approval_rejects_incomplete_intent(async_client, test_sessio
     res = await async_client.post(f"/api/v1/shots/{shot.id}/approve")
     assert res.status_code == 400
     assert (
-        res.json()["detail"]
+        res.json()["error"]["message"]
         == "Shot approval requires structured intent, duration, camera, motion note, and bound cast"
     )
 
@@ -147,7 +147,7 @@ async def test_shot_approval_rejects_stale_character_snapshot(async_client, test
 
     res = await async_client.post(f"/api/v1/shots/{shot.id}/approve")
     assert res.status_code == 400
-    assert res.json()["detail"] == f"Unknown character_ids for project: [{character.id}]"
+    assert res.json()["error"]["message"] == f"Unknown character_ids for project: [{character.id}]"
 
 
 @pytest.mark.asyncio
