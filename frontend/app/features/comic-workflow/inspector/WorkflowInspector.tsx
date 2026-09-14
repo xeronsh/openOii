@@ -12,7 +12,13 @@ import {
 	shotsApi,
 	universesApi,
 } from "~/services/api";
-import { useEditorStore } from "~/stores/editorStore";
+import {
+	removeCharacterFromCache,
+	removeShotFromCache,
+	upsertCharacterInCache,
+	upsertShotInCache,
+} from "~/query/applyServerEvent";
+import { projectQueryKeys } from "~/query/queryKeys";
 import type {
 	Character,
 	CharacterUpdatePayload,
@@ -287,8 +293,11 @@ function ProjectDraftForm({
 				title: title.trim() || project.title,
 				story: story.trim() || null,
 			});
-			const store = useEditorStore.getState();
-			store.patchProject({ id: 0, title: updated.title ?? null, story: updated.story ?? null });
+			queryClient.setQueryData(
+				projectQueryKeys.project(projectId),
+				(current: typeof project | undefined) =>
+					current ? { ...current, title: updated.title, story: updated.story } : current,
+			);
 			queryClient.invalidateQueries({ queryKey: ["project", projectId] });
 			queryClient.invalidateQueries({ queryKey: ["projects"] });
 			toast.success({ title: "Brief", message: "已保存" });
@@ -339,7 +348,7 @@ function CharacterDraftForm({
 				description: textOrNull(draft.description),
 				visual_notes: textOrNull(draft.visual_notes),
 			});
-			useEditorStore.getState().updateCharacter(updated);
+			upsertCharacterInCache(queryClient, character.project_id, updated);
 			queryClient.invalidateQueries({ queryKey: ["characters", character.project_id] });
 			toast.success({ title: "角色", message: "已保存" });
 		} catch (error) {
@@ -427,7 +436,7 @@ function ShotDraftForm({ shot, disabled }: { shot: Shot; disabled: boolean }) {
 				image_prompt: textOrNull(draft.image_prompt),
 				prompt: textOrNull(draft.prompt),
 			});
-			useEditorStore.getState().updateShot(updated);
+			upsertShotInCache(queryClient, shot.project_id, updated);
 			queryClient.invalidateQueries({ queryKey: ["shots", shot.project_id] });
 			toast.success({ title: "镜头", message: "已保存" });
 		} catch (error) {
@@ -656,10 +665,10 @@ function ActionsTab({
 		runAction("approve", async () => {
 			if (node.kind === "character") {
 				const updated = await charactersApi.approve(entityId);
-				useEditorStore.getState().updateCharacter(updated);
+				upsertCharacterInCache(queryClient, updated.project_id, updated);
 			} else {
 				const updated = await shotsApi.approve(entityId);
-				useEditorStore.getState().updateShot(updated);
+				upsertShotInCache(queryClient, updated.project_id, updated);
 			}
 			toast.success({ title: "审阅", message: "已批准" });
 		});
@@ -724,10 +733,10 @@ function ActionsTab({
 			if (!confirmed) return;
 			if (node.kind === "character") {
 				await charactersApi.delete(entityId);
-				useEditorStore.getState().removeCharacter(entityId);
+				removeCharacterFromCache(queryClient, projectId, entityId);
 			} else {
 				await shotsApi.delete(entityId);
-				useEditorStore.getState().removeShot(entityId);
+				removeShotFromCache(queryClient, projectId, entityId);
 			}
 			toast.success({ title: "删除", message: "已删除" });
 		});

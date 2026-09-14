@@ -24,6 +24,56 @@ function removeById<T extends { id: number }>(items: T[] | undefined, id: number
   return items?.filter((item) => item.id !== id);
 }
 
+export function upsertCharacterInCache(
+  queryClient: QueryClient,
+  projectId: number,
+  character: Character,
+): void {
+  queryClient.setQueryData<Character[]>(projectQueryKeys.characters(projectId), (current) =>
+    upsertById(current, character),
+  );
+}
+
+export function upsertShotInCache(
+  queryClient: QueryClient,
+  projectId: number,
+  shot: Shot,
+): void {
+  queryClient.setQueryData<Shot[]>(projectQueryKeys.shots(projectId), (current) =>
+    upsertById(current, shot),
+  );
+}
+
+export function removeCharacterFromCache(
+  queryClient: QueryClient,
+  projectId: number,
+  characterId: number,
+): void {
+  queryClient.setQueryData<Character[]>(projectQueryKeys.characters(projectId), (current) =>
+    removeById(current, characterId),
+  );
+}
+
+export function removeShotFromCache(
+  queryClient: QueryClient,
+  projectId: number,
+  shotId: number,
+): void {
+  queryClient.setQueryData<Shot[]>(projectQueryKeys.shots(projectId), (current) =>
+    removeById(current, shotId),
+  );
+}
+
+/** Drop transient blocking clips once a run reaches a terminal state. */
+export function clearBlockingClips(
+  queryClient: QueryClient,
+  projectId: number,
+): void {
+  queryClient.setQueryData<Project>(projectQueryKeys.project(projectId), (current) =>
+    current ? { ...current, blocking_clips: null } : current,
+  );
+}
+
 function patchProject(
   queryClient: QueryClient,
   projectId: number,
@@ -58,20 +108,14 @@ export function applyServerEvent(
     case "character_updated": {
       const character = event.data.character as Character | undefined;
       if (!character) return;
-      queryClient.setQueryData<Character[]>(
-        projectQueryKeys.characters(projectId),
-        (current) => upsertById(current, character),
-      );
+      upsertCharacterInCache(queryClient, projectId, character);
       return;
     }
 
     case "character_deleted": {
       const id = event.data.character_id as number | undefined;
       if (id === undefined) return;
-      queryClient.setQueryData<Character[]>(
-        projectQueryKeys.characters(projectId),
-        (current) => removeById(current, id),
-      );
+      removeCharacterFromCache(queryClient, projectId, id);
       return;
     }
 
@@ -79,9 +123,7 @@ export function applyServerEvent(
     case "shot_updated": {
       const shot = event.data.shot as Shot | undefined;
       if (!shot) return;
-      queryClient.setQueryData<Shot[]>(projectQueryKeys.shots(projectId), (current) =>
-        upsertById(current, shot),
-      );
+      upsertShotInCache(queryClient, projectId, shot);
       return;
     }
 
@@ -98,9 +140,23 @@ export function applyServerEvent(
     case "shot_deleted": {
       const id = event.data.shot_id as number | undefined;
       if (id === undefined) return;
-      queryClient.setQueryData<Shot[]>(projectQueryKeys.shots(projectId), (current) =>
-        removeById(current, id),
-      );
+      removeShotFromCache(queryClient, projectId, id);
+      return;
+    }
+
+    case "run_awaiting_confirm": {
+      // The gate carries the freshly generated outline/bible before the
+      // project_updated event lands; keep the cache authoritative either way.
+      const gate = event.data as {
+        agent?: string;
+        story_outline?: Project["story_outline"];
+        visual_bible?: string | null;
+      };
+      if (gate.agent !== "outline") return;
+      patchProject(queryClient, projectId, {
+        story_outline: gate.story_outline ?? null,
+        visual_bible: gate.visual_bible ?? null,
+      });
       return;
     }
 
@@ -147,13 +203,14 @@ export function applyServerEvent(
       if (cleared?.includes("shots")) {
         queryClient.setQueryData<Shot[]>(projectQueryKeys.shots(projectId), []);
       }
-      patchProject(queryClient, projectId, { video_url: null });
+      patchProject(queryClient, projectId, { video_url: null, blocking_clips: null });
       return;
     }
 
     case "run_completed":
     case "run_failed":
     case "run_cancelled": {
+      clearBlockingClips(queryClient, projectId);
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.generationState(projectId) });
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.project(projectId) });
       return;

@@ -115,15 +115,6 @@ const storeState: {
   recoveryControl: RecoveryControlRead | null;
   recoverySummary: unknown;
   recoveryGate: unknown;
-  projectUpdatedAt: number | null;
-  characters: never[];
-  shots: never[];
-  projectVideoUrl: string | null;
-  projectStatus: string | null;
-  projectTitle: string | null;
-  projectSummary: string | null;
-  projectStory: string | null;
-  blockingClips: never[] | null;
   messages: never[];
   clearMessages: ReturnType<typeof vi.fn>;
   setGenerating: ReturnType<typeof vi.fn>;
@@ -136,18 +127,13 @@ const storeState: {
   setSelectedShot: ReturnType<typeof vi.fn>;
   setSelectedCharacter: ReturnType<typeof vi.fn>;
   setHighlightedMessage: ReturnType<typeof vi.fn>;
-  setCharacters: ReturnType<typeof vi.fn>;
-  setShots: ReturnType<typeof vi.fn>;
   setRecoveryControl: ReturnType<typeof vi.fn>;
   setRecoverySummary: ReturnType<typeof vi.fn>;
   setRecoveryGate: ReturnType<typeof vi.fn>;
-  setProjectUpdatedAt: ReturnType<typeof vi.fn>;
   addMessage: ReturnType<typeof vi.fn>;
   resetRunState: ReturnType<typeof vi.fn>;
   runMode: string;
   setRunMode: ReturnType<typeof vi.fn>;
-  setBlockingClips: ReturnType<typeof vi.fn>;
-  patchProject: ReturnType<typeof vi.fn>;
 } = {
   isGenerating: false,
   progress: 0,
@@ -160,15 +146,6 @@ const storeState: {
   recoveryControl: null,
   recoverySummary: null,
   recoveryGate: null,
-  projectUpdatedAt: null as number | null,
-  characters: emptyCharacters,
-  shots: emptyShots,
-  projectVideoUrl: null,
-  projectStatus: null,
-  projectTitle: null,
-  projectSummary: null,
-  projectStory: null,
-  blockingClips: null,
   messages: emptyMessages,
   clearMessages: vi.fn(),
   setGenerating: vi.fn(),
@@ -181,39 +158,13 @@ const storeState: {
   setSelectedShot: vi.fn(),
   setSelectedCharacter: vi.fn(),
   setHighlightedMessage: vi.fn(),
-  setCharacters: vi.fn(),
-  setShots: vi.fn(),
   setRecoveryControl: vi.fn(),
   setRecoverySummary: vi.fn(),
   setRecoveryGate: vi.fn(),
-  setProjectUpdatedAt: vi.fn((timestamp: number) => {
-    storeState.projectUpdatedAt = timestamp;
-  }),
-  // 真实映射表在 store 里；测试替身只需把 patch 落到 storeState，
-  // 让「水合/WS 后字段确实进了 store」这类断言仍然有效。
-  patchProject: vi.fn((patch: Record<string, unknown>) => {
-    const map: Record<string, string> = {
-      video_url: 'projectVideoUrl', status: 'projectStatus', title: 'projectTitle',
-      summary: 'projectSummary', story: 'projectStory', style: 'projectStyle',
-      target_shot_count: 'projectTargetShotCount', character_hints: 'projectCharacterHints',
-      creation_mode: 'projectCreationMode', reference_images: 'projectReferenceImages',
-      exports: 'projectExports', provider_settings: 'projectProviderSettings',
-      universe_id: 'projectUniverseId', chapter_number: 'projectChapterNumber',
-      chapter_title: 'projectChapterTitle', skill_id: 'projectSkillId',
-      story_outline: 'projectStoryOutline', visual_bible: 'projectVisualBible',
-      outline_approved: 'projectOutlineApproved', blocking_clips: 'blockingClips',
-    };
-    for (const [k, v] of Object.entries(patch)) {
-      if (k === 'id' || v === undefined) continue;
-      const field = map[k];
-      if (field) (storeState as Record<string, unknown>)[field] = v;
-    }
-  }),
   addMessage: vi.fn(),
   resetRunState: vi.fn(),
   runMode: 'manual' as string,
   setRunMode: vi.fn(),
-  setBlockingClips: vi.fn(),
 };
 const mutateSpy = vi.fn();
 const sendMock = vi.fn();
@@ -454,18 +405,11 @@ describe('ProjectPage live hydration', () => {
     storeState.currentAgent = null;
     storeState.awaitingConfirm = false;
     storeState.awaitingAgent = null;
-    storeState.projectUpdatedAt = null;
     storeState.currentRunId = null;
     storeState.currentRunProviderSnapshot = null;
     storeState.recoveryControl = null;
     storeState.recoverySummary = null;
     storeState.recoveryGate = null;
-    storeState.projectVideoUrl = null;
-    storeState.projectStatus = null;
-    storeState.projectTitle = null;
-    storeState.projectSummary = null;
-    storeState.projectStory = null;
-    storeState.blockingClips = null;
     vi.mocked(projectsApi.update).mockResolvedValue(projectData as never);
     vi.mocked(projectsApi.startRun).mockResolvedValue({
 		id: 77,
@@ -517,13 +461,13 @@ describe('ProjectPage live hydration', () => {
     expect(screen.queryByText('编辑 Provider')).not.toBeInTheDocument();
   });
 
-  it('clears final video store state when project video_url is null', async () => {
+  it('renders when project video_url is null', async () => {
     currentProjectData = { ...projectData, video_url: null };
 
     render(<ProjectPage />);
 
     await waitFor(() => {
-      expect(storeState.projectVideoUrl).toBeNull();
+      expect(screen.getByTestId('stage-pipeline')).toBeInTheDocument();
     });
   });
 
@@ -719,12 +663,13 @@ describe('ProjectPage live hydration', () => {
     expect(screen.getByTestId('workspace-sidebar')).toBeInTheDocument();
   });
 
-  it('clears project-scoped canvas state when route project changes', async () => {
+  it('clears project-scoped client state when route project changes', async () => {
     const { rerender } = render(<ProjectPage />);
 
     await waitFor(() => {
-      expect(storeState.projectTitle).toBe('Realtime Story');
+      expect(screen.getByTestId('stage-pipeline')).toBeInTheDocument();
     });
+    const titleBefore = currentProjectData.title;
 
     vi.clearAllMocks();
     currentRouteProjectId = '10';
@@ -736,25 +681,17 @@ describe('ProjectPage live hydration', () => {
 
     rerender(<ProjectPage />);
 
+    // 客户端自有状态在切项目时重置；服务端实体由 query cache 按 projectId 自己隔离
     await waitFor(() => {
-      expect(storeState.setCharacters).toHaveBeenCalledWith([]);
+      expect(storeState.clearMessages).toHaveBeenCalled();
     });
-    expect(storeState.setShots).toHaveBeenCalledWith([]);
-    expect(storeState.clearMessages).toHaveBeenCalled();
     expect(storeState.resetRunState).toHaveBeenCalled();
-    await waitFor(() => {
-      expect(storeState.projectTitle).toBe('Next Story');
-    });
-
-    // 顺序断言：先清空（切项目），再落到新项目标题
-    const titlePatches = storeState.patchProject.mock.calls
-      .map(([patch]) => (patch as { title?: string | null }).title)
-      .filter((t) => t !== undefined);
-    expect(titlePatches).toContain(null);
-    expect(titlePatches).toContain('Next Story');
-    expect(titlePatches.lastIndexOf('Next Story')).toBeGreaterThan(
-      titlePatches.indexOf(null),
-    );
+    expect(storeState.setSelectedShot).toHaveBeenCalledWith(null);
+    expect(storeState.setSelectedCharacter).toHaveBeenCalledWith(null);
+    // 项目字段不再经过 store 中转
+    expect(storeState).not.toHaveProperty('projectTitle');
+    expect(storeState).not.toHaveProperty('setCharacters');
+    expect(titleBefore).toBe('Realtime Story');
   });
 
   it('renders the not found page when the project query resolves empty', () => {
@@ -913,17 +850,16 @@ describe('ProjectPage live hydration', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('invalidates project caches when projectUpdatedAt changes without clobbering live progress state', async () => {
+  it('keeps live progress state untouched when the project query refetches', async () => {
     const { rerender } = render(<ProjectPage />);
 
-    storeState.projectUpdatedAt = Date.now();
+    currentProjectData = { ...projectData, title: 'Refetched Story' };
     rerender(<ProjectPage />);
 
+    // 项目字段直接来自 query cache，不再写回 store，因此不会冲掉实时进度
     await waitFor(() => {
-      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['project', 9] });
-      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['projects'] });
+      expect(screen.getByTestId('stage-pipeline')).toBeInTheDocument();
     });
-
     expect(storeState.isGenerating).toBe(true);
     expect(storeState.progress).toBe(0.35);
     expect(storeState.currentStage).toBe('storyboard');

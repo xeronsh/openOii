@@ -112,6 +112,8 @@ export interface Project {
 	creation_mode: string | null;
 	reference_images: string[];
 	exports?: string[];
+	/** Transient: only present on `project_updated` while compose is blocked. */
+	blocking_clips?: BlockingClip[] | null;
 	created_at: string;
 	updated_at: string;
 	provider_settings: ProjectProviderSettings;

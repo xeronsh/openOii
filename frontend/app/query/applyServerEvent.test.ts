@@ -141,4 +141,74 @@ describe("applyServerEvent", () => {
     expect(client.getQueryData(projectQueryKeys.shots(7))).toEqual([]);
     expect(client.getQueryData<Project>(projectQueryKeys.project(7))?.video_url).toBeNull();
   });
+
+  it("projects the outline gate payload before project_updated lands", () => {
+    const client = new QueryClient();
+    client.setQueryData(projectQueryKeys.project(7), {
+      id: 7,
+      story_outline: null,
+      visual_bible: null,
+    } as Partial<Project>);
+
+    applyServerEvent(
+      client,
+      7,
+      event("run_awaiting_confirm", {
+        agent: "outline",
+        story_outline: { acts: [] },
+        visual_bible: "bible",
+      }),
+    );
+
+    expect(client.getQueryData<Project>(projectQueryKeys.project(7))).toMatchObject({
+      story_outline: { acts: [] },
+      visual_bible: "bible",
+    });
+  });
+
+  it("keeps blocking clips in the project cache and clears them on terminal runs", () => {
+    const client = new QueryClient();
+    client.setQueryData(projectQueryKeys.project(7), { id: 7 } as Project);
+
+    applyServerEvent(
+      client,
+      7,
+      event("project_updated", {
+        project: { id: 7, blocking_clips: [{}], status: "superseded" },
+      }),
+    );
+    expect(client.getQueryData<Project>(projectQueryKeys.project(7))?.blocking_clips).toEqual([
+      {},
+    ]);
+
+    for (const type of ["run_completed", "run_failed", "run_cancelled"] as const) {
+      client.setQueryData(projectQueryKeys.project(7), ({ id: 7, blocking_clips: [{}] } as unknown) as Project);
+      applyServerEvent(client, 7, event(type, {}));
+      expect(
+        client.getQueryData<Project>(projectQueryKeys.project(7))?.blocking_clips,
+      ).toBeNull();
+    }
+  });
+
+  it("applies audio_generated to the shot cache", () => {
+    const client = new QueryClient();
+    client.setQueryData(projectQueryKeys.shots(7), [shot(1, 1), shot(2, 2)]);
+
+    applyServerEvent(
+      client,
+      7,
+      event("audio_generated", {
+        shot_id: 2,
+        tts_url: "/static/audio/2.mp3",
+        bgm_type: "warm",
+      }),
+    );
+
+    const shots = client.getQueryData<Shot[]>(projectQueryKeys.shots(7)) ?? [];
+    expect(shots.find((item) => item.id === 2)).toMatchObject({
+      tts_url: "/static/audio/2.mp3",
+      bgm_type: "warm",
+    });
+    expect(shots.find((item) => item.id === 1)?.tts_url).toBeUndefined();
+  });
 });

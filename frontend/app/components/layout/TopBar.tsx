@@ -16,7 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { projectsApi, universesApi } from "~/services/api";
 import { useThemeStore } from "~/stores/themeStore";
 import { useSettingsStore } from "~/stores/settingsStore";
-import { useEditorStore, useShallow } from "~/stores/editorStore";
+import { projectQueryKeys } from "~/query/queryKeys";
 import type { Project } from "~/types";
 import { getProjectStatusMeta } from "~/features/projects/statusMeta";
 import { Button } from "~/components/ui/Button";
@@ -127,14 +127,15 @@ function ProjectDropdown({ currentId }: { currentId?: number }) {
 	);
 }
 
-function UniverseChip() {
-	const { universeId, chapterNumber, chapterTitle } = useEditorStore(
-		useShallow((s) => ({
-			universeId: s.projectUniverseId,
-			chapterNumber: s.projectChapterNumber,
-			chapterTitle: s.projectChapterTitle,
-		})),
-	);
+function UniverseChip({ projectId }: { projectId: number }) {
+	const { data: project } = useQuery({
+		queryKey: projectQueryKeys.project(projectId),
+		queryFn: () => projectsApi.get(projectId),
+		enabled: projectId > 0,
+	});
+	const universeId = project?.universe_id ?? null;
+	const chapterNumber = project?.chapter_number ?? null;
+	const chapterTitle = project?.chapter_title ?? null;
 
 	const { data: universe } = useQuery({
 		queryKey: ["universe-chip", universeId],
@@ -225,7 +226,7 @@ export function TopBar({ projectId }: TopBarProps) {
 							/
 						</span>
 						<ProjectDropdown currentId={projectId} />
-						<UniverseChip />
+						<UniverseChip projectId={projectId} />
 					</>
 				) : null}
 

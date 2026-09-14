@@ -70,12 +70,11 @@ export function ComicWorkflowCanvas({
 		title: string;
 	} | null>(null);
 
-	const { isGenerating, awaitingConfirm, currentRunId, blockingClips } = useEditorStore(
+	const { isGenerating, awaitingConfirm, currentRunId } = useEditorStore(
 		useShallow((state) => ({
 			isGenerating: state.isGenerating,
 			awaitingConfirm: state.awaitingConfirm,
 			currentRunId: state.currentRunId,
-			blockingClips: state.blockingClips,
 		})),
 	);
 
@@ -101,10 +100,10 @@ export function ComicWorkflowCanvas({
 			project,
 			characters,
 			shots,
-			blockingClips,
+			blockingClips: project.blocking_clips,
 			isGenerating,
 		});
-	}, [project, characters, shots, blockingClips, isGenerating]);
+	}, [project, characters, shots, isGenerating]);
 
 	const layout = useMemo(
 		() => (graph ? layoutComicWorkflow(graph) : null),

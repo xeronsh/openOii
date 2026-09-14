@@ -2,21 +2,15 @@ import { useEditorStore, type RunMode } from "~/stores/editorStore";
 import type {
 	AgentMessage,
 	AgentThinkingEventData,
-	AudioGeneratedEventData,
-	Character,
 	VersionCreatedEventData,
 	VersionRollbackEventData,
 	CritiqueResultEventData,
-	OutlineUpdatedEventData,
-	ProjectUpdatedPayload,
 	RunAwaitingConfirmEventData,
 	RunCompletedEventData,
 	RunConfirmedEventData,
 	RunFailedEventData,
 	RunProgressEventData,
 	RunStartedEventData,
-	Shot,
-	ShotsReorderedEventData,
 	WsEvent,
 } from "~/types";
 import { toast } from "~/utils/toast";
@@ -90,12 +84,11 @@ function applyStage(
 type AutoConfirmFn = (runId: number) => void;
 
 /**
- * Compatibility UI projection for websocket events.
+ * UI projection for websocket events.
  *
- * Durable server entities are now projected into TanStack Query separately by
- * applyServerEvent. This function keeps only interaction/run/message behavior
- * authoritative; entity mutations remain temporarily for unmigrated consumers
- * and will be deleted once the final Zustand mirrors are removed.
+ * Durable server entities are projected into TanStack Query by
+ * `applyServerEvent`. This function owns only what the server does not own:
+ * interaction state, the message feed and the live run UI.
  */
 export function applyWsEvent(
 	event: WsEvent,
@@ -204,13 +197,6 @@ export function applyWsEvent(
 			store.setAwaitingConfirm(true, gate.agent, gate.run_id);
 			store.setRecoveryGate(gate);
 			store.setRecoverySummary(gate.recovery_summary);
-			if (gate.agent === "outline") {
-				store.patchProject({
-					id: 0,
-					story_outline: gate.story_outline ?? null,
-					visual_bible: gate.visual_bible ?? null,
-				});
-			}
 			applyStage(store, event.data);
 			store.addMessage({
 				id: generateMessageId(),
@@ -293,64 +279,9 @@ export function applyWsEvent(
 			break;
 		}
 
-		case "character_created":
-		case "character_updated":
-			if (event.data.character) store.updateCharacter(event.data.character as Character);
-			break;
-
-		case "shot_created":
-		case "shot_updated":
-			if (event.data.shot) store.updateShot(event.data.shot as Shot);
-			break;
-
-		case "shots_reordered": {
-			const data = event.data as unknown as ShotsReorderedEventData;
-			if (Array.isArray(data.shots)) {
-				store.setShots([...data.shots].sort((a, b) => a.order - b.order || a.id - b.id));
-			}
-			break;
-		}
-
-		case "character_deleted": {
-			const charId = event.data.character_id as number | undefined;
-			if (charId !== undefined) store.setCharacters(store.characters.filter((c) => c.id !== charId));
-			break;
-		}
-
-		case "shot_deleted": {
-			const shotId = event.data.shot_id as number | undefined;
-			if (shotId !== undefined) store.setShots(store.shots.filter((s) => s.id !== shotId));
-			break;
-		}
-
-		case "data_cleared": {
-			const clearedTypes = event.data.cleared_types as string[] | undefined;
-			if (clearedTypes) {
-				if (clearedTypes.includes("characters")) store.setCharacters([]);
-				if (clearedTypes.includes("shots")) store.setShots([]);
-			}
-			store.patchProject({ id: 0, video_url: null });
-			break;
-		}
-
-		case "outline_updated": {
-			const od = event.data as unknown as OutlineUpdatedEventData;
-			store.patchProject({
-				id: 0,
-				story_outline: od.story_outline ?? null,
-				visual_bible: od.visual_bible ?? null,
-				outline_approved: od.outline_approved,
-			});
-			store.setProjectUpdatedAt(Date.now());
-			break;
-		}
-
-		case "project_updated": {
-			const pd = event.data.project as ProjectUpdatedPayload | undefined;
-			if (pd) store.patchProject(pd);
-			store.setProjectUpdatedAt(Date.now());
-			break;
-		}
+		// character_* / shot_* / shots_reordered / data_cleared /
+		// outline_updated / project_updated carry durable server entities only;
+		// they are projected into the query cache by applyServerEvent.
 
 		case "critique_result": {
 			const critData = event.data as unknown as CritiqueResultEventData;
@@ -396,20 +327,7 @@ export function applyWsEvent(
 			break;
 		}
 
-		case "audio_generated": {
-			const audioData = event.data as unknown as AudioGeneratedEventData;
-			if (audioData.shot_id) {
-				const shot = store.shots.find((s) => s.id === audioData.shot_id);
-				if (shot) {
-					store.updateShot({
-						...shot,
-						tts_url: audioData.tts_url ?? shot.tts_url,
-						bgm_type: audioData.bgm_type ?? shot.bgm_type,
-					});
-				}
-			}
-			break;
-		}
+		// audio_generated mutates shot.tts_url / shot.bgm_type in the query cache.
 
 		case "export_completed": {
 			const exportData = event.data as unknown as import("~/types").ExportCompletedEventData;

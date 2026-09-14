@@ -771,146 +771,61 @@ describe("useProjectWebSocket", () => {
     });
   });
 
-  it("updates character and shot entities on event lifecycle", () => {
+  it("leaves durable entity events to the query projection", () => {
     const store = useEditorStore.getState();
-
     store.reset();
 
-    applyWsEvent(
-      {
-        type: "character_created",
-        data: {
-          character: { id: 1, name: "Alice", image_url: "alice.png" },
-        },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-    applyWsEvent(
-      {
-        type: "character_updated",
-        data: {
-          character: { id: 1, name: "Alice v2", image_url: "alice_v2.png" },
-        },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-    applyWsEvent(
-      {
-        type: "character_deleted",
-        data: { character_id: 1 },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-
-    expect(useEditorStore.getState().characters).toHaveLength(0);
-
-    applyWsEvent(
-      {
-        type: "shot_created",
-        data: { shot: { id: 21, title: "Shot-1" } },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-    applyWsEvent(
-      {
-        type: "shot_updated",
-        data: { shot: { id: 21, title: "Shot-1 v2" } },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-    applyWsEvent(
-      {
-        type: "shot_deleted",
-        data: { shot_id: 21 },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-
-    expect(useEditorStore.getState().shots).toHaveLength(0);
-
-    // 兼容现状事件：当前分支无 character_approved / shot_approved 处理
-    applyWsEvent(
-      {
-        type: "character_approved",
-        data: { character: { id: 2, name: "Bob" } },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-    applyWsEvent(
-      {
-        type: "shot_approved",
-        data: { shot: { id: 22, title: "Shot-2" } },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-
-    expect(useEditorStore.getState().characters).toHaveLength(0);
-    expect(useEditorStore.getState().shots).toHaveLength(0);
-  });
-
-  it("handles data_cleared and project_updated cleanup", () => {
-    const store = useEditorStore.getState();
-
-    store.reset();
-    store.setCharacters([{ id: 1, name: "Tom" }] as never);
-    store.setShots([{ id: 1, title: "S1" }] as never);
-
-    applyWsEvent(
-      {
-        type: "data_cleared",
-        data: { cleared_types: ["characters", "shots"] },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-
-    expect(useEditorStore.getState().characters).toHaveLength(0);
-    expect(useEditorStore.getState().shots).toHaveLength(0);
-
-    const beforeProjectUpdatedAt = useEditorStore.getState().projectUpdatedAt;
-    applyWsEvent(
-      {
-        type: "project_updated",
-        data: { project: { video_url: "http://cdn/video.mp4" } },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-
-    expect(useEditorStore.getState().projectVideoUrl).toBe("http://cdn/video.mp4");
-    expect(useEditorStore.getState().projectUpdatedAt).toBeTypeOf("number");
-    if (beforeProjectUpdatedAt !== null) {
-      expect(useEditorStore.getState().projectUpdatedAt).toBeGreaterThan(beforeProjectUpdatedAt);
+    for (const type of [
+      "character_created",
+      "character_updated",
+      "character_deleted",
+      "shot_created",
+      "shot_updated",
+      "shot_deleted",
+    ] as const) {
+      applyWsEvent(
+        { type, data: { character: { id: 1 }, shot: { id: 1 }, character_id: 1, shot_id: 1 } } as never,
+        store,
+        noopAutoConfirm
+      );
     }
+
+    // 这些事件只更新 query cache（见 applyServerEvent.test.ts），
+    // editorStore 不再持有第二份 server entity 副本。
+    expect(useEditorStore.getState()).not.toHaveProperty("characters");
+    expect(useEditorStore.getState()).not.toHaveProperty("shots");
   });
 
-  it("handles shots_reordered by replacing shots in backend order", () => {
+  it("does not touch project fields on data_cleared or project_updated", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.setShots([shotForWs(1, 1), shotForWs(2, 2)] as never);
 
     applyWsEvent(
-      {
-        type: "shots_reordered",
-        data: {
-          project_id: 1,
-          shots: [shotForWs(1, 2), shotForWs(2, 1)],
-        },
-      } as never,
+      { type: "data_cleared", data: { cleared_types: ["characters", "shots"] } } as never,
+      store,
+      noopAutoConfirm
+    );
+    applyWsEvent(
+      { type: "project_updated", data: { project: { id: 7, video_url: "http://cdn/video.mp4" } } } as never,
       store,
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().shots.map((shot) => shot.id)).toEqual([2, 1]);
-    expect(useEditorStore.getState().shots.map((shot) => shot.order)).toEqual([1, 2]);
+    expect(useEditorStore.getState()).not.toHaveProperty("projectVideoUrl");
+    expect(useEditorStore.getState()).not.toHaveProperty("projectUpdatedAt");
+  });
+
+  it("leaves shots_reordered ordering to the query projection", () => {
+    const store = useEditorStore.getState();
+    store.reset();
+
+    applyWsEvent(
+      { type: "shots_reordered", data: { project_id: 1, shots: [shotForWs(1, 2), shotForWs(2, 1)] } } as never,
+      store,
+      noopAutoConfirm
+    );
+
+    expect(useEditorStore.getState()).not.toHaveProperty("shots");
   });
 
   it("does not reconnect after explicit disconnect close", () => {
@@ -1055,71 +970,46 @@ describe("useProjectWebSocket", () => {
     expect(useEditorStore.getState().currentRunId).toBe(700);
   });
 
-  it("clears projectVideoUrl on data_cleared", () => {
+  it("leaves the project cache to applyServerEvent on data_cleared", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.patchProject({ id: 0, video_url: "http://cdn/old.mp4" });
 
     applyWsEvent(
-      {
-        type: "data_cleared",
-        data: { cleared_types: ["characters"] },
-      } as never,
+      { type: "data_cleared", data: { cleared_types: ["characters"] } } as never,
       store,
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().projectVideoUrl).toBeNull();
+    expect(useEditorStore.getState()).not.toHaveProperty("projectVideoUrl");
   });
 
-  it("handles project_updated with video_url null and undefined", () => {
+  it("ignores project_updated for project fields", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.patchProject({ id: 0, video_url: "http://cdn/old.mp4" });
 
     applyWsEvent(
-      {
-        type: "project_updated",
-        data: { project: { video_url: null } },
-      } as never,
+      { type: "project_updated", data: { project: { id: 7, video_url: null, title: "updated" } } } as never,
       store,
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().projectVideoUrl).toBeNull();
-
-    store.patchProject({ id: 0, video_url: "http://cdn/new.mp4" });
-
-    applyWsEvent(
-      {
-        type: "project_updated",
-        data: { project: { title: "updated" } },
-      } as never,
-      store,
-      noopAutoConfirm
-    );
-
-    expect(useEditorStore.getState().projectVideoUrl).toBe("http://cdn/new.mp4");
+    expect(useEditorStore.getState()).not.toHaveProperty("projectVideoUrl");
   });
 
-  it("handles project_updated with status", () => {
+  it("ignores project_updated status", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.patchProject({ id: 0, status: null });
 
     applyWsEvent(
-      {
-        type: "project_updated",
-        data: { project: { status: "generating" } },
-      } as never,
+      { type: "project_updated", data: { project: { id: 7, status: "generating" } } } as never,
       store,
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().projectStatus).toBe("generating");
+    expect(useEditorStore.getState()).not.toHaveProperty("projectStatus");
   });
 
-  it("handles full project_updated contract fields", () => {
+  it("ignores the full project_updated contract in the UI store", () => {
     const store = useEditorStore.getState();
     store.reset();
 
@@ -1131,32 +1021,6 @@ describe("useProjectWebSocket", () => {
             id: 9,
             creation_mode: "universe",
             exports: ["/static/exports/story.pdf"],
-            provider_settings: {
-              text: {
-                selected_key: "fake",
-                source: "project",
-                resolved_key: "fake",
-                valid: true,
-                reason_code: null,
-                reason_message: null,
-              },
-              image: {
-                selected_key: "fake",
-                source: "project",
-                resolved_key: "fake",
-                valid: true,
-                reason_code: null,
-                reason_message: null,
-              },
-              video: {
-                selected_key: "fake",
-                source: "project",
-                resolved_key: "fake",
-                valid: true,
-                reason_code: null,
-                reason_message: null,
-              },
-            },
             universe_id: 3,
             chapter_number: 4,
             chapter_title: "第四章",
@@ -1167,31 +1031,26 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState()).toMatchObject({
-      projectCreationMode: "universe",
-      projectExports: ["/static/exports/story.pdf"],
-      projectUniverseId: 3,
-      projectChapterNumber: 4,
-      projectChapterTitle: "第四章",
-    });
-    expect(useEditorStore.getState().projectProviderSettings?.text.selected_key).toBe("fake");
+    const s = useEditorStore.getState();
+    for (const key of [
+      "projectCreationMode",
+      "projectExports",
+      "projectUniverseId",
+      "projectChapterNumber",
+      "projectChapterTitle",
+      "projectProviderSettings",
+    ]) {
+      expect(s).not.toHaveProperty(key);
+    }
   });
 
-  it("ignores project_updated status when project data is undefined", () => {
+  it("ignores project_updated with an empty payload", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.patchProject({ id: 0, status: "idle" });
 
-    applyWsEvent(
-      {
-        type: "project_updated",
-        data: {},
-      } as never,
-      store,
-      noopAutoConfirm
-    );
+    applyWsEvent({ type: "project_updated", data: {} } as never, store, noopAutoConfirm);
 
-    expect(useEditorStore.getState().projectStatus).toBe("idle");
+    expect(useEditorStore.getState()).not.toHaveProperty("projectStatus");
   });
 
   it("reads current_stage from run_completed event data", () => {
@@ -1265,8 +1124,6 @@ describe("useProjectWebSocket", () => {
   it("handles data_cleared with start_agent and mode fields", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.setCharacters([{ id: 1, name: "A" }] as never);
-    store.patchProject({ id: 0, video_url: "http://cdn/old.mp4" });
 
     applyWsEvent(
       {
@@ -1277,8 +1134,9 @@ describe("useProjectWebSocket", () => {
       noopAutoConfirm
     );
 
-    expect(useEditorStore.getState().characters).toHaveLength(0);
-    expect(useEditorStore.getState().projectVideoUrl).toBeNull();
+    // 实体与项目字段的清理归 applyServerEvent（query cache）负责
+    expect(useEditorStore.getState()).not.toHaveProperty("characters");
+    expect(useEditorStore.getState()).not.toHaveProperty("projectVideoUrl");
   });
 
   it("recovers state from WS replay run_progress with current_stage and stage", () => {
@@ -1333,45 +1191,6 @@ describe("useProjectWebSocket", () => {
   it("handles extended WS event contracts added after the base generation flow", () => {
     const store = useEditorStore.getState();
     store.reset();
-    store.setShots([
-      {
-        id: 7,
-        project_id: 1,
-        order: 1,
-        description: "shot",
-        prompt: null,
-        image_prompt: null,
-        image_url: null,
-        video_url: null,
-        duration: null,
-        camera: null,
-        motion_note: null,
-        scene: null,
-        action: null,
-        expression: null,
-        lighting: null,
-        dialogue: null,
-        sfx: null,
-        seed: null,
-        character_ids: [],
-        approval_state: "draft",
-        approval_version: 0,
-        approved_at: null,
-        approved_description: null,
-        approved_prompt: null,
-        approved_image_prompt: null,
-        approved_duration: null,
-        approved_camera: null,
-        approved_motion_note: null,
-        approved_scene: null,
-        approved_action: null,
-        approved_expression: null,
-        approved_lighting: null,
-        approved_dialogue: null,
-        approved_sfx: null,
-        approved_character_ids: [],
-      },
-    ]);
 
     applyWsEvent(
       {
@@ -1513,10 +1332,7 @@ describe("useProjectWebSocket", () => {
         }),
       ])
     );
-    expect(useEditorStore.getState().shots[0]).toMatchObject({
-      tts_url: "/static/audio/shot7.mp3",
-      bgm_type: "warm",
-    });
+    // audio_generated 更新 query cache 里的 shot（见 applyServerEvent.test.ts）
     expect(toastMock.success).not.toHaveBeenCalledWith(
       expect.objectContaining({
         title: "导出完成",
@@ -1525,64 +1341,3 @@ describe("useProjectWebSocket", () => {
   });
 });
 
-describe("project_updated patch coverage", () => {
-  /**
-   * 回归守卫：project_updated 曾用一个手写的 19 项映射表，
-   * 而 payload 有 21 个字段 —— 没被列出的字段会被静默丢弃（skill_id 就是）。
-   * 现在映射表是 Record<...>（编译器强制全覆盖），这里再断言运行时确实写入。
-   */
-  it("applies every payload field it is given", () => {
-    const store = useEditorStore.getState();
-    store.patchProject({
-      id: 7,
-      title: "标题",
-      story: "故事",
-      style: "anime",
-      summary: "摘要",
-      video_url: "/static/videos/a.mp4",
-      status: "ready",
-      target_shot_count: 6,
-      character_hints: ["a"],
-      creation_mode: "quick",
-      reference_images: ["/static/r.png"],
-      exports: ["/static/e.pdf"],
-      universe_id: 3,
-      chapter_number: 2,
-      chapter_title: "第二章",
-      skill_id: "quick-short",
-      visual_bible: "visual",
-      outline_approved: true,
-    });
-
-    const s = useEditorStore.getState();
-    expect(s.projectTitle).toBe("标题");
-    expect(s.projectStory).toBe("故事");
-    expect(s.projectStyle).toBe("anime");
-    expect(s.projectSummary).toBe("摘要");
-    expect(s.projectVideoUrl).toBe("/static/videos/a.mp4");
-    expect(s.projectStatus).toBe("ready");
-    expect(s.projectTargetShotCount).toBe(6);
-    expect(s.projectCharacterHints).toEqual(["a"]);
-    expect(s.projectCreationMode).toBe("quick");
-    expect(s.projectReferenceImages).toEqual(["/static/r.png"]);
-    expect(s.projectExports).toEqual(["/static/e.pdf"]);
-    expect(s.projectUniverseId).toBe(3);
-    expect(s.projectChapterNumber).toBe(2);
-    expect(s.projectChapterTitle).toBe("第二章");
-    // 曾被静默丢弃的字段
-    expect(s.projectSkillId).toBe("quick-short");
-    expect(s.projectVisualBible).toBe("visual");
-    expect(s.projectOutlineApproved).toBe(true);
-  });
-
-  it("leaves untouched fields alone (patch semantics, not replace)", () => {
-    const store = useEditorStore.getState();
-    store.patchProject({ id: 1, title: "A", status: "draft" });
-    store.patchProject({ id: 1, summary: "只改摘要" });
-
-    const s = useEditorStore.getState();
-    expect(s.projectTitle).toBe("A");
-    expect(s.projectStatus).toBe("draft");
-    expect(s.projectSummary).toBe("只改摘要");
-  });
-});

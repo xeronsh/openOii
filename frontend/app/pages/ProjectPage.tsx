@@ -35,6 +35,7 @@ import { MobileWorkbenchPreview } from "~/features/comic-workflow/mobile/MobileW
 import { useIsMobileWorkbench } from "~/features/comic-workflow/mobile/useIsMobileWorkbench";
 import { projectsApi, runsApi, exportApi, getStaticUrl } from "~/services/api";
 import { useEditorStore, useShallow } from "~/stores/editorStore";
+import { projectQueryKeys } from "~/query/queryKeys";
 import type {
 	ProjectProviderSettings,
 	RecoveryControlRead,
@@ -77,14 +78,6 @@ export function ProjectPage() {
 		awaitingConfirm: storeAwaitingConfirm,
 		recoveryControl: storeRecoveryControl,
 		runMode: storeRunMode,
-		characters: storeCharacters,
-		shots: storeShots,
-		blockingClips: storeBlockingClips,
-		projectTitle: storeProjectTitle,
-		projectStory: storeProjectStory,
-		projectSummary: storeProjectSummary,
-		projectVideoUrl: storeProjectVideoUrl,
-		projectStatus: storeProjectStatus,
 	} = useEditorStore(
 		useShallow((s) => ({
 			isGenerating: s.isGenerating,
@@ -94,14 +87,6 @@ export function ProjectPage() {
 			awaitingConfirm: s.awaitingConfirm,
 			recoveryControl: s.recoveryControl,
 			runMode: s.runMode,
-			characters: s.characters,
-			shots: s.shots,
-			blockingClips: s.blockingClips,
-			projectTitle: s.projectTitle,
-			projectStory: s.projectStory,
-			projectSummary: s.projectSummary,
-			projectVideoUrl: s.projectVideoUrl,
-			projectStatus: s.projectStatus,
 		})),
 	);
 	const hasActiveRun = storeIsGenerating || Boolean(storeCurrentRunId);
@@ -153,12 +138,8 @@ export function ProjectPage() {
 		setLastRunStatus(null);
 	};
 
-	const {
-		data: project,
-		isLoading: projectLoading,
-		error: projectError,
-	} = useQuery({
-		queryKey: ["project", projectId],
+	const { data: project, isLoading: projectLoading, error: projectError } = useQuery({
+		queryKey: projectQueryKeys.project(projectId),
 		queryFn: () => projectsApi.get(projectId),
 		enabled: projectId > 0,
 		retry: 1,
@@ -183,39 +164,27 @@ export function ProjectPage() {
 		}
 	}, [projectError, projectId, queryClient]);
 
-	const { data: characters } = useQuery({
-		queryKey: ["characters", projectId],
+	const { data: characters = [] } = useQuery({
+		queryKey: projectQueryKeys.characters(projectId),
 		queryFn: () => projectsApi.getCharacters(projectId),
 		enabled: !!project,
 	});
 
-	const { data: shots } = useQuery({
-		queryKey: ["shots", projectId],
+	const { data: shots = [] } = useQuery({
+		queryKey: projectQueryKeys.shots(projectId),
 		queryFn: () => projectsApi.getShots(projectId),
 		enabled: !!project,
 	});
 
 	const { data: messages } = useQuery({
-		queryKey: ["messages", projectId],
+		queryKey: projectQueryKeys.messages(projectId),
 		queryFn: () => projectsApi.getMessages(projectId),
 		enabled: !!project,
 	});
 
-	useEffect(() => {
-		if (characters) {
-			useEditorStore.getState().setCharacters(characters);
-		}
-	}, [characters]);
-
-	useEffect(() => {
-		if (shots) {
-			useEditorStore.getState().setShots(shots);
-		}
-	}, [shots]);
-
 	// 运行态水合：不必先撞一次 409 才能发现可恢复的运行
 	const { data: hydratedGenerationState } = useQuery({
-		queryKey: ["generation-state", projectId],
+		queryKey: projectQueryKeys.generationState(projectId),
 		queryFn: () => projectsApi.currentRun(projectId),
 		enabled: projectId > 0,
 		retry: 1,
@@ -247,30 +216,6 @@ export function ProjectPage() {
 	useEffect(() => {
 		if (project) {
 			const editorStore = useEditorStore.getState();
-			// 单一映射点：这里与 WS 的 project_updated 都走 patchProject，
-			// 不再逐字段手抄（曾漏掉 skill_id 导致字段静默丢失）。
-			editorStore.patchProject({
-				id: project.id,
-				title: project.title,
-				story: project.story,
-				style: project.style,
-				summary: project.summary,
-				video_url: project.video_url,
-				status: project.status,
-				target_shot_count: project.target_shot_count,
-				character_hints: project.character_hints,
-				creation_mode: project.creation_mode,
-				reference_images: project.reference_images,
-				exports: project.exports,
-				provider_settings: project.provider_settings,
-				universe_id: project.universe_id,
-				chapter_number: project.chapter_number,
-				chapter_title: project.chapter_title,
-				skill_id: project.skill_id,
-				story_outline: project.story_outline,
-				visual_bible: project.visual_bible,
-				outline_approved: project.outline_approved,
-			});
 			if (runModeInitializedRef.current !== project.id) {
 				editorStore.setRunMode(
 					project.creation_mode === "quick" ? "yolo" : "manual",
@@ -302,33 +247,6 @@ export function ProjectPage() {
 		editorStore.setSelectedShot(null);
 		editorStore.setSelectedCharacter(null);
 		editorStore.setHighlightedMessage(null);
-		editorStore.setCharacters([]);
-		editorStore.setShots([]);
-		// 清空项目字段也用同一映射点（全 null 就是「不保留」）。
-		// 逐字段手写列表曾三次与 payload 不同步。
-		editorStore.patchProject({
-			id: projectId,
-			title: null,
-			story: null,
-			style: null,
-			summary: null,
-			video_url: null,
-			status: null,
-			target_shot_count: null,
-			character_hints: null,
-			creation_mode: null,
-			reference_images: null,
-			exports: null,
-			provider_settings: null,
-			universe_id: null,
-			chapter_number: null,
-			chapter_title: null,
-			skill_id: null,
-			story_outline: null,
-			visual_bible: null,
-			outline_approved: false,
-			blocking_clips: null,
-		});
 		setLastRunStatus(null);
 		setSelectedNodeId(null);
 		setSelectedNodeIds([]);
@@ -609,13 +527,13 @@ export function ProjectPage() {
 			entityIds = shotIds;
 			contextLabel =
 				shotIds.length === 1
-					? `（格 · 镜头 ${storeShots.find((s) => s.id === shotIds[0])?.order ?? shotIds[0]}）`
+					? `（格 · 镜头 ${shots.find((s) => s.id === shotIds[0])?.order ?? shotIds[0]}）`
 					: `（${shotIds.length} 个分镜格）`;
 		} else if (charIds.length > 0 && shotIds.length === 0) {
 			entityType = "character";
 			entityId = charIds[0];
 			entityIds = charIds;
-			const char = storeCharacters.find((c) => c.id === charIds[0]);
+			const char = characters.find((c) => c.id === charIds[0]);
 			contextLabel =
 				charIds.length === 1
 					? char?.name
@@ -643,12 +561,12 @@ export function ProjectPage() {
 					.map((id) => {
 						if (id.startsWith("shot:")) {
 							const sid = Number(id.split(":")[1]);
-							const shot = storeShots.find((s) => s.id === sid);
+							const shot = shots.find((s) => s.id === sid);
 							return `格${shot?.order ?? sid}`;
 						}
 						if (id.startsWith("character:")) {
 							const cid = Number(id.split(":")[1]);
-							const char = storeCharacters.find((c) => c.id === cid);
+							const char = characters.find((c) => c.id === cid);
 							return char?.name || `角色${cid}`;
 						}
 						return id;
@@ -712,13 +630,9 @@ export function ProjectPage() {
 		}
 	}, [storeIsGenerating, projectId, queryClient]);
 
-	const projectUpdatedAt = useEditorStore((state) => state.projectUpdatedAt);
-	useEffect(() => {
-		if (projectUpdatedAt) {
-			queryClient.invalidateQueries({ queryKey: ["project", projectId] });
-			queryClient.invalidateQueries({ queryKey: ["projects"] });
-		}
-	}, [projectUpdatedAt, projectId, queryClient]);
+	// The message feed is the only client-owned server-shaped state left: it is
+	// appended from WS events and hydrated once from HTTP. Cache updates from WS
+	// already invalidate the project, so no extra timestamp bridge is needed.
 
 	useEffect(() => {
 		if (storeAwaitingConfirm && storeRunMode === "manual") {
@@ -757,33 +671,14 @@ export function ProjectPage() {
 	const selectedWorkflowNode = useMemo(() => {
 		if (!project || !selectedNodeId) return null;
 		const graph = buildComicWorkflow({
-			project: {
-				...project,
-				title: storeProjectTitle ?? project.title,
-				story: storeProjectStory ?? project.story,
-				summary: storeProjectSummary ?? project.summary,
-				video_url: storeProjectVideoUrl ?? project.video_url,
-				status: storeProjectStatus ?? project.status,
-			},
-			characters: storeCharacters,
-			shots: storeShots,
-			blockingClips: storeBlockingClips,
+			project,
+			characters,
+			shots,
+			blockingClips: project.blocking_clips,
 			isGenerating: storeIsGenerating,
 		});
 		return graph.nodes.find((node) => node.id === selectedNodeId) ?? null;
-	}, [
-		project,
-		selectedNodeId,
-		storeCharacters,
-		storeShots,
-		storeBlockingClips,
-		storeIsGenerating,
-		storeProjectTitle,
-		storeProjectStory,
-		storeProjectSummary,
-		storeProjectVideoUrl,
-		storeProjectStatus,
-	]);
+	}, [project, characters, shots, selectedNodeId, storeIsGenerating]);
 
 	const handleSelectedNodeIdChange = useCallback((nodeId: string | null) => {
 		setSelectedNodeId(nodeId);
@@ -815,9 +710,9 @@ export function ProjectPage() {
 				currentRunId: storeCurrentRunId,
 				awaitingConfirm: storeAwaitingConfirm,
 				recoveryControl: storeRecoveryControl,
-				projectStatus: storeProjectStatus ?? project?.status,
-				projectVideoUrl: storeProjectVideoUrl ?? project?.video_url,
-				blockingClips: storeBlockingClips,
+				projectStatus: project?.status,
+				projectVideoUrl: project?.video_url,
+				blockingClips: project?.blocking_clips,
 				lastRunStatus,
 			}),
 		[
@@ -825,11 +720,9 @@ export function ProjectPage() {
 			storeCurrentRunId,
 			storeAwaitingConfirm,
 			storeRecoveryControl,
-			storeProjectStatus,
 			project?.status,
-			storeProjectVideoUrl,
 			project?.video_url,
-			storeBlockingClips,
+			project?.blocking_clips,
 			lastRunStatus,
 		],
 	);
@@ -986,9 +879,9 @@ export function ProjectPage() {
 					<MobileWorkbenchPreview
 						projectId={projectId}
 						workbenchStatus={workbenchStatus}
-						videoUrl={storeProjectVideoUrl ?? project.video_url}
-						shots={storeShots}
-						characters={storeCharacters}
+						videoUrl={project.video_url}
+						shots={shots}
+						characters={characters}
 						onRetry={hasRecovery ? handleResume : handleGenerate}
 						retryDisabled={
 							generateMutation.isPending || (hasActiveRun && !hasRecovery)
