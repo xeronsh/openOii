@@ -14,11 +14,14 @@
  */
 import {
   SpanStatusCode,
+  context,
   trace,
   type Attributes,
   type Span,
   type Tracer,
 } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+import type { AiOperation } from "./ai-operation.js";
 
 export const TRACER_NAME = "openoii-engine";
 
@@ -48,6 +51,26 @@ function tracer(): Tracer {
   return trace.getTracer(TRACER_NAME);
 }
 
+let contextManagerInstalled = false;
+
+/**
+ * Install the async-context manager that makes spans nest.
+ *
+ * Without it the API's default context manager is a no-op: `context.with()`
+ * does not propagate, so every span becomes a SIBLING and the
+ * run → stage → provider tree silently flattens. That is a real defect, not a
+ * cosmetic one — a flat trace cannot attribute a provider failure to the stage
+ * that caused it.
+ *
+ * Idempotent and side-effect limited to context propagation; registering a
+ * provider/exporter stays the deployment's choice.
+ */
+export function installContextManager(): void {
+  if (contextManagerInstalled) return;
+  contextManagerInstalled = true;
+  context.setGlobalContextManager(new AsyncLocalStorageContextManager());
+}
+
 /**
  * Run `fn` inside a span, recording error type/status on failure.
  *
@@ -59,11 +82,16 @@ export async function withSpan<T>(
   attributes: Attributes,
   fn: (span: Span) => Promise<T>,
 ): Promise<T> {
+  installContextManager();
   const span = tracer().startSpan(name, { attributes });
+  // Run the body inside the span's context so nested spans become children
+  // rather than siblings (see installContextManager).
   try {
-    const result = await fn(span);
-    span.setStatus({ code: SpanStatusCode.OK });
-    return result;
+    return await context.with(trace.setSpan(context.active(), span), async () => {
+      const result = await fn(span);
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
+    });
   } catch (error) {
     span.setStatus({
       code: SpanStatusCode.ERROR,
@@ -100,25 +128,71 @@ export async function withStageSpan<T>(
   return withSpan(name, attributes, fn);
 }
 
-/** One span per provider call, carrying GenAI attributes plus retry count. */
+/**
+ * One span per provider call, carrying GenAI attributes plus retry count.
+ * Identity attributes are optional here: a provider call can happen without a
+ * stage attempt (e.g. a direct text call), and a missing identity must not
+ * prevent the span from being recorded.
+ */
 export async function withProviderSpan<T>(
   name: string,
-  attributes: OperationSpanAttributes & GenAiSpanAttributes,
+  attributes: GenAiSpanAttributes & Partial<OperationSpanAttributes>,
   fn: (span: Span) => Promise<T>,
 ): Promise<T> {
   return withSpan(name, attributes, fn);
 }
 
-/** Record token usage once a provider reports it. */
+/**
+ * Record token usage, cost and model once a provider reports them.
+ * `usage` is the pi-ai usage object; token/cost names follow the GenAI
+ * conventions so a trace consumer can total spend per run/stage.
+ */
 export function recordUsage(
   span: Span,
-  usage: { inputTokens?: number; outputTokens?: number; model?: string },
+  report: {
+    model?: string;
+    usage?: {
+      input?: number;
+      output?: number;
+      cost?: { total?: number };
+    };
+  },
 ): void {
-  if (usage.model) span.setAttribute("gen_ai.request.model", usage.model);
-  if (typeof usage.inputTokens === "number") {
-    span.setAttribute("gen_ai.usage.input_tokens", usage.inputTokens);
+  if (report.model) span.setAttribute("gen_ai.request.model", report.model);
+  const usage = report.usage;
+  if (!usage) return;
+  if (typeof usage.input === "number") {
+    span.setAttribute("gen_ai.usage.input_tokens", usage.input);
   }
-  if (typeof usage.outputTokens === "number") {
-    span.setAttribute("gen_ai.usage.output_tokens", usage.outputTokens);
+  if (typeof usage.output === "number") {
+    span.setAttribute("gen_ai.usage.output_tokens", usage.output);
   }
+  if (typeof usage.cost?.total === "number") {
+    span.setAttribute("openoii.cost.total", usage.cost.total);
+  }
+}
+
+/**
+ * Build the engine-identity attributes for a span from an operation.
+ *
+ * Identity lives on the operation, so a run/stage/provider span can be
+ * correlated with the provider call that produced it without threading five
+ * extra parameters through every layer.
+ */
+export function operationSpanAttributes(operation: AiOperation): OperationSpanAttributes {
+  return {
+    "openoii.run_id": operation.runId,
+    "openoii.project_id": operation.projectId,
+    "openoii.stage": operation.stage,
+    "openoii.stage_attempt_id": operation.operationId,
+  };
+}
+
+/** Root span for one run; every stage and provider span nests under it. */
+export async function withRunSpan<T>(
+  runId: number,
+  projectId: number,
+  fn: (span: Span) => Promise<T>,
+): Promise<T> {
+  return withSpan("run", { "openoii.run_id": runId, "openoii.project_id": projectId }, fn);
 }

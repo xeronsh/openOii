@@ -55,7 +55,8 @@ outline → approve → characters → approve → shots → approve
    1. 先确认 engine 侧具备 `CHARACTER_IDENTITY_LOCK`、风格模板、角色圣经、
       人脸嵌入 —— 这些目前**只在 Python 侧**,是清理的硬前置门。
    2. 迁移完成后删除 `services/agent_runner.py`、`agents/render.py`、
-      `agents/compose.py`,并把 `LocalRunSpec.agent_plan` 改成对 engine 的指令描述。
+      `agents/compose.py`,并把局部 run 的 spec 从「agent 列表」改成对 engine 的
+      指令描述（`TargetedRunSpec`）。
    3. `agents/review_rules.py` **不算违规**:它只把反馈分类成 rerun 起始阶段,
       不跑 agent loop。
 3. `engine/src/agent/` 只定义 Agent Loop 的**类型化接缝**(接口 + tool registry +

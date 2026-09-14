@@ -85,13 +85,17 @@ describe("engine observability", () => {
 
   it("records token usage with GenAI attribute names", async () => {
     await withSpan("gen_ai.text.complete", baseAttributes, async (span) => {
-      recordUsage(span, { inputTokens: 120, outputTokens: 44, model: "claude-sonnet-4-5" });
+      recordUsage(span, {
+        model: "claude-sonnet-4-5",
+        usage: { input: 120, output: 44, cost: { total: 0.0031 } },
+      });
     });
 
     const span = exporter.getFinishedSpans()[0]!;
     expect(span.attributes["gen_ai.usage.input_tokens"]).toBe(120);
     expect(span.attributes["gen_ai.usage.output_tokens"]).toBe(44);
     expect(span.attributes["gen_ai.request.model"]).toBe("claude-sonnet-4-5");
+    expect(span.attributes["openoii.cost.total"]).toBe(0.0031);
   });
 
   it("ends the span and records the error when work fails", async () => {
@@ -155,5 +159,64 @@ describe("engine observability", () => {
     const result = await withSpan("stage", baseAttributes, async () => "silent");
     expect(result).toBe("silent");
     expect(exporter.getFinishedSpans()).toEqual([]);
+  });
+});
+
+describe("run -> stage -> provider span tree", () => {
+  it("nests provider spans under the run and stage spans", async () => {
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    } as never);
+    trace.setGlobalTracerProvider(provider);
+
+    const { withRunSpan, withStageSpan, withProviderSpan } = await import(
+      "../src/observability.js"
+    );
+
+    try {
+      await withRunSpan(7, 3, async () => {
+        await withStageSpan(
+          "stage render_shots",
+          {
+            "openoii.run_id": 7,
+            "openoii.project_id": 3,
+            "openoii.stage": "render_shots",
+            "openoii.stage_attempt_id": "attempt-1",
+          },
+          async () => {
+            await withProviderSpan(
+              "gen_ai.image.generate",
+              {
+                "openoii.run_id": 7,
+                "openoii.project_id": 3,
+                "openoii.stage": "render_shots",
+                "openoii.stage_attempt_id": "attempt-1",
+                "gen_ai.system": "doubao",
+              },
+              async () => "url",
+            );
+          },
+        );
+      });
+
+      const spans = exporter.getFinishedSpans();
+      const byName = new Map(spans.map((span) => [span.name, span]));
+      const run = byName.get("run")!;
+      const stage = byName.get("stage render_shots")!;
+      const providerSpan = byName.get("gen_ai.image.generate")!;
+
+      // The hierarchy is the point: run contains stage contains provider.
+      expect(run).toBeDefined();
+      expect(stage.parentSpanContext?.spanId).toBe(run.spanContext().spanId);
+      expect(providerSpan.parentSpanContext?.spanId).toBe(stage.spanContext().spanId);
+      // Identity is on every level, so a provider call is traceable to its run.
+      expect(providerSpan.attributes["openoii.run_id"]).toBe(7);
+      expect(providerSpan.attributes["openoii.stage_attempt_id"]).toBe("attempt-1");
+    } finally {
+      exporter.reset();
+      await provider.shutdown();
+      trace.disable();
+    }
   });
 });

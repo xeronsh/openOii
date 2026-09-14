@@ -22,7 +22,7 @@ from app.services.character_bible import (
     find_similar_characters,
 )
 from app.services.run_lifecycle import (
-    LocalRunSpec,
+    TargetedRunSpec,
     RunConflict,
     assert_resource_idle,
     create_local_run,
@@ -137,7 +137,7 @@ async def regenerate_character(
         session,
         settings=settings,
         ws=ws,
-        spec=LocalRunSpec(
+        spec=TargetedRunSpec(
             project_id=project_id,
             resource_type="character",
             resource_id=character_id,

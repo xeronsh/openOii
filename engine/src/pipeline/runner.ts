@@ -41,7 +41,7 @@ import {
 import { PipelineEmitter } from "./emitter.js";
 import { resolveStageStyleContext } from "../style.js";
 import { beginAiOperation } from "../ai-operation.js";
-import { withStageSpan } from "../observability.js";
+import { withRunSpan, withStageSpan } from "../observability.js";
 
 export interface PipelineRequest {
   projectId: number;
@@ -231,6 +231,11 @@ export class PipelineRunner {
 
   async resume(request: PipelineRequest): Promise<PipelineOutcome> {
     this.shared.assertExecutionFence();
+    // Root span: every stage span (and its provider spans) nests under the run.
+    return withRunSpan(request.runId, request.projectId, () => this.resumeInner(request));
+  }
+
+  private async resumeInner(request: PipelineRequest): Promise<PipelineOutcome> {
     // A cancel recorded while no executor was running must abort this one too.
     if (this.shared.runCancelRequested(request.runId)) this.requestCancel();
     const completed = new Set(this.db.checkpointStages(request.runId));
@@ -243,6 +248,11 @@ export class PipelineRunner {
   }
 
   async run(request: PipelineRequest): Promise<PipelineOutcome> {
+    this.shared.assertExecutionFence();
+    return withRunSpan(request.runId, request.projectId, () => this.runInner(request));
+  }
+
+  private async runInner(request: PipelineRequest): Promise<PipelineOutcome> {
     this.shared.assertExecutionFence();
     if (this.shared.runCancelRequested(request.runId)) this.requestCancel();
     if (request.targetCharacterIds || request.targetShotIds) {

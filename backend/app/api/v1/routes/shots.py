@@ -12,7 +12,7 @@ from app.config import Settings
 from app.models.project import Character, Project, Shot, ShotCharacterBinding
 from app.schemas.project import AgentRunRead, RegenerateRequest, ShotRead, ShotUpdate
 from app.services.run_lifecycle import (
-    LocalRunSpec,
+    TargetedRunSpec,
     RunConflict,
     assert_resource_idle,
     create_local_run,
@@ -199,7 +199,7 @@ async def regenerate_shot(
         session,
         settings=settings,
         ws=ws,
-        spec=LocalRunSpec(
+        spec=TargetedRunSpec(
             project_id=project_id,
             resource_type="shot",
             resource_id=shot_id,

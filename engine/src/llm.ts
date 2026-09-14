@@ -3,6 +3,11 @@ import { complete, getModels, type Api, type Model } from "@mariozechner/pi-ai";
 import type { EngineDatabase } from "./db.js";
 import { fakeRespond } from "./fake-stream.js";
 import { AiOperationError, assertOperationInFlight, type AiOperation } from "./ai-operation.js";
+import {
+  operationSpanAttributes,
+  recordUsage,
+  withProviderSpan,
+} from "./observability.js";
 
 export type TextProviderKey = "fake" | "anthropic" | "openai";
 
@@ -223,13 +228,34 @@ export class TextLlmService {
       systemPrompt: req.system,
       messages: [{ role: "user" as const, content: prompt, timestamp: Date.now() }],
     };
-    const message = await complete(model, context, {
-      apiKey: resolved.apiKey,
-      maxTokens: req.maxTokens ?? 4096,
-      // pi-ai honours AbortSignal itself, so cancellation does not have to wait
-      // for the response to come back before the run actually stops.
-      signal: req.signal ?? req.operation?.signal,
-    });
+    const op = req.operation;
+    // One provider span per LLM call, nested under the stage span, carrying the
+    // GenAI attributes a trace consumer expects.
+    const message = await withProviderSpan(
+      "gen_ai.text.complete",
+      {
+        ...(op ? operationSpanAttributes(op) : {}),
+        "gen_ai.system": resolved.key,
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": resolved.model,
+      },
+      async (span): Promise<Awaited<ReturnType<typeof complete>>> => {
+        const result = await complete(model, context, {
+          apiKey: resolved.apiKey,
+          maxTokens: req.maxTokens ?? 4096,
+          // pi-ai honours AbortSignal itself, so cancellation does not have to
+          // wait for the response to come back before the run actually stops.
+          signal: req.signal ?? op?.signal,
+        });
+        // Reported on the span that actually made the call, so token and cost
+        // accounting lines up with the provider request in the trace.
+        recordUsage(span, {
+          model: resolved.model,
+          usage: result.usage,
+        });
+        return result;
+      },
+    );
     if (message.stopReason === "error") {
       throw new AiOperationError(
         req.signal?.aborted ? "aborted" : "provider",

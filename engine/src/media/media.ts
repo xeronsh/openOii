@@ -24,6 +24,7 @@ import {
   operationHeaders,
   type AiOperation,
 } from "../ai-operation.js";
+import { operationSpanAttributes, withProviderSpan } from "../observability.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -336,6 +337,17 @@ export class MediaService {
     });
   }
 
+  /** GenAI span attributes for a media provider request. */
+  private providerSpanAttributes(kind: "image" | "video", system: string, model: string) {
+    const identity = this.operation ? operationSpanAttributes(this.operation) : {};
+    return {
+      ...identity,
+      "gen_ai.system": system,
+      "gen_ai.operation.name": kind === "image" ? "image_generation" : "video_generation",
+      "gen_ai.request.model": model,
+    };
+  }
+
   private idempotencyHeaders(): Record<string, string> {
     // One header contract for every provider that accepts operation identity.
     if (this.operation) return operationHeaders(this.operation);
@@ -351,6 +363,19 @@ export class MediaService {
   }
 
   async generateImageUrl(args: {
+    prompt: string;
+    size?: string;
+    imageBytes?: Buffer | null;
+  }): Promise<string> {
+    // One provider span per image request, nested under its stage span.
+    return withProviderSpan(
+      "gen_ai.image.generate",
+      this.providerSpanAttributes("image", this.settings.imageProvider, this.settings.imageModel),
+      () => this.generateImageUrlInner(args),
+    );
+  }
+
+  private async generateImageUrlInner(args: {
     prompt: string;
     size?: string;
     imageBytes?: Buffer | null;
@@ -399,6 +424,18 @@ export class MediaService {
   }
 
   async generateVideoUrl(args: {
+    prompt: string;
+    imageUrl?: string | null;
+    duration?: number;
+  }): Promise<string> {
+    return withProviderSpan(
+      "gen_ai.video.generate",
+      this.providerSpanAttributes("video", this.settings.videoProvider, this.settings.videoModel),
+      () => this.generateVideoUrlInner(args),
+    );
+  }
+
+  private async generateVideoUrlInner(args: {
     prompt: string;
     imageUrl?: string | null;
     duration?: number;

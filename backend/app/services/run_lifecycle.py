@@ -6,9 +6,9 @@
 （单体定向重绘 / 单镜重合成 / 补齐空格）都只是「给引擎的指令 + 实体范围」，
 差别仅在于 stage 与 target ids：引擎自己决定该跑哪些 stage。
 
-之前这里有两种执行体，局部 run 由 Python 侧的 Render/Compose agent 在进程内
-执行（`agent_plan`）。那是被删除的违规形状：FastAPI 决定下一步做什么。
-现在 route 只负责「校验 + 说明要做什么」，编排决策全部在引擎里。
+之前这里有两种执行体：局部 run 由 Python 侧的 Render/Compose agent 在进程内
+执行。那是被删除的违规形状——FastAPI 决定下一步做什么。现在 route 只负责
+「校验 + 说明要做什么」，编排决策全部在引擎里。
 
 对外契约
 --------
@@ -43,7 +43,7 @@ class RunConflict(Exception):
 
 
 @dataclass(frozen=True)
-class LocalRunSpec:
+class TargetedRunSpec:
     """一次定向 run（重绘 / 重合成 / 补齐）。
 
     这里**没有** agent 列表：调用方只描述「对哪些实体做什么」，
@@ -60,7 +60,7 @@ class LocalRunSpec:
 
 
 @dataclass(frozen=True)
-class LocalRunResult:
+class TargetedRunResult:
     run: AgentRun
 
 
@@ -93,8 +93,8 @@ async def create_local_run(
     *,
     settings: Any,
     ws: ConnectionManager,
-    spec: LocalRunSpec,
-) -> LocalRunResult:
+    spec: TargetedRunSpec,
+) -> TargetedRunResult:
     """建 run 并把它派发给引擎 —— 定向 run 的唯一入口。
 
     状态语义与编排 run 一致：`queued` 表示命令已持久化，`running` 由拿到
@@ -129,7 +129,7 @@ async def create_local_run(
         target_shot_ids=spec.target_shot_ids or None,
     )
     await session.refresh(run)
-    return LocalRunResult(run=run)
+    return TargetedRunResult(run=run)
 
 
 async def project_updated_event(

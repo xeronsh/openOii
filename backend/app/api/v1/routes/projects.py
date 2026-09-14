@@ -34,7 +34,7 @@ from app.schemas.project import (
     StoryOutlineUpdate,
 )
 from app.services.run_lifecycle import (
-    LocalRunSpec,
+    TargetedRunSpec,
     create_local_run,
     project_updated_event,
 )
@@ -455,7 +455,7 @@ async def fill_empty_shots(
         session,
         settings=settings,
         ws=ws,
-        spec=LocalRunSpec(
+        spec=TargetedRunSpec(
             project_id=project_id,
             resource_type="project",
             resource_id=None,
