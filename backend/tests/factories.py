@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.utils import utcnow
 from app.models.agent_run import AgentMessage, AgentRun
 from app.models.config_item import ConfigItem
 from app.models.message import Message
@@ -37,10 +40,26 @@ async def create_run(
     session: AsyncSession,
     project_id: int,
     status: str = "queued",
+    *,
+    live_lease: bool | None = None,
 ) -> AgentRun:
+    """Create a run that reflects the canonical durable status model.
+
+    Historical tests used ``paused`` and treated any bare ``running`` row as an
+    active executor. Production no longer does either: recoverable runs are
+    ``failed``/``cancelled`` and running ownership is proven by a lease. Keep
+    those translations in one test factory rather than weakening production.
+    """
+    canonical_status = "failed" if status == "paused" else status
+    if live_lease is None:
+        live_lease = canonical_status in {"running", "waiting_for_approval", "cancelling"}
+
     run = AgentRun(
         project_id=project_id,
-        status=status,
+        status=canonical_status,
+        lease_owner="test-engine" if live_lease else None,
+        lease_token=f"test-lease-{project_id}-{id(session)}" if live_lease else None,
+        lease_expires_at=utcnow() + timedelta(minutes=5) if live_lease else None,
     )
     session.add(run)
     await session.commit()
