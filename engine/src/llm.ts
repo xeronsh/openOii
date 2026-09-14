@@ -1,5 +1,5 @@
 /** Text LLM service built on pi-ai with immutable per-run provider/context selection. */
-import { complete, type Model } from "@mariozechner/pi-ai";
+import { complete, getModels, type Api, type Model } from "@mariozechner/pi-ai";
 import type { EngineDatabase } from "./db.js";
 import { fakeRespond } from "./fake-stream.js";
 
@@ -165,6 +165,39 @@ export class TextLlmService {
     };
   }
 
+  /**
+   * Build the pi-ai model descriptor for a provider/model pair.
+   *
+   * The previous version fabricated one (`contextWindow: 1000000`,
+   * `maxTokens: 128000`, `reasoning: false`) and cast it through
+   * `as unknown as Model`. That fake metadata starts to matter as soon as
+   * anything real depends on it — context compaction, token budgets, thinking
+   * levels, cost accounting — and nothing detected the lie.
+   *
+   * pi-ai ships a model registry, so known models get their real limits and
+   * unknown ones are rejected explicitly instead of silently inheriting
+   * invented capabilities. Custom endpoints are still supported by an override.
+   */
+  private buildModel(
+    provider: TextProviderKey,
+    modelId: string,
+    baseUrl: string,
+  ): Model<Api> {
+    if (provider === "fake") {
+      throw new Error("the fake provider does not build a real pi-ai model");
+    }
+    const known = getModels(provider as never).find((entry) => entry.id === modelId);
+    if (!known) {
+      const available = getModels(provider as never).map((entry) => entry.id).slice(0, 8);
+      throw new Error(
+        `unknown model ${modelId} for provider ${provider}; ` +
+          `known ids include ${available.join(", ")}`,
+      );
+    }
+    // The endpoint is configured per deployment, so it overrides the registry.
+    return { ...known, baseUrl } as Model<Api>;
+  }
+
   private async generateOnce(req: LlmRequest): Promise<LlmResponse> {
     const resolved = this.resolveProvider();
     const prompt = this.promptWithRunContext(req.prompt);
@@ -175,18 +208,7 @@ export class TextLlmService {
       throw new Error(`provider ${resolved.key} needs a base URL in the run context snapshot`);
     }
 
-    const model = {
-      id: resolved.model,
-      name: resolved.model,
-      api: resolved.key === "anthropic" ? "anthropic-messages" : "openai-completions",
-      provider: resolved.key,
-      baseUrl: resolved.baseUrl,
-      reasoning: false,
-      input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 1000000,
-      maxTokens: 128000,
-    } as unknown as Model<never>;
+    const model = this.buildModel(resolved.key, resolved.model, resolved.baseUrl);
 
     const context = {
       systemPrompt: req.system,
