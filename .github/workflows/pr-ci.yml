@@ -41,12 +41,6 @@ jobs:
       - name: Ruff
         run: uv run ruff check app tests
       - name: Pytest
-        env:
-          TEXT_PROVIDER: fake
-          IMAGE_PROVIDER: fake
-          VIDEO_PROVIDER: fake
-          TTS_ENABLED: "false"
-          BGM_ENABLED: "false"
         run: uv run pytest -q
 
   engine:
