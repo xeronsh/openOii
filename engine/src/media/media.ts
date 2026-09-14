@@ -18,6 +18,12 @@ import {
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { EngineDatabase } from "../db.js";
+import {
+  AiOperationError,
+  assertOperationInFlight,
+  operationHeaders,
+  type AiOperation,
+} from "../ai-operation.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -259,11 +265,26 @@ function promptLabel(prompt: string): string {
 export class MediaService {
   private idempotencyKey: string | null = null;
   private abortSignal: AbortSignal | null = null;
+  /**
+   * Current operation identity, when the caller supplied one.
+   *
+   * Provider requests get their idempotency header and cancellation from this
+   * single object instead of from separate fields, matching the contract text
+   * operations already use (`ai-operation.ts`).
+   */
+  private operation: AiOperation | null = null;
 
   constructor(private readonly settings: MediaSettings) {}
 
-  setOperationIdentity(idempotencyKey: string | null): void {
-    this.idempotencyKey = idempotencyKey;
+  /** Bind the operation the following media requests belong to. */
+  /**
+   * Bind the operation the following media requests belong to. Its idempotency
+   * key and deadline apply to every provider call until it is cleared, so
+   * identity and cancellation come from one object (see `ai-operation.ts`).
+   */
+  setOperation(operation: AiOperation | null): void {
+    this.operation = operation;
+    this.idempotencyKey = operation?.idempotencyKey ?? null;
   }
 
   /**
@@ -277,8 +298,12 @@ export class MediaService {
 
   /** Reject if the run was cancelled, before starting more provider work. */
   private throwIfAborted(): void {
+    if (this.operation) {
+      assertOperationInFlight(this.operation);
+      return;
+    }
     if (this.abortSignal?.aborted) {
-      throw new Error("run cancelled: provider request aborted");
+      throw new AiOperationError("aborted", "media", "run cancelled: provider request aborted");
     }
   }
 
@@ -293,7 +318,9 @@ export class MediaService {
       await sleep(ms);
       return;
     }
-    if (signal.aborted) throw new Error("run cancelled: provider request aborted");
+    if (signal.aborted) {
+      throw new AiOperationError("aborted", "media", "run cancelled: provider request aborted");
+    }
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         signal.removeEventListener("abort", onAbort);
@@ -301,13 +328,17 @@ export class MediaService {
       }, ms);
       const onAbort = (): void => {
         clearTimeout(timer);
-        reject(new Error("run cancelled: provider request aborted"));
+        reject(
+          new AiOperationError("aborted", "media", "run cancelled: provider request aborted"),
+        );
       };
       signal.addEventListener("abort", onAbort, { once: true });
     });
   }
 
-  private operationHeaders(): Record<string, string> {
+  private idempotencyHeaders(): Record<string, string> {
+    // One header contract for every provider that accepts operation identity.
+    if (this.operation) return operationHeaders(this.operation);
     return this.idempotencyKey ? { "Idempotency-Key": this.idempotencyKey } : {};
   }
 
@@ -354,7 +385,7 @@ export class MediaService {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.settings.imageApiKey}`,
-          ...this.operationHeaders(),
+          ...this.idempotencyHeaders(),
         },
         body: JSON.stringify(payload),
       }),
@@ -413,7 +444,7 @@ export class MediaService {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${this.settings.doubaoApiKey}`,
-            ...this.operationHeaders(),
+            ...this.idempotencyHeaders(),
           },
           body: JSON.stringify(payload),
         }),
@@ -465,7 +496,7 @@ export class MediaService {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.settings.videoApiKey}`,
-          ...this.operationHeaders(),
+          ...this.idempotencyHeaders(),
         },
         body: JSON.stringify(payload),
       }),

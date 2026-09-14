@@ -22,6 +22,7 @@ import {
   buildShotPrompt,
   type ResolvedStylePrompt,
 } from "../style.js";
+import type { AiOperation } from "../ai-operation.js";
 
 export interface CompletionInfo {
   completed: string;
@@ -44,6 +45,11 @@ export interface StageContext {
   /** Entity scope for this run; absent means all entities in the project. */
   targetCharacterIds?: number[];
   targetShotIds?: number[];
+  /**
+   * Operation identity for the stage attempt currently running. Text, image and
+   * video all read identity, deadline and cancellation from this one object.
+   */
+  operation?: AiOperation | null;
   /**
    * Style locks + character-quality prompts ported from the Python render
    * agent (ADR 0008 precondition). Resolved once per run from the project
@@ -89,7 +95,13 @@ async function callLlm(
   prompt: string,
   maxTokens = 4096,
 ): Promise<Record<string, unknown>> {
-  const res = await ctx.llm.generate({ system, prompt, maxTokens, signal: ctx.signal });
+  const res = await ctx.llm.generate({
+    system,
+    prompt,
+    maxTokens,
+    signal: ctx.signal,
+    operation: ctx.operation ?? undefined,
+  });
   ctx.shared.insertAgentMessage(ctx.runId, agent, "assistant", res.text);
   return extractJson(res.text);
 }

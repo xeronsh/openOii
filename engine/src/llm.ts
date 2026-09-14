@@ -2,6 +2,7 @@
 import { complete, getModels, type Api, type Model } from "@mariozechner/pi-ai";
 import type { EngineDatabase } from "./db.js";
 import { fakeRespond } from "./fake-stream.js";
+import { AiOperationError, assertOperationInFlight, type AiOperation } from "./ai-operation.js";
 
 export type TextProviderKey = "fake" | "anthropic" | "openai";
 
@@ -30,6 +31,12 @@ export interface LlmRequest {
   maxTokens?: number;
   /** Aborted when the run is cancelled; forwarded to the provider request. */
   signal?: AbortSignal;
+  /**
+   * Operation identity this call belongs to. Supplied by the stage attempt, so
+   * text carries the same operation contract as image/video (`ai-operation.ts`)
+   * rather than only a bare abort signal.
+   */
+  operation?: AiOperation;
 }
 
 export interface LlmResponse {
@@ -201,6 +208,8 @@ export class TextLlmService {
   private async generateOnce(req: LlmRequest): Promise<LlmResponse> {
     const resolved = this.resolveProvider();
     const prompt = this.promptWithRunContext(req.prompt);
+    // Fail fast on a cancelled or expired operation before spending a request.
+    if (req.operation) assertOperationInFlight(req.operation);
     if (resolved.key === "fake") {
       return { text: fakeRespond(prompt), provider: "fake", model: resolved.model };
     }
@@ -219,10 +228,15 @@ export class TextLlmService {
       maxTokens: req.maxTokens ?? 4096,
       // pi-ai honours AbortSignal itself, so cancellation does not have to wait
       // for the response to come back before the run actually stops.
-      signal: req.signal,
+      signal: req.signal ?? req.operation?.signal,
     });
     if (message.stopReason === "error") {
-      throw new Error(`llm error: ${message.errorMessage ?? "unknown"}`);
+      throw new AiOperationError(
+        req.signal?.aborted ? "aborted" : "provider",
+        req.operation?.operationId ?? "llm",
+        `llm error: ${message.errorMessage ?? "unknown"}`,
+        resolved.key,
+      );
     }
     const text = Array.isArray(message.content)
       ? message.content

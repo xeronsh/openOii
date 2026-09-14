@@ -40,6 +40,7 @@ import {
 } from "../agents/index.js";
 import { PipelineEmitter } from "./emitter.js";
 import { resolveStageStyleContext } from "../style.js";
+import { beginAiOperation } from "../ai-operation.js";
 
 export interface PipelineRequest {
   projectId: number;
@@ -403,11 +404,23 @@ export class PipelineRunner {
 
         await this.executeStageAttempt(stage, request, async (attempt) => {
           ctx.shared = this.shared.withFrozenStageInput(readFrozenStageInput(attempt));
-          ctx.media.setOperationIdentity(attempt.idempotency_key);
+          // One operation identity for every provider call in this attempt:
+          // text (pi-ai), image and video all read from the same contract.
+          const operation = beginAiOperation({
+            operationId: attempt.stage_attempt_id,
+            idempotencyKey: attempt.idempotency_key,
+            runId: request.runId,
+            projectId: request.projectId,
+            stage,
+            signal: this.abortController.signal,
+          });
+          ctx.operation = operation;
+          ctx.media.setOperation(operation);
           try {
             await this.runProduction(stage, ctx, request);
           } finally {
-            ctx.media.setOperationIdentity(null);
+            ctx.operation = null;
+            ctx.media.setOperation(null);
             ctx.shared = this.shared;
           }
         });
@@ -625,11 +638,23 @@ export class PipelineRunner {
         if (this.shouldCancel(request.runId)) return await this.finishCancelled(request, emitter);
         await this.executeStageAttempt(stage, request, async (attempt) => {
           ctx.shared = this.shared.withFrozenStageInput(readFrozenStageInput(attempt));
-          ctx.media.setOperationIdentity(attempt.idempotency_key);
+          // One operation identity for every provider call in this attempt:
+          // text (pi-ai), image and video all read from the same contract.
+          const operation = beginAiOperation({
+            operationId: attempt.stage_attempt_id,
+            idempotencyKey: attempt.idempotency_key,
+            runId: request.runId,
+            projectId: request.projectId,
+            stage,
+            signal: this.abortController.signal,
+          });
+          ctx.operation = operation;
+          ctx.media.setOperation(operation);
           try {
             await this.runProduction(stage, ctx, request);
           } finally {
-            ctx.media.setOperationIdentity(null);
+            ctx.operation = null;
+            ctx.media.setOperation(null);
             ctx.shared = this.shared;
           }
         });
