@@ -153,7 +153,7 @@ async def test_generate_dispatches_full_run_to_engine(closure_client):
     async with ctx["session_maker"]() as session:
         run = await session.get(AgentRun, res.json()["id"])
         assert run is not None
-        assert run.status == "running"
+        assert run.status == "queued"
 
 
 @pytest.mark.asyncio
@@ -218,35 +218,30 @@ async def test_resume_returns_404_when_run_missing(closure_client):
 
 
 @pytest.mark.asyncio
-async def test_resume_always_dispatches_to_engine(closure_client):
-    """执行权在引擎：resume 不能靠 Python 侧的任务状态短路掉。
-
-    之前用 task_manager.is_running 判断“已在跑就早返回”，但引擎模式下 Python
-    从不注册本地任务，那个判断恒为 False —— 早返回分支实际不可达；
-    而一旦它真返回，用户点“恢复”将被静默吞掉。统一交给引擎（引擎自己幂等）。
-    """
+async def test_resume_rejects_run_with_live_lease(closure_client):
+    """A live lease is the single-executor proof; resume must not double-dispatch."""
     client, ctx, engine = closure_client
 
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
         run = await create_run(session, project_id=project.id, status="running")
 
-    res = await client.post(f"/api/v1/runs/{run.id}/resume", json={"run_id": run.id})
-    assert res.status_code == 200
-    assert res.json()["id"] == run.id
-    assert len(engine.resume) == 1
-    assert engine.resume[0]["run_id"] == run.id
+    res = await client.post(f"/api/v1/runs/{run.id}/resume")
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "RUN_ALREADY_ACTIVE"
+    assert engine.resume == []
 
 
 @pytest.mark.asyncio
-async def test_resume_dispatches_to_engine(closure_client):
+async def test_resume_dispatches_recoverable_run_to_engine(closure_client):
     client, ctx, engine = closure_client
 
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
         run = await create_run(session, project_id=project.id, status="paused")
 
-    res = await client.post(f"/api/v1/runs/{run.id}/resume", json={"run_id": run.id})
+    assert run.status == "failed"  # factory translates the removed legacy state
+    res = await client.post(f"/api/v1/runs/{run.id}/resume")
     assert res.status_code == 200
     assert len(engine.resume) == 1
     assert engine.resume[0]["run_id"] == run.id
@@ -259,9 +254,9 @@ async def test_resume_returns_503_when_engine_unavailable(closure_client):
 
     async with ctx["session_maker"]() as session:
         project = await create_project(session)
-        run = await create_run(session, project_id=project.id, status="paused")
+        run = await create_run(session, project_id=project.id, status="failed")
 
-    res = await client.post(f"/api/v1/runs/{run.id}/resume", json={"run_id": run.id})
+    res = await client.post(f"/api/v1/runs/{run.id}/resume")
     assert res.status_code == 503
 
 
@@ -278,7 +273,7 @@ async def test_cancel_returns_404_when_project_missing(closure_client):
 
 
 @pytest.mark.asyncio
-async def test_cancel_marks_runs_emits_ws_and_notifies_engine(closure_client):
+async def test_cancel_live_run_notifies_engine_and_waits_for_ack(closure_client):
     client, ctx, engine = closure_client
 
     async with ctx["session_maker"]() as session:
@@ -286,25 +281,22 @@ async def test_cancel_marks_runs_emits_ws_and_notifies_engine(closure_client):
         target = await create_run(session, project_id=project.id, status="running")
         other = await create_run(session, project_id=project.id, status="queued")
 
-    # 按 run id 取消：只影响目标 run，同项目的另一个 run 不受牵连
     res = await client.post(f"/api/v1/runs/{target.id}/cancel")
     assert res.status_code == 200
     body = res.json()
-    assert body["status"] == "cancelled"
-    assert body["cancelled"] == 1
+    assert body["status"] == "cancelling"
     assert body["run_ids"] == [target.id]
-
     assert [c["run_id"] for c in engine.cancel] == [target.id]
-    ctx["ws"].events.clear()
 
     async with ctx["session_maker"]() as session:
-        from app.models.agent_run import AgentRun
-
-        assert (await session.get(AgentRun, target.id)).status == "cancelled"
+        assert (await session.get(AgentRun, target.id)).status == "cancelling"
         assert (await session.get(AgentRun, other.id)).status == "queued"
 
+    # A queued command has no executor lease yet, so cancellation can complete
+    # synchronously and emits its terminal event from the control plane.
     ctx["ws"].events.clear()
     res = await client.post(f"/api/v1/runs/{other.id}/cancel")
+    assert res.json()["status"] == "cancelled"
     assert res.json()["run_ids"] == [other.id]
     last_project_id, last_event = ctx["ws"].events[-1]
     assert last_project_id == project.id
@@ -350,7 +342,7 @@ async def test_feedback_routes_through_review_then_dispatches(closure_client, mo
     async with ctx["session_maker"]() as session:
         run = await session.get(AgentRun, body["run_id"])
         assert run is not None
-        assert run.status == "running"
+        assert run.status == "queued"
 
 
 @pytest.mark.asyncio
