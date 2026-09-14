@@ -1,6 +1,6 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { applyServerEvent } from "~/query/applyServerEvent";
+import { appQueryClient } from "~/query/client";
 import { useEditorStore } from "~/stores/editorStore";
 import type { WsEvent } from "~/types";
 import { getWsBase } from "~/utils/runtimeBase";
@@ -43,12 +43,11 @@ export function writeWsCursor(projectId: number, eventId: number): void {
 /**
  * Project websocket transport.
  *
- * Durable server state is projected into TanStack Query. Zustand receives a
- * separate UI/run/message projection while legacy entity mirrors are migrated
- * away. Transport metadata (`event_id`) is consumed only here.
+ * Durable server state is projected into the same application TanStack Query
+ * cache used by HTTP hydration. Zustand receives a separate UI/run/message
+ * projection while the final legacy entity mirrors are being removed.
  */
 export function useProjectWebSocket(projectId: number | null) {
-	const queryClient = useQueryClient();
 	const reconnectAttempts = useRef(0);
 	const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const autoConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,7 +126,7 @@ export function useProjectWebSocket(projectId: number | null) {
 					return;
 				}
 
-				applyServerEvent(queryClient, projectId, data);
+				applyServerEvent(appQueryClient, projectId, data);
 				applyWsEvent(data, useEditorStore.getState(), scheduleAutoConfirm);
 
 				if (eventId !== null) {
@@ -184,7 +183,7 @@ export function useProjectWebSocket(projectId: number | null) {
 				});
 			}
 		};
-	}, [projectId, clearReconnectTimer, queryClient, scheduleAutoConfirm]);
+	}, [projectId, clearReconnectTimer, scheduleAutoConfirm]);
 
 	const disconnect = useCallback(() => {
 		clearReconnectTimer();
