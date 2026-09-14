@@ -220,7 +220,9 @@ async def test_generate_project_success(async_client, test_session, monkeypatch)
     data = res.json()
     run = await test_session.get(AgentRun, data["id"])
     assert run is not None
-    assert run.status == "running"
+    # Command acceptance is durable before an executor acquires its lease.
+    assert run.status == "queued"
+    assert data["status"] == "queued"
     assert data["provider_snapshot"] == expected_snapshot
     assert run.provider_snapshot == expected_snapshot
 
@@ -272,7 +274,7 @@ async def test_generate_project_allows_start_when_only_video_provider_is_invalid
     data = res.json()
     run = await test_session.get(AgentRun, data["id"])
     assert run is not None
-    assert run.status == "running"
+    assert run.status == "queued"
 
 
 @pytest.mark.asyncio
@@ -352,14 +354,29 @@ async def test_cancel_run_already_terminal_is_noop(async_client, test_session):
 
 
 @pytest.mark.asyncio
-async def test_cancel_project_run_updates(async_client, test_session):
+async def test_cancel_unleased_run_finishes_synchronously(async_client, test_session):
+    project = await create_project(test_session)
+    run = await create_run(
+        test_session, project_id=project.id, status="running", live_lease=False
+    )
+
+    res = await async_client.post(f"/api/v1/runs/{run.id}/cancel")
+    assert res.status_code == 200
+    await test_session.refresh(run)
+    assert run.status == "cancelled"
+    assert res.json()["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cancel_live_run_is_cancelling_until_executor_ack(async_client, test_session):
     project = await create_project(test_session)
     run = await create_run(test_session, project_id=project.id, status="running")
 
     res = await async_client.post(f"/api/v1/runs/{run.id}/cancel")
     assert res.status_code == 200
     await test_session.refresh(run)
-    assert run.status == "cancelled"
+    assert run.status == "cancelling"
+    assert res.json()["status"] == "cancelling"
 
 
 @pytest.mark.asyncio
@@ -389,7 +406,7 @@ async def test_feedback_project_success(async_client, test_session, monkeypatch)
     data = res.json()
     run = await test_session.get(AgentRun, data["run_id"])
     assert run is not None
-    assert run.status == "running"
+    assert run.status == "queued"
     assert (
         run.provider_snapshot
         == _provider_resolution_deterministic()
@@ -497,9 +514,11 @@ async def test_generation_state_recoverable_for_failed_run(async_client, test_se
 
 @pytest.mark.asyncio
 async def test_generation_state_recoverable_for_stale_running_run(async_client, test_session):
-    """DB 里是 running 但进程内没有任务（如中途崩溃）→ 应视为可恢复而非活跃。"""
+    """DB 里是 running 但没有有效 lease（如中途崩溃）→ 应视为可恢复而非活跃。"""
     project = await create_project(test_session)
-    await create_run(test_session, project_id=project.id, status="running")
+    await create_run(
+        test_session, project_id=project.id, status="running", live_lease=False
+    )
 
     res = await async_client.get(f"/api/v1/projects/{project.id}/runs/current")
     assert res.status_code == 200
