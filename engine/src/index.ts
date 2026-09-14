@@ -8,7 +8,10 @@ import {
   type TextProviderSnapshot,
 } from "./llm.js";
 import { SharedDb, parseJsonColumn } from "./shared-db.js";
-import { PipelineRunner } from "./pipeline/runner.js";
+import {
+  PipelineRunner,
+  type InvalidationPlan,
+} from "./pipeline/runner.js";
 import { PRODUCTION_STAGE_SEQUENCE, type StageId, WORKFLOW_VERSION } from "./contract.js";
 
 const LEASE_TTL_SECONDS = 120;
@@ -24,6 +27,14 @@ export function createEngineApp(dbPath: string) {
   function runContext(runId: number): RunCreativeContext {
     const row = shared.getRun(runId);
     return parseJsonColumn(row?.context_snapshot, {} as RunCreativeContext);
+  }
+
+  function runInvalidationPlan(runId: number): InvalidationPlan | undefined {
+    const row = db.db
+      .prepare("SELECT patch_plan FROM agentrun WHERE id = ?")
+      .get(runId) as { patch_plan: string | null } | undefined;
+    const plan = parseJsonColumn(row?.patch_plan, null as InvalidationPlan | null);
+    return plan ?? undefined;
   }
 
   function runScopedLlm(context: RunCreativeContext): TextLlmService {
@@ -58,6 +69,7 @@ export function createEngineApp(dbPath: string) {
       return false;
     }
 
+    request.invalidationPlan ??= runInvalidationPlan(runId);
     const context = runContext(runId);
     const fencedShared = shared.fenced(runId, leaseToken);
     const runner = new PipelineRunner(db, fencedShared, runScopedLlm(context), context);
