@@ -10,6 +10,7 @@ import {
 import "tldraw/tldraw.css";
 import { ImagePreviewModal, VideoPreviewModal } from "~/components/canvas/PreviewModals";
 import { canvasEvents } from "~/components/canvas/canvasEvents";
+import { projectQueryKeys } from "~/query/queryKeys";
 import { projectsApi } from "~/services/api";
 import { useEditorStore, useShallow } from "~/stores/editorStore";
 import { useThemeStore } from "~/stores/themeStore";
@@ -69,27 +70,8 @@ export function ComicWorkflowCanvas({
 		title: string;
 	} | null>(null);
 
-	const {
-		characters,
-		shots,
-		projectVideoUrl,
-		projectStatus,
-		projectTitle,
-		projectSummary,
-		projectStory,
-		isGenerating,
-		awaitingConfirm,
-		currentRunId,
-		blockingClips,
-	} = useEditorStore(
+	const { isGenerating, awaitingConfirm, currentRunId, blockingClips } = useEditorStore(
 		useShallow((state) => ({
-			characters: state.characters,
-			shots: state.shots,
-			projectVideoUrl: state.projectVideoUrl,
-			projectStatus: state.projectStatus,
-			projectTitle: state.projectTitle,
-			projectSummary: state.projectSummary,
-			projectStory: state.projectStory,
 			isGenerating: state.isGenerating,
 			awaitingConfirm: state.awaitingConfirm,
 			currentRunId: state.currentRunId,
@@ -97,40 +79,32 @@ export function ComicWorkflowCanvas({
 		})),
 	);
 
-	const { data: project, isLoading } = useQuery({
-		queryKey: ["project", projectId],
+	const { data: project, isLoading: projectLoading } = useQuery({
+		queryKey: projectQueryKeys.project(projectId),
 		queryFn: () => projectsApi.get(projectId),
+		enabled: projectId > 0,
+	});
+	const { data: characters = [], isLoading: charactersLoading } = useQuery({
+		queryKey: projectQueryKeys.characters(projectId),
+		queryFn: () => projectsApi.getCharacters(projectId),
+		enabled: projectId > 0,
+	});
+	const { data: shots = [], isLoading: shotsLoading } = useQuery({
+		queryKey: projectQueryKeys.shots(projectId),
+		queryFn: () => projectsApi.getShots(projectId),
 		enabled: projectId > 0,
 	});
 
 	const graph = useMemo<ComicWorkflowGraph | null>(() => {
 		if (!project) return null;
 		return buildComicWorkflow({
-			project: {
-				...project,
-				title: projectTitle ?? project.title,
-				story: projectStory ?? project.story,
-				summary: projectSummary ?? project.summary,
-				video_url: projectVideoUrl ?? project.video_url,
-				status: projectStatus ?? project.status,
-			},
+			project,
 			characters,
 			shots,
 			blockingClips,
 			isGenerating,
 		});
-	}, [
-		project,
-		projectTitle,
-		projectStory,
-		projectSummary,
-		projectVideoUrl,
-		projectStatus,
-		characters,
-		shots,
-		blockingClips,
-		isGenerating,
-	]);
+	}, [project, characters, shots, blockingClips, isGenerating]);
 
 	const layout = useMemo(
 		() => (graph ? layoutComicWorkflow(graph) : null),
@@ -186,12 +160,8 @@ export function ComicWorkflowCanvas({
 	const handleMount = useCallback(
 		(editor: Editor) => {
 			editorRef.current = editor;
-			// 同步 tldraw 自身的明暗态（shape 内文字已显式走 daisyUI 令牌，
-			// 这里兜底画布背景/选择框等 tldraw 原生 UI 的配色）
 			editor.user.updateUserPreferences({
-				colorScheme: useThemeStore.getState().theme.endsWith("dark")
-					? "dark"
-					: "light",
+				colorScheme: useThemeStore.getState().theme.endsWith("dark") ? "dark" : "light",
 			});
 			if (graph && layout) {
 				syncTldrawProjection({ editor, graph, layout, interactionMode });
@@ -217,14 +187,7 @@ export function ComicWorkflowCanvas({
 		const syncKey = `${graphSignature}:${interactionMode}`;
 		if (lastSignatureRef.current === syncKey) return;
 		syncProjection(false);
-	}, [
-		graph,
-		graphSignature,
-		interactionMode,
-		isInitialized,
-		layout,
-		syncProjection,
-	]);
+	}, [graph, graphSignature, interactionMode, isInitialized, layout, syncProjection]);
 
 	const handleResetLayout = useCallback(() => {
 		syncProjection(true);
@@ -236,7 +199,7 @@ export function ComicWorkflowCanvas({
 		}
 	}, [syncProjection]);
 
-	if (isLoading || !graph || !layout) {
+	if (projectLoading || charactersLoading || shotsLoading || !graph || !layout) {
 		return (
 			<div className="flex h-full w-full items-center justify-center bg-base-100 text-sm text-bc-muted">
 				正在加载工作流...
@@ -320,9 +283,7 @@ const SelectionBridge = track(function SelectionBridge({
 			const shape = editor.getShape(shapeId);
 			const nodeId = nodeIdFromShape(shape);
 			if (!nodeId) continue;
-			if (graph.nodes.some((node) => node.id === nodeId)) {
-				ids.push(nodeId);
-			}
+			if (graph.nodes.some((node) => node.id === nodeId)) ids.push(nodeId);
 		}
 		return ids;
 	}, [editor, graph.nodes, selectedIds]);
@@ -356,16 +317,12 @@ const ShotSortBridge = track(function ShotSortBridge({
 			if (timerRef.current) window.clearTimeout(timerRef.current);
 			timerRef.current = window.setTimeout(() => {
 				if (settling.current) return;
-				// Avoid mid-drag commits when still translating
 				const path = editor.getPath();
 				if (path.includes("translating") || path.includes("pointing")) return;
 
 				const shotShapes = editor
 					.getCurrentPageShapes()
-					.filter((shape) => {
-						const nodeId = nodeIdFromShape(shape);
-						return Boolean(nodeId?.startsWith("shot:"));
-					})
+					.filter((shape) => Boolean(nodeIdFromShape(shape)?.startsWith("shot:")))
 					.map((shape) => {
 						const nodeId = nodeIdFromShape(shape)!;
 						const entityId = Number(nodeId.split(":")[1]);
@@ -374,19 +331,16 @@ const ShotSortBridge = track(function ShotSortBridge({
 					.filter((item) => Number.isFinite(item.entityId));
 
 				if (shotShapes.length < 2) return;
-
 				const ordered = [...shotShapes].sort((a, b) => {
 					const rowA = Math.round(a.y / 48);
 					const rowB = Math.round(b.y / 48);
 					if (rowA !== rowB) return rowA - rowB;
 					return a.x - b.x;
 				});
-
 				const items = ordered.map((item, index) => ({
 					shot_id: item.entityId,
 					order: index + 1,
 				}));
-
 				const currentOrders = graph.nodes
 					.filter((n) => n.kind === "shot" && n.entityId != null)
 					.map((n) => ({
@@ -403,7 +357,7 @@ const ShotSortBridge = track(function ShotSortBridge({
 				projectsApi
 					.reorderShots(projectId, items)
 					.then(() => {
-						queryClient.invalidateQueries({ queryKey: ["shots", projectId] });
+						queryClient.invalidateQueries({ queryKey: projectQueryKeys.shots(projectId) });
 						toast.success({
 							title: "九宫格已重排",
 							message: `已按阅读顺序更新 ${items.length} 格`,
@@ -411,10 +365,7 @@ const ShotSortBridge = track(function ShotSortBridge({
 						onSorted();
 					})
 					.catch((error: Error) => {
-						toast.error({
-							title: "重排失败",
-							message: error.message || "请重试",
-						});
+						toast.error({ title: "重排失败", message: error.message || "请重试" });
 					})
 					.finally(() => {
 						settling.current = false;
@@ -460,9 +411,7 @@ const ProjectionSyncBridge = track(function ProjectionSyncBridge({
 				interactionMode,
 				currentShapes,
 			})
-		) {
-			return;
-		}
+		) return;
 		syncTldrawProjection({
 			editor,
 			graph,
