@@ -41,6 +41,7 @@ import {
 import { PipelineEmitter } from "./emitter.js";
 import { resolveStageStyleContext } from "../style.js";
 import { beginAiOperation } from "../ai-operation.js";
+import { withStageSpan } from "../observability.js";
 
 export interface PipelineRequest {
   projectId: number;
@@ -417,7 +418,23 @@ export class PipelineRunner {
           ctx.operation = operation;
           ctx.media.setOperation(operation);
           try {
-            await this.runProduction(stage, ctx, request);
+            // One span per stage attempt: the run -> stage -> provider tree is
+            // what makes a failed run diagnosable without grepping logs.
+            await withStageSpan(
+              `stage ${stage}`,
+              {
+                "openoii.run_id": request.runId,
+                "openoii.project_id": request.projectId,
+                "openoii.stage": stage,
+                "openoii.stage_attempt_id": attempt.stage_attempt_id,
+                "openoii.execution_attempt": attempt.execution_attempt,
+              },
+              async (span) => {
+                span.setAttribute("openoii.stage_attempt", attempt.attempt);
+                await this.runProduction(stage, ctx, request);
+                span.setAttribute("openoii.status", "succeeded");
+              },
+            );
           } finally {
             ctx.operation = null;
             ctx.media.setOperation(null);
@@ -651,7 +668,23 @@ export class PipelineRunner {
           ctx.operation = operation;
           ctx.media.setOperation(operation);
           try {
-            await this.runProduction(stage, ctx, request);
+            // One span per stage attempt: the run -> stage -> provider tree is
+            // what makes a failed run diagnosable without grepping logs.
+            await withStageSpan(
+              `stage ${stage}`,
+              {
+                "openoii.run_id": request.runId,
+                "openoii.project_id": request.projectId,
+                "openoii.stage": stage,
+                "openoii.stage_attempt_id": attempt.stage_attempt_id,
+                "openoii.execution_attempt": attempt.execution_attempt,
+              },
+              async (span) => {
+                span.setAttribute("openoii.stage_attempt", attempt.attempt);
+                await this.runProduction(stage, ctx, request);
+                span.setAttribute("openoii.status", "succeeded");
+              },
+            );
           } finally {
             ctx.operation = null;
             ctx.media.setOperation(null);
