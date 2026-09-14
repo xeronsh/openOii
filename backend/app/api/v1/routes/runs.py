@@ -46,7 +46,6 @@ from app.services.invalidation import build_invalidation_plan
 from app.services.provider_resolution import resolve_project_provider_settings_async
 from app.services.run_context import build_run_context_snapshot
 from app.services.run_recovery import build_recovery_control_surface
-from app.services.task_manager import task_manager
 from app.services.text_factory import create_text_service
 from app.services.video_factory import create_video_service
 from app.ws.manager import ConnectionManager
@@ -85,7 +84,13 @@ async def _dispatch_to_engine(
     user_feedback: str = "",
     resume: bool = False,
 ) -> None:
-    """Ensure a compatible engine owns this run or return a stable API error."""
+    """Ensure a compatible engine owns this run or return a stable API error.
+
+    This is the sanctioned shape for the architecture constraint (ADR 0008):
+    FastAPI is only the northbound gateway — it forwards the request to the
+    engine and lets the engine decide every orchestration step. New generation
+    capabilities must be added the same way, not as in-process agent loops.
+    """
     from app.main import STATIC_DIR
 
     try:
@@ -412,10 +417,9 @@ async def cancel_run(
     session.add(run)
     await session.commit()
 
-    # Python-local regenerate runs still exist during the migration. They have
-    # no engine lease and can acknowledge cancellation synchronously.
-    task_cancelled = task_manager.cancel(run_id)
-    if task_cancelled or not live_lease:
+    # Every run is engine-owned now (ADR 0008), so a run without a live lease
+    # has no executor to signal and can be terminalised synchronously.
+    if not live_lease:
         run.status = "cancelled"
         run.awaiting_payload = None
         session.add(run)

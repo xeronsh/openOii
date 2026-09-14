@@ -258,11 +258,53 @@ function promptLabel(prompt: string): string {
 
 export class MediaService {
   private idempotencyKey: string | null = null;
+  private abortSignal: AbortSignal | null = null;
 
   constructor(private readonly settings: MediaSettings) {}
 
   setOperationIdentity(idempotencyKey: string | null): void {
     this.idempotencyKey = idempotencyKey;
+  }
+
+  /**
+   * Bind the run's cancellation signal. Every provider request and every
+   * in-process wait then observes it, so cancel stops the work instead of
+   * merely marking the run cancelled while the request keeps running.
+   */
+  setAbortSignal(signal: AbortSignal | null): void {
+    this.abortSignal = signal;
+  }
+
+  /** Reject if the run was cancelled, before starting more provider work. */
+  private throwIfAborted(): void {
+    if (this.abortSignal?.aborted) {
+      throw new Error("run cancelled: provider request aborted");
+    }
+  }
+
+  private requestInit(init: RequestInit = {}): RequestInit {
+    return this.abortSignal ? { ...init, signal: this.abortSignal } : init;
+  }
+
+  /** Cancellable wait: a pending backoff or poll must not outlive the run. */
+  private async wait(ms: number): Promise<void> {
+    const signal = this.abortSignal;
+    if (!signal) {
+      await sleep(ms);
+      return;
+    }
+    if (signal.aborted) throw new Error("run cancelled: provider request aborted");
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+      const onAbort = (): void => {
+        clearTimeout(timer);
+        reject(new Error("run cancelled: provider request aborted"));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
   }
 
   private operationHeaders(): Record<string, string> {
@@ -295,6 +337,7 @@ export class MediaService {
     }
 
     if (!this.settings.imageApiKey) throw new Error("IMAGE_API_KEY is required");
+    this.throwIfAborted();
     const endpoint = new URL(this.settings.imageEndpoint, this.settings.imageBaseUrl).toString();
     const payload: Record<string, unknown> = {
       model: this.settings.imageModel,
@@ -304,15 +347,18 @@ export class MediaService {
     if (args.imageBytes && this.settings.enableImageToImage) {
       payload.image = `data:image/png;base64,${args.imageBytes.toString("base64")}`;
     }
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.settings.imageApiKey}`,
-        ...this.operationHeaders(),
-      },
-      body: JSON.stringify(payload),
-    });
+    const response = await fetch(
+      endpoint,
+      this.requestInit({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.settings.imageApiKey}`,
+          ...this.operationHeaders(),
+        },
+        body: JSON.stringify(payload),
+      }),
+    );
     if (!response.ok) throw new Error(`image provider failed: ${response.status}`);
     const body = (await response.json()) as Record<string, unknown>;
     const data = Array.isArray(body.data) ? body.data[0] : null;
@@ -347,6 +393,7 @@ export class MediaService {
 
     if (this.settings.videoProvider === "doubao") {
       if (!this.settings.doubaoApiKey) throw new Error("DOUBAO_API_KEY is required");
+      this.throwIfAborted();
       const payload: Record<string, unknown> = {
         model: this.settings.doubaoVideoModel,
         content: [{ type: "text", text: prompt }],
@@ -361,7 +408,7 @@ export class MediaService {
       }
       const createResponse = await fetch(
         "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
-        {
+        this.requestInit({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -369,7 +416,7 @@ export class MediaService {
             ...this.operationHeaders(),
           },
           body: JSON.stringify(payload),
-        },
+        }),
       );
       if (!createResponse.ok) {
         throw new Error(`doubao create failed: ${createResponse.status}`);
@@ -378,10 +425,12 @@ export class MediaService {
       const taskId = String(created.id ?? "");
       if (!taskId) throw new Error("doubao returned no task id");
       for (let attempt = 0; attempt < 120; attempt += 1) {
-        await sleep(2000);
+        await this.wait(2000);
         const poll = await fetch(
           `https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/${taskId}`,
-          { headers: { Authorization: `Bearer ${this.settings.doubaoApiKey}` } },
+          this.requestInit({
+            headers: { Authorization: `Bearer ${this.settings.doubaoApiKey}` },
+          }),
         );
         if (!poll.ok) throw new Error(`doubao poll failed: ${poll.status}`);
         const state = (await poll.json()) as Record<string, unknown>;
@@ -401,6 +450,7 @@ export class MediaService {
     }
 
     if (!this.settings.videoApiKey) throw new Error("VIDEO_API_KEY is required");
+    this.throwIfAborted();
     const endpoint = new URL(this.settings.videoEndpoint, this.settings.videoBaseUrl).toString();
     const payload: Record<string, unknown> = {
       model: this.settings.videoModel,
@@ -408,15 +458,18 @@ export class MediaService {
       duration: args.duration,
     };
     if (args.imageUrl && this.settings.enableImageToVideo) payload.image_url = args.imageUrl;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.settings.videoApiKey}`,
-        ...this.operationHeaders(),
-      },
-      body: JSON.stringify(payload),
-    });
+    const response = await fetch(
+      endpoint,
+      this.requestInit({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.settings.videoApiKey}`,
+          ...this.operationHeaders(),
+        },
+        body: JSON.stringify(payload),
+      }),
+    );
     if (!response.ok) throw new Error(`video provider failed: ${response.status}`);
     const body = (await response.json()) as Record<string, unknown>;
     const directUrl = typeof body.url === "string" ? body.url : null;

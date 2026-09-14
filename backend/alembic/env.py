@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from app.models import agent_run, artifact, config_item, consistency_report, message, project, run, stage, style_template  # noqa: F401,E402
+from app.models import agent_run, config_item, consistency_report, message, project, style_template  # noqa: F401,E402
 
 config = context.config
 

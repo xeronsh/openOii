@@ -1,6 +1,6 @@
 """Built-in style template seed data.
 
-Defines the 11 existing styles from RenderAgent._style_descriptor plus 3 new ones
+Defines the 11 original styles plus 3 new ones (source of truth: engine/src/style.ts)
 (guofeng-manga, cyberpunk, fairy-tale) as builtin templates.
 """
 

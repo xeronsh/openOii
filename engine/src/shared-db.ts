@@ -26,6 +26,7 @@ export interface ProjectRow {
   story_outline: string | null; // JSON
   visual_bible: string | null;
   outline_approved: boolean | number | null;
+  revision: number;
 }
 
 export interface AgentRunRow {
@@ -35,7 +36,6 @@ export interface AgentRunRow {
   current_agent: string | null;
   progress: number;
   error: string | null;
-  thread_id: string | null;
   confirm_requested: 0 | 1 | boolean | null;
   awaiting_payload: string | null;
   workflow_version: number;
@@ -60,6 +60,7 @@ export interface CharacterRow {
   approved_image_url: string | null;
   approved_at: string | null;
   approval_version: number;
+  revision: number;
 }
 
 export interface ShotRow {
@@ -99,6 +100,7 @@ export interface ShotRow {
   approved_character_ids: string | null; // JSON
   approved_at: string | null;
   approval_version: number;
+  revision: number;
 }
 
 export function parseJsonColumn<T>(raw: string | null | undefined, fallback: T): T {
@@ -257,14 +259,60 @@ interface ExecutionFence {
   token: string;
 }
 
+export interface FrozenStageInput {
+  project: ProjectRow | null;
+  characters: CharacterRow[];
+  shots: ShotRow[];
+}
+
+/**
+ * Raised when a writer's revision no longer matches the stored row.
+ *
+ * Both the HTTP API and the engine write project/character/shot, so a stale
+ * edit must be surfaced instead of silently overwriting the other writer.
+ */
+export class ConcurrentModificationError extends Error {
+  constructor(
+    readonly entity: string,
+    readonly entityId: number,
+    readonly expectedRevision: number,
+  ) {
+    super(
+      `${entity} ${entityId} was modified concurrently ` +
+        `(expected revision ${expectedRevision}); re-read and retry`,
+    );
+    this.name = "ConcurrentModificationError";
+  }
+}
+
+function isInlineLocation(value: string): boolean {
+  return /^(?:x'|X')/.test(value.trim());
+}
+
 export class SharedDb {
   constructor(
     private readonly db: Database.Database,
     private readonly fence?: ExecutionFence,
+    /**
+     * Input frozen before the current stage attempt's first side effect.
+     *
+     * A stage mutates project/character/shot as it runs, so a resume that
+     * re-read them would regenerate against half-written state and issue a
+     * *different* request under the *same* idempotency key. `executeStageAttempt`
+     * installs this via `withFrozenStageInput`; entity reads then serve the
+     * snapshot, while writes still hit the live database.
+     */
+    private readonly frozenInput?: FrozenStageInput,
   ) {}
 
   fenced(runId: number, token: string): SharedDb {
-    return new SharedDb(this.db, { runId, token });
+    return new SharedDb(this.db, { runId, token }, this.frozenInput);
+  }
+
+  /** Install the frozen stage input for the duration of one stage attempt. */
+  withFrozenStageInput(input: FrozenStageInput): SharedDb {
+    this.assertExecutionFence();
+    return new SharedDb(this.db, this.fence, input);
   }
 
   assertExecutionFence(): void {
@@ -277,26 +325,83 @@ export class SharedDb {
   // ---- project ----
 
   getProject(projectId: number): ProjectRow | undefined {
+    if (this.frozenInput && this.frozenInput.project?.id === projectId) {
+      return this.frozenInput.project;
+    }
     return this.db.prepare("SELECT * FROM project WHERE id = ?").get(projectId) as
       | ProjectRow
       | undefined;
   }
 
-  updateProject(projectId: number, fields: Partial<ProjectRow> & Record<string, unknown>): void {
+  /**
+   * Compare-and-set on an explicit expected revision.
+   *
+   * The caller must pass the revision it actually read. Re-reading it here
+   * would defeat the check entirely: the engine holds a stale snapshot of the
+   * entity (it read it at stage start), so the write must state that snapshot's
+   * revision or the concurrent HTTP edit goes unnoticed.
+   */
+  private casWrite(
+    entity: "project" | "character" | "shot",
+    entityId: number,
+    expectedRevision: number,
+    fields: Record<string, unknown>,
+    extraSet = "",
+  ): void {
     this.assertExecutionFence();
-    const entries = Object.entries(fields).filter(([k]) => k !== "id");
+    const entries = Object.entries(fields).filter(([k]) => k !== "id" && k !== "revision");
     if (entries.length === 0) return;
     const sets = entries.map(([k]) => `${k} = ?`).join(", ");
-    this.db
+    const info = this.db
       .prepare(
-        `UPDATE project SET ${sets}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+        `UPDATE ${entity} SET ${sets}, revision = revision + 1${extraSet}
+         WHERE id = ? AND revision = ?`,
       )
       .run(
         ...entries.map(([, v]) =>
           v === undefined ? null : typeof v === "object" && v !== null ? JSON.stringify(v) : v,
         ),
-        projectId,
+        entityId,
+        expectedRevision,
       );
+    if (info.changes === 0) {
+      throw new ConcurrentModificationError(entity, entityId, expectedRevision);
+    }
+  }
+
+  /**
+   * Revision this writer read for the entity, i.e. the one it is allowed to
+   * write against. Falls back to the live row so a caller that did not capture
+   * a snapshot still compares against current state instead of blindly writing.
+   */
+  private expectedRevision(entity: "project" | "character" | "shot", entityId: number): number {
+    if (this.frozenInput) {
+      if (entity === "project" && this.frozenInput.project?.id === entityId) {
+        return this.frozenInput.project.revision;
+      }
+      if (entity === "character") {
+        const frozen = this.frozenInput.characters.find((c) => c.id === entityId);
+        if (frozen) return frozen.revision;
+      }
+      if (entity === "shot") {
+        const frozen = this.frozenInput.shots.find((s) => s.id === entityId);
+        if (frozen) return frozen.revision;
+      }
+    }
+    const row = this.db.prepare(`SELECT revision FROM ${entity} WHERE id = ?`).get(entityId) as
+      | { revision: number }
+      | undefined;
+    return row?.revision ?? -1;
+  }
+
+  updateProject(projectId: number, fields: Partial<ProjectRow> & Record<string, unknown>): void {
+    this.casWrite(
+      "project",
+      projectId,
+      this.expectedRevision("project", projectId),
+      fields,
+      ", updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+    );
   }
 
   // ---- agentrun ----
@@ -453,12 +558,17 @@ export class SharedDb {
   // ---- characters ----
 
   charactersForProject(projectId: number): CharacterRow[] {
+    if (this.frozenInput) {
+      return this.frozenInput.characters.filter((c) => c.project_id === projectId);
+    }
     return this.db
       .prepare("SELECT * FROM character WHERE project_id = ? ORDER BY id")
       .all(projectId) as CharacterRow[];
   }
 
   getCharacter(characterId: number): CharacterRow | undefined {
+    const frozen = this.frozenInput?.characters.find((c) => c.id === characterId);
+    if (frozen) return frozen;
     return this.db.prepare("SELECT * FROM character WHERE id = ?").get(characterId) as
       | CharacterRow
       | undefined;
@@ -480,18 +590,12 @@ export class SharedDb {
   }
 
   updateCharacter(characterId: number, fields: Record<string, unknown>): void {
-    this.assertExecutionFence();
-    const entries = Object.entries(fields).filter(([k]) => k !== "id");
-    if (entries.length === 0) return;
-    const sets = entries.map(([k]) => `${k} = ?`).join(", ");
-    this.db
-      .prepare(`UPDATE character SET ${sets} WHERE id = ?`)
-      .run(
-        ...entries.map(([, v]) =>
-          v === undefined ? null : typeof v === "object" && v !== null ? JSON.stringify(v) : v,
-        ),
-        characterId,
-      );
+    this.casWrite(
+      "character",
+      characterId,
+      this.expectedRevision("character", characterId),
+      fields,
+    );
   }
 
   deleteCharacter(characterId: number): void {
@@ -502,12 +606,17 @@ export class SharedDb {
   // ---- shots ----
 
   shotsForProject(projectId: number): ShotRow[] {
+    if (this.frozenInput) {
+      return this.frozenInput.shots.filter((s) => s.project_id === projectId);
+    }
     return this.db
       .prepare('SELECT * FROM shot WHERE project_id = ? ORDER BY "order"')
       .all(projectId) as unknown as ShotRow[];
   }
 
   getShot(shotId: number): ShotRow | undefined {
+    const frozen = this.frozenInput?.shots.find((s) => s.id === shotId);
+    if (frozen) return frozen;
     return this.db.prepare("SELECT * FROM shot WHERE id = ?").get(shotId) as ShotRow | undefined;
   }
 
@@ -532,24 +641,20 @@ export class SharedDb {
   }
 
   updateShot(shotId: number, fields: Record<string, unknown>): void {
-    this.assertExecutionFence();
-    const entries = Object.entries(fields).filter(([k]) => k !== "id" && k !== "order");
-    if (entries.length === 0) return;
-    const sets = entries.map(([k]) => `${k} = ?`).join(", ");
-    this.db
-      .prepare(`UPDATE shot SET ${sets} WHERE id = ?`)
-      .run(
-        ...entries.map(([k, v]) =>
+    const prepared = Object.fromEntries(
+      Object.entries(fields)
+        .filter(([k]) => k !== "id" && k !== "order" && k !== "revision")
+        .map(([k, v]) =>
           typeof v === "object" && v !== null
-            ? JSON.stringify(v)
+            ? [k, JSON.stringify(v)]
             : v === undefined
-              ? null
+              ? [k, null]
               : k.endsWith("_ids")
-                ? JSON.stringify(v)
-                : v,
+                ? [k, JSON.stringify(v)]
+                : [k, v],
         ),
-        shotId,
-      );
+    );
+    this.casWrite("shot", shotId, this.expectedRevision("shot", shotId), prepared);
   }
 
   deleteShot(shotId: number): void {

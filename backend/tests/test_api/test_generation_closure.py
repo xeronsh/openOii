@@ -18,9 +18,7 @@ from app.api.v1.routes import runs as generation_routes
 from app.main import create_app
 from app.models.agent_run import AgentRun
 from app.schemas.project import ProjectProviderEntry
-from app.services.run_recovery import thread_id_for_run
 from tests.factories import create_project, create_run
-
 
 class _EngineCalls:
     """Record engine HTTP calls in place of the real sidecar."""
@@ -54,7 +52,6 @@ class _EngineCalls:
         monkeypatch.setattr(generation_routes, "engine_resume_run", resume)
         monkeypatch.setattr(generation_routes, "engine_cancel_run", cancel)
 
-
 def _valid_resolution() -> generation_routes.ProviderResolution:
     return generation_routes.ProviderResolution(
         valid=True,
@@ -84,15 +81,12 @@ def _valid_resolution() -> generation_routes.ProviderResolution:
         ),
     )
 
-
 async def _async_return(value):
     return value
-
 
 @pytest.fixture()
 def engine_calls() -> _EngineCalls:
     return _EngineCalls()
-
 
 @pytest.fixture()
 def closure_app(test_db_engine_sessionmaker, test_settings, ws_manager, monkeypatch):
@@ -122,7 +116,6 @@ def closure_app(test_db_engine_sessionmaker, test_settings, ws_manager, monkeypa
 
     return {"app": app, "session_maker": shared_maker, "ws": ws_manager}
 
-
 @pytest_asyncio.fixture()
 async def closure_client(closure_app, engine_calls, monkeypatch):
     engine_calls.install(monkeypatch)
@@ -130,11 +123,9 @@ async def closure_client(closure_app, engine_calls, monkeypatch):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client, closure_app, engine_calls
 
-
 # ---------------------------------------------------------------------------
 # generate
 # ---------------------------------------------------------------------------
-
 
 @pytest.mark.asyncio
 async def test_generate_dispatches_full_run_to_engine(closure_client):
@@ -155,7 +146,6 @@ async def test_generate_dispatches_full_run_to_engine(closure_client):
         assert run is not None
         assert run.status == "queued"
 
-
 @pytest.mark.asyncio
 async def test_generate_returns_503_when_engine_unavailable(closure_client):
     client, ctx, engine = closure_client
@@ -166,7 +156,6 @@ async def test_generate_returns_503_when_engine_unavailable(closure_client):
 
     res = await client.post(f"/api/v1/projects/{project.id}/runs", json={})
     assert res.status_code == 503
-
 
 @pytest.mark.asyncio
 async def test_generate_returns_409_for_active_conflict(closure_client):
@@ -181,7 +170,6 @@ async def test_generate_returns_409_for_active_conflict(closure_client):
     body = res.json()
     assert "run" in body or "state" in body or "kind" in body
 
-
 @pytest.mark.asyncio
 async def test_generate_returns_409_for_recoverable_conflict(closure_client):
     client, ctx, _engine = closure_client
@@ -193,18 +181,15 @@ async def test_generate_returns_409_for_recoverable_conflict(closure_client):
     res = await client.post(f"/api/v1/projects/{project.id}/runs", json={})
     assert res.status_code == 409
 
-
 # ---------------------------------------------------------------------------
 # resume
 # ---------------------------------------------------------------------------
-
 
 @pytest.mark.asyncio
 async def test_resume_returns_404_when_project_missing(closure_client):
     client, _ctx, _engine = closure_client
     res = await client.post("/api/v1/runs/99999/runs/{run_id}/resume", json={"run_id": 1})
     assert res.status_code == 404
-
 
 @pytest.mark.asyncio
 async def test_resume_returns_404_when_run_missing(closure_client):
@@ -215,7 +200,6 @@ async def test_resume_returns_404_when_run_missing(closure_client):
 
     res = await client.post("/api/v1/runs/99999/resume")
     assert res.status_code == 404
-
 
 @pytest.mark.asyncio
 async def test_resume_rejects_run_with_live_lease(closure_client):
@@ -231,7 +215,6 @@ async def test_resume_rejects_run_with_live_lease(closure_client):
     assert res.json()["error"]["code"] == "RUN_ALREADY_ACTIVE"
     assert engine.resume == []
 
-
 @pytest.mark.asyncio
 async def test_resume_dispatches_recoverable_run_to_engine(closure_client):
     client, ctx, engine = closure_client
@@ -246,7 +229,6 @@ async def test_resume_dispatches_recoverable_run_to_engine(closure_client):
     assert len(engine.resume) == 1
     assert engine.resume[0]["run_id"] == run.id
 
-
 @pytest.mark.asyncio
 async def test_resume_returns_503_when_engine_unavailable(closure_client):
     client, ctx, engine = closure_client
@@ -259,18 +241,15 @@ async def test_resume_returns_503_when_engine_unavailable(closure_client):
     res = await client.post(f"/api/v1/runs/{run.id}/resume")
     assert res.status_code == 503
 
-
 # ---------------------------------------------------------------------------
 # cancel
 # ---------------------------------------------------------------------------
-
 
 @pytest.mark.asyncio
 async def test_cancel_returns_404_when_project_missing(closure_client):
     client, _ctx, _engine = closure_client
     res = await client.post("/api/v1/runs/99999/runs/{run_id}/cancel")
     assert res.status_code == 404
-
 
 @pytest.mark.asyncio
 async def test_cancel_live_run_notifies_engine_and_waits_for_ack(closure_client):
@@ -303,18 +282,15 @@ async def test_cancel_live_run_notifies_engine_and_waits_for_ack(closure_client)
     assert last_event["type"] == "run_cancelled"
     assert last_event["data"]["cancelled_count"] == 1
 
-
 # ---------------------------------------------------------------------------
 # feedback
 # ---------------------------------------------------------------------------
-
 
 @pytest.mark.asyncio
 async def test_feedback_returns_404_when_project_missing(closure_client):
     client, _ctx, _engine = closure_client
     res = await client.post("/api/v1/projects/99999/runs/runs/feedback", json={"content": "fix tone"})
     assert res.status_code == 404
-
 
 @pytest.mark.asyncio
 async def test_feedback_routes_through_review_then_dispatches(closure_client, monkeypatch):
@@ -344,7 +320,6 @@ async def test_feedback_routes_through_review_then_dispatches(closure_client, mo
         assert run is not None
         assert run.status == "queued"
 
-
 @pytest.mark.asyncio
 async def test_feedback_returns_503_when_engine_unavailable(closure_client, monkeypatch):
     client, ctx, engine = closure_client
@@ -359,7 +334,6 @@ async def test_feedback_returns_503_when_engine_unavailable(closure_client, monk
     res = await client.post(f"/api/v1/projects/{project.id}/runs/feedback", json={"content": "fix tone"})
     assert res.status_code == 503
 
-
 @pytest.mark.asyncio
 async def test_feedback_returns_409_when_run_active(closure_client):
     client, ctx, _engine = closure_client
@@ -371,29 +345,18 @@ async def test_feedback_returns_409_when_run_active(closure_client):
     res = await client.post(f"/api/v1/projects/{project.id}/runs/feedback", json={"content": "fix tone"})
     assert res.status_code == 409
 
-
 # ---------------------------------------------------------------------------
 # route-level helpers
 # ---------------------------------------------------------------------------
-
 
 def test_require_run_id_raises_when_missing():
     run = AgentRun(project_id=1, status="queued")
     with pytest.raises(RuntimeError, match="missing an id"):
         require_run_id(run)
 
-
 def test_require_run_id_returns_id_when_present():
     run = AgentRun(id=42, project_id=1, status="queued")
     assert require_run_id(run) == 42
-
-
-def test_thread_id_for_run_handles_missing_id():
-    pending = AgentRun(project_id=1, status="queued")
-    assert thread_id_for_run(pending) == "agent-run-pending"
-    persisted = AgentRun(id=99, project_id=1, status="queued")
-    assert thread_id_for_run(persisted) == "agent-run-99"
-
 
 def test_feedback_agent_to_stage_map_targets_real_stages():
     from app.orchestration import PHASE2_STAGE_ORDER

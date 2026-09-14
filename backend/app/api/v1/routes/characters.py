@@ -5,8 +5,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.base import TargetIds
-from app.agents.render import RenderAgent
 from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404
 from app.config import Settings
 from app.models.project import Character, Project
@@ -143,8 +141,8 @@ async def regenerate_character(
             project_id=project_id,
             resource_type="character",
             resource_id=character_id,
-            agent_plan=[RenderAgent()],
-            target_ids=TargetIds(character_ids=[character_id]),
+            stage="render_characters",
+            target_character_ids=(character_id,),
         ),
     )
     return AgentRunRead.model_validate(result.run)

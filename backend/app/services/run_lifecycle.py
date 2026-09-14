@@ -2,37 +2,32 @@
 
 设计意图（KISS + 单一路径）
 --------------------------
-项目里有两种实际执行体，但它们对调用方应当是同一件事：
+只存在**一种**执行体：openOii Engine（ADR 0008）。编排 run 与局部 run
+（单体定向重绘 / 单镜重合成 / 补齐空格）都只是「给引擎的指令 + 实体范围」，
+差别仅在于 stage 与 target ids：引擎自己决定该跑哪些 stage。
 
-1. **编排 run**：整片生成 / 反馈重跑 —— 交给 pi 引擎（`pipeline/runner.ts`）。
-2. **局部 run**：单体重绘/单镜重合成/补齐空格 —— 仍由 Python 侧的
-   Render/Compose agent 进程内执行（引擎尚未移植角色一致性渲染，
-   见 ADR 0005 与 agents/render.py 的能力说明）。
-
-之前这两条路径在 3 个 route 里各抄了一份约 90 行的骨架：细粒度并发锁、
-产物失效、WS 通知、建 run、起 task、注册 task_manager。任何一处改错都要
-改三遍。这里把骨架收成一处，route 只负责「校验 + 说明要做什么」。
+之前这里有两种执行体，局部 run 由 Python 侧的 Render/Compose agent 在进程内
+执行（`agent_plan`）。那是被删除的违规形状：FastAPI 决定下一步做什么。
+现在 route 只负责「校验 + 说明要做什么」，编排决策全部在引擎里。
 
 对外契约
 --------
 - 同一资源上已有活跃 run → `RunConflict`（由 route 转 409）。
-- 编排 run 派发失败（引擎不可达）→ `EngineUnavailableError` 冒泡（转 503）。
+- 派发失败（引擎不可达）→ `EngineUnavailableError` 冒泡（转 503）。
 """
 
 from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.base import TargetIds
 from app.models.agent_run import AgentRun
 from app.models.project import Project
-from app.services.agent_runner import run_agent_plan
-from app.services.task_manager import task_manager
+from app.services.engine_client import engine_start_run
 from app.ws.manager import ConnectionManager
 
 # resource_type 的合法取值（也是细粒度锁的粒度）
@@ -49,13 +44,19 @@ class RunConflict(Exception):
 
 @dataclass(frozen=True)
 class LocalRunSpec:
-    """一次 Python 进程内的局部 run（重绘 / 重合成 / 补齐）。"""
+    """一次定向 run（重绘 / 重合成 / 补齐）。
+
+    这里**没有** agent 列表：调用方只描述「对哪些实体做什么」，
+    由引擎（唯一 orchestration runtime）决定跑哪些 stage。
+    """
 
     project_id: int
     resource_type: ResourceType
     resource_id: int | None
-    agent_plan: list[Any]
-    target_ids: TargetIds
+    #: Engine stage to start from; the engine narrows it to the needed stages.
+    stage: str
+    target_character_ids: Sequence[int] = field(default_factory=tuple)
+    target_shot_ids: Sequence[int] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -87,12 +88,6 @@ async def assert_resource_idle(
         raise RunConflict(f"This {resource_type} is already being processed")
 
 
-def _agent_name(agent_plan: list[Any]) -> str | None:
-    if not agent_plan:
-        return None
-    return getattr(agent_plan[0], "name", None)
-
-
 async def create_local_run(
     session: AsyncSession,
     *,
@@ -100,11 +95,15 @@ async def create_local_run(
     ws: ConnectionManager,
     spec: LocalRunSpec,
 ) -> LocalRunResult:
-    """建 run、起 task、注册取消句柄 —— 局部 run 的唯一入口。"""
+    """建 run 并把它派发给引擎 —— 定向 run 的唯一入口。
+
+    状态语义与编排 run 一致：`queued` 表示命令已持久化，`running` 由拿到
+    fencing lease 的引擎设置。这里只落 `queued`，不再预先写 `running`。
+    """
     run = AgentRun(
         project_id=spec.project_id,
-        status="running",
-        current_agent=_agent_name(spec.agent_plan),
+        status="queued",
+        current_agent=None,
         progress=0.0,
         error=None,
         resource_type=spec.resource_type,
@@ -117,18 +116,19 @@ async def create_local_run(
     from app.api.deps import require_run_id
 
     run_id = require_run_id(run)
-    task = asyncio.create_task(
-        run_agent_plan(
-            project_id=spec.project_id,
-            run_id=run_id,
-            agent_plan=spec.agent_plan,
-            settings=settings,
-            ws=ws,
-            target_ids=spec.target_ids,
-        )
+
+    # 派发失败（引擎不可达）会抛 EngineUnavailableError，由 route 转 503；
+    # run 行保持 queued，调用方可重试 / 由恢复流程接管。
+    await engine_start_run(
+        settings.engine_url,
+        project_id=spec.project_id,
+        run_id=run_id,
+        stage=spec.stage,
+        auto_mode=True,
+        target_character_ids=spec.target_character_ids or None,
+        target_shot_ids=spec.target_shot_ids or None,
     )
-    # 按 run_id 登记：同项目下的多个局部 run 可以并行（锁粒度是具体资源）。
-    task_manager.register(run_id, spec.project_id, task)
+    await session.refresh(run)
     return LocalRunResult(run=run)
 
 

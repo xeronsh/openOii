@@ -17,6 +17,11 @@ import {
 import type { TextLlmService } from "../llm.js";
 import type { MediaService } from "../media/media.js";
 import type { MediaSettings } from "../media/media.js";
+import {
+  buildCharacterPrompt,
+  buildShotPrompt,
+  type ResolvedStylePrompt,
+} from "../style.js";
 
 export interface CompletionInfo {
   completed: string;
@@ -34,6 +39,18 @@ export interface StageContext {
   projectId: number;
   runId: number;
   userFeedback: string;
+  /** Run cancellation signal; every provider call must observe it. */
+  signal: AbortSignal;
+  /** Entity scope for this run; absent means all entities in the project. */
+  targetCharacterIds?: number[];
+  targetShotIds?: number[];
+  /**
+   * Style locks + character-quality prompts ported from the Python render
+   * agent (ADR 0008 precondition). Resolved once per run from the project
+   * style and its universe.
+   */
+  style: ResolvedStylePrompt | null;
+  universeStyle: string;
   critiqueRounds: { characters: number; shots: number };
   critiqueEnabled: boolean;
   critiqueScoreThreshold: number;
@@ -72,7 +89,7 @@ async function callLlm(
   prompt: string,
   maxTokens = 4096,
 ): Promise<Record<string, unknown>> {
-  const res = await ctx.llm.generate({ system, prompt, maxTokens });
+  const res = await ctx.llm.generate({ system, prompt, maxTokens, signal: ctx.signal });
   ctx.shared.insertAgentMessage(ctx.runId, agent, "assistant", res.text);
   return extractJson(res.text);
 }
@@ -373,23 +390,42 @@ async function applyShotPlan(ctx: StageContext, data: Record<string, unknown>): 
 // ---------------------------------------------------------------------------
 
 export async function runRenderCharacters(ctx: StageContext): Promise<void> {
+  const all = ctx.shared.charactersForProject(ctx.projectId);
+  // Targeted redraw scope: FastAPI no longer builds an agent plan + target ids,
+  // the engine owns entity selection (ADR 0008).
+  const characters = ctx.targetCharacterIds
+    ? all.filter((character) => ctx.targetCharacterIds!.includes(character.id))
+    : all;
   await ctx.emitter.sendMessage("render", "开始生成角色形象图...", { progress: 0, isLoading: true });
-  const characters = ctx.shared.charactersForProject(ctx.projectId);
   const total = characters.length;
   let index = 0;
   for (const character of characters) {
     index += 1;
     ctx.emitter.sendProgress("render", "render_characters", "character_images_approval", index / total);
     await ctx.emitter.sendMessage("render", `正在绘制：${character.name} (${index}/${total})`);
-    const prompt = `角色立绘：${character.name}。${character.description ?? ""} ${character.visual_notes ?? ""} ${ctx.shared.getProject(ctx.projectId)?.visual_bible ?? ""}`.trim();
+    // Identity lock + style lock + universe style: parity with the Python
+    // render agent, which is a precondition for deleting it (ADR 0008).
+    const prompt = ctx.style
+      ? buildCharacterPrompt({
+          character,
+          style: ctx.style,
+          universeStyle: ctx.universeStyle,
+          userFeedback: ctx.userFeedback,
+        })
+      : `角色立绘：${character.name}。${character.description ?? ""} ${character.visual_notes ?? ""} ${ctx.shared.getProject(ctx.projectId)?.visual_bible ?? ""}`.trim();
     const imageUrl = await ctx.media.generateImageUrl({ prompt });
     const before = ctx.shared.getCharacter(character.id);
     if (!before) continue;
     const version = ctx.shared.createVersion(ctx.projectId, "character", character.id, before, ctx.runId, "generation");
     ctx.emitter.versionCreated("character", character.id, version, "generation");
-    ctx.shared.updateCharacter(character.id, { image_url: imageUrl });
-    const after = ctx.shared.getCharacter(character.id);
-    if (after) ctx.emitter.characterUpdated(characterReadPayload(after));
+    // State write and its event are one transaction: a crash in between must
+    // not leave the row new while clients never learn about it.
+    const updated = ctx.emitter.commit("character_updated", () => {
+      ctx.shared.updateCharacter(character.id, { image_url: imageUrl });
+      const after = ctx.shared.getCharacter(character.id);
+      return { character: characterReadPayload(after ?? before) };
+    });
+    void updated;
   }
   await ctx.emitter.sendMessage("render", `已为 ${total} 个角色生成形象图，接下来生成分镜图。`);
   ctx.completionInfo = {
@@ -401,32 +437,50 @@ export async function runRenderCharacters(ctx: StageContext): Promise<void> {
 }
 
 export async function runRenderShots(ctx: StageContext): Promise<void> {
+  const allShots = ctx.shared.shotsForProject(ctx.projectId);
+  const shots = ctx.targetShotIds
+    ? allShots.filter((shot) => ctx.targetShotIds!.includes(shot.id))
+    : allShots;
   await ctx.emitter.sendMessage("render", "开始生成分镜首帧图...", { progress: 0, isLoading: true });
-  const shots = ctx.shared.shotsForProject(ctx.projectId);
   const characters = ctx.shared.charactersForProject(ctx.projectId);
   const idToName = new Map(characters.map((c) => [c.id, c.name]));
+  const byId = new Map(characters.map((c) => [c.id, c]));
   let index = 0;
   for (const shot of shots) {
     index += 1;
     ctx.emitter.sendProgress("render", "render_shots", "shot_images_approval", index / shots.length);
-    const names = parseJsonColumn(shot.character_ids, [] as number[]).map((id) => idToName.get(id) ?? `#${id}`);
-    const prompt = [
-      `分镜首帧：${shot.description}`,
-      shot.scene ? `场景：${shot.scene}` : "",
-      shot.lighting ? `光线：${shot.lighting}` : "",
-      names.length ? `角色：${names.join("、")}` : "",
-    ]
-      .filter(Boolean)
-      .join("。");
+    const ids = parseJsonColumn(shot.character_ids, [] as number[]);
+    const names = ids.map((id) => idToName.get(id) ?? `#${id}`);
+    // Character bible + continuity lock + style lock (Python render parity).
+    const prompt = ctx.style
+      ? buildShotPrompt({
+          shot,
+          characters: ids
+            .map((id) => byId.get(id))
+            .filter((c): c is CharacterRow => c !== undefined),
+          style: ctx.style,
+          universeStyle: ctx.universeStyle,
+          userFeedback: ctx.userFeedback,
+        })
+      : [
+          `分镜首帧：${shot.description}`,
+          shot.scene ? `场景：${shot.scene}` : "",
+          shot.lighting ? `光线：${shot.lighting}` : "",
+          names.length ? `角色：${names.join("、")}` : "",
+        ]
+          .filter(Boolean)
+          .join("。");
     await ctx.emitter.sendMessage("render", `正在绘制分镜 (${index}/${shots.length})`);
     const imageUrl = await ctx.media.generateImageUrl({ prompt });
     const before = ctx.shared.getShot(shot.id);
     if (!before) continue;
     const version = ctx.shared.createVersion(ctx.projectId, "shot", shot.id, before, ctx.runId, "generation");
     ctx.emitter.versionCreated("shot", shot.id, version, "generation");
-    ctx.shared.updateShot(shot.id, { image_url: imageUrl });
-    const after = ctx.shared.getShot(shot.id);
-    if (after) ctx.emitter.shotUpdated(shotReadPayload(after));
+    ctx.emitter.commit("shot_updated", () => {
+      ctx.shared.updateShot(shot.id, { image_url: imageUrl });
+      const after = ctx.shared.getShot(shot.id);
+      return { shot: shotReadPayload(after ?? before) };
+    });
   }
   ctx.completionInfo = {
     completed: "分镜画面已渲染完成",
@@ -520,9 +574,11 @@ export async function runComposeVideos(ctx: StageContext): Promise<void> {
       prompt,
       imageUrl: useI2V ? shot.image_url : null,
     });
-    ctx.shared.updateShot(shot.id, { video_url: videoUrl });
-    const after = ctx.shared.getShot(shot.id);
-    if (after) ctx.emitter.shotUpdated(shotReadPayload(after));
+    ctx.emitter.commit("shot_updated", () => {
+      ctx.shared.updateShot(shot.id, { video_url: videoUrl });
+      const after = ctx.shared.getShot(shot.id);
+      return { shot: shotReadPayload(after ?? shot) };
+    });
   }
 }
 
@@ -534,8 +590,10 @@ export async function runComposeMerge(ctx: StageContext): Promise<void> {
   }
   await ctx.emitter.sendMessage("compose", `开始拼接 ${shots.length} 个分镜视频...`, { progress: 0, isLoading: true });
   const mergedUrl = await ctx.media.mergeVideos(shots.map((s) => s.video_url as string));
-  ctx.shared.updateProject(ctx.projectId, { video_url: mergedUrl, status: "ready" });
-  ctx.emitter.projectUpdated({ video_url: mergedUrl, status: "ready" });
+  ctx.emitter.commit("project_updated", () => {
+    ctx.shared.updateProject(ctx.projectId, { video_url: mergedUrl, status: "ready" });
+    return { project: { id: ctx.projectId, video_url: mergedUrl, status: "ready" } };
+  });
   await ctx.emitter.sendMessage(
     "compose",
     "已将分镜拼接为完整视频\n您的漫剧已经准备就绪！可以下载或分享了。",
@@ -543,17 +601,4 @@ export async function runComposeMerge(ctx: StageContext): Promise<void> {
   );
 }
 
-export async function runAddAudio(ctx: StageContext): Promise<void> {
-  // 能力缺口（已知）：Python 侧 AudioService 能跑真实 TTS/BGM（ffmpeg），
-  // 但引擎还没移植它。旧 langgraph 路径能调，pi 路径一直跳过；默认引擎是 pi，
-  // 所以默认配置下音频早就不生效 —— 删掉 langgraph 后这个缺口变成无条件的。
-  // 在补上移植前，这里必须说实话，不能让用户以为配音已处理。
-  if (!ctx.media.audioEnabled) {
-    await ctx.emitter.sendMessage("compose", "TTS 和 BGM 均未启用，跳过音频阶段。");
-    return;
-  }
-  await ctx.emitter.sendMessage(
-    "compose",
-    "[未实现] 音频阶段（TTS 配音 / BGM）尚未移植到引擎，本次输出为无配音版本。",
-  );
-}
+export async function runAddAudioPlaceholderRemoved(): Promise<void> {}

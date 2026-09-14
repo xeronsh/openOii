@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { Server } from "node:http";
 import SqliteDatabase from "better-sqlite3";
 import { createEngineApp } from "../src/index.js";
+import { WORKFLOW_VERSION } from "../src/contract.js";
 import type { PipelineRunner } from "../src/pipeline/runner.js";
 import { installEngineRuntimeSchema } from "./test-db.js";
 
@@ -43,7 +44,7 @@ describe("engine sidecar", () => {
     };
     expect(body.status).toBe("ok");
     expect(body.provider).toBe("fake");
-    expect(body.workflow_version).toBe(1);
+    expect(body.workflow_version).toBe(WORKFLOW_VERSION);
   });
 
   it("returns 400 when project_id/run_id are missing", async () => {

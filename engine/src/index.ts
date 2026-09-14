@@ -150,6 +150,10 @@ export function createEngineApp(dbPath: string) {
         return;
       }
       const rawStage = typeof body.stage === "string" ? body.stage : "";
+      const numberArray = (value: unknown): number[] | undefined =>
+        Array.isArray(value) && value.every((item) => typeof item === "number")
+          ? (value as number[])
+          : undefined;
       const started = startPipeline(
         runId,
         {
@@ -158,6 +162,9 @@ export function createEngineApp(dbPath: string) {
           autoMode: Boolean(body.auto_mode),
           userFeedback: typeof body.user_feedback === "string" ? body.user_feedback : "",
           startStage: isStageId(rawStage) ? rawStage : undefined,
+          // Targeted redraw / fill scope; the engine decides which stages run.
+          targetCharacterIds: numberArray(body.target_character_ids),
+          targetShotIds: numberArray(body.target_shot_ids),
         },
         "run",
       );

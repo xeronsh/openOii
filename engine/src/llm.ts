@@ -28,6 +28,8 @@ export interface LlmRequest {
   system: string;
   prompt: string;
   maxTokens?: number;
+  /** Aborted when the run is cancelled; forwarded to the provider request. */
+  signal?: AbortSignal;
 }
 
 export interface LlmResponse {
@@ -193,6 +195,9 @@ export class TextLlmService {
     const message = await complete(model, context, {
       apiKey: resolved.apiKey,
       maxTokens: req.maxTokens ?? 4096,
+      // pi-ai honours AbortSignal itself, so cancellation does not have to wait
+      // for the response to come back before the run actually stops.
+      signal: req.signal,
     });
     if (message.stopReason === "error") {
       throw new Error(`llm error: ${message.errorMessage ?? "unknown"}`);
@@ -222,6 +227,7 @@ export class TextLlmService {
           "Repair the supplied model output into one valid JSON object. Preserve the original data and meaning. Return JSON only, with no markdown or explanation.",
         prompt: JSON.stringify({ invalid_output: first.text }),
         maxTokens: req.maxTokens ?? 4096,
+        signal: req.signal,
       });
       try {
         const parsed = parseJsonObjectText(repair.text);

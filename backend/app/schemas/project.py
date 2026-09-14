@@ -321,7 +321,6 @@ class AgentRunRead(BaseModel):
     current_agent: str | None
     progress: float
     error: str | None
-    thread_id: str | None = None
     resource_type: str | None
     resource_id: int | None
     provider_snapshot: ProjectProviderSettingsRead | None = None
@@ -340,7 +339,6 @@ class RecoveryStageRead(BaseModel):
 class RecoverySummaryRead(BaseModel):
     project_id: int
     run_id: int
-    thread_id: str
     current_stage: str
     next_stage: str | None = None
     preserved_stages: list[str] = Field(default_factory=list)
@@ -354,7 +352,6 @@ class RecoveryControlRead(BaseModel):
     available_actions: list[Literal["resume", "cancel"]] = Field(
         default_factory=lambda: ["resume", "cancel"]
     )
-    thread_id: str
     active_run: AgentRunRead
     recovery_summary: RecoverySummaryRead
 

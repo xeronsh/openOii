@@ -7,9 +7,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
-from app.agents.base import TargetIds
-from app.agents.render import RenderAgent
-from app.agents.compose import ComposeAgent
 from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404
 from app.config import Settings
 from app.models.project import Character, Project, Shot, ShotCharacterBinding
@@ -189,12 +186,12 @@ async def regenerate_shot(
         await ws.send_event(
             project_id, {"type": "shot_updated", "data": {"shot": _shot_read(shot)}}
         )
-        agent_plan: list[Any] = [RenderAgent()]
+        stage = "render_shots"
     else:
         await invalidate_shot_clip_output(session, project)
         await session.commit()
         await session.refresh(project)
-        agent_plan = [ComposeAgent()]
+        stage = "compose_videos"
 
     await ws.send_event(project_id, await project_updated_event(session, project))
 
@@ -206,8 +203,8 @@ async def regenerate_shot(
             project_id=project_id,
             resource_type="shot",
             resource_id=shot_id,
-            agent_plan=agent_plan,
-            target_ids=TargetIds(shot_ids=[shot_id]),
+            stage=stage,
+            target_shot_ids=(shot_id,),
         ),
     )
     return AgentRunRead.model_validate(result.run)

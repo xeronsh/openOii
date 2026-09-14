@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, BinaryIO
 from urllib.parse import urlsplit
 
@@ -224,19 +225,28 @@ async def engine_start_run(
     stage: str = "full",
     auto_mode: bool = False,
     user_feedback: str = "",
+    target_character_ids: Sequence[int] | None = None,
+    target_shot_ids: Sequence[int] | None = None,
 ) -> dict[str, Any]:
+    """Dispatch a run to the engine.
+
+    Targeted redraw / fill is expressed as entity scope, not as an agent plan:
+    the engine owns which stages run (ADR 0008).
+    """
+    payload: dict[str, Any] = {
+        "project_id": project_id,
+        "run_id": run_id,
+        "stage": stage,
+        "auto_mode": auto_mode,
+        "user_feedback": user_feedback,
+    }
+    if target_character_ids:
+        payload["target_character_ids"] = list(target_character_ids)
+    if target_shot_ids:
+        payload["target_shot_ids"] = list(target_shot_ids)
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.post(
-                f"{base_url}/runs",
-                json={
-                    "project_id": project_id,
-                    "run_id": run_id,
-                    "stage": stage,
-                    "auto_mode": auto_mode,
-                    "user_feedback": user_feedback,
-                },
-            )
+            res = await client.post(f"{base_url}/runs", json=payload)
     except httpx.HTTPError as exc:
         raise EngineUnavailableError(f"engine start failed: {exc}") from exc
     if res.status_code != 202:

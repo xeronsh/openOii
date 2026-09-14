@@ -14,9 +14,7 @@ export const STAGE_ORDER = [
   "critique_shot_images",
   "compose_videos",
   "compose_merge",
-  "add_audio",
   "compose_approval",
-  "review",
 ] as const;
 export type StageId = (typeof STAGE_ORDER)[number];
 export type UiWorkflowStage = "plan" | "plan_approval" | "render" | "render_approval" | "compose" | "review";
@@ -36,7 +34,5 @@ export const STAGE_TO_UI: Record<StageId, UiWorkflowStage> = {
   critique_shot_images: "render",
   compose_videos: "compose",
   compose_merge: "compose",
-  add_audio: "compose",
   compose_approval: "compose",
-  review: "review",
 };

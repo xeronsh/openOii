@@ -13,12 +13,10 @@ from app.schemas.project import (
 )
 from tests.factories import create_project, create_run
 
-
 def _recovery_control(run, *, state: str, detail: str):
     summary = RecoverySummaryRead(
         project_id=run.project_id,
         run_id=run.id,
-        thread_id=f"agent-run-{run.id}",
         current_stage="script",
         next_stage="character",
         preserved_stages=["ideate"],
@@ -32,11 +30,9 @@ def _recovery_control(run, *, state: str, detail: str):
     return RecoveryControlRead(
         state=state,
         detail=detail,
-        thread_id=f"agent-run-{run.id}",
         active_run=AgentRunRead.model_validate(run),
         recovery_summary=summary,
     )
-
 
 def _invalid_provider_resolution() -> ProviderResolution:
     return ProviderResolution(
@@ -67,10 +63,8 @@ def _invalid_provider_resolution() -> ProviderResolution:
         ),
     )
 
-
 async def _return_resolution(_project, _settings, resolution: ProviderResolution) -> ProviderResolution:
     return resolution
-
 
 @pytest.mark.asyncio
 async def test_generate_project_rejects_second_active_full_run(
@@ -101,11 +95,9 @@ async def test_generate_project_rejects_second_active_full_run(
     assert data["state"] == "active"
     assert "active run" in data["detail"].lower()
     assert data["available_actions"] == ["resume", "cancel"]
-    assert data["thread_id"] == f"agent-run-{active_run.id}"
     assert data["recovery_summary"]["current_stage"] == "script"
     assert data["recovery_summary"]["next_stage"] == "character"
     assert data["recovery_summary"]["stage_history"][0]["name"] == "ideate"
-
 
 @pytest.mark.asyncio
 async def test_generate_project_conflict_is_explicit_about_resume_or_cancel(
@@ -135,9 +127,7 @@ async def test_generate_project_conflict_is_explicit_about_resume_or_cancel(
     data = res.json()
     assert data["state"] == "recoverable"
     assert data["available_actions"] == ["resume", "cancel"]
-    assert data["thread_id"] == f"agent-run-{resumable_run.id}"
     assert data["recovery_summary"]["preserved_stages"] == ["ideate"]
-
 
 @pytest.mark.asyncio
 async def test_resume_project_run_rejects_live_executor_lease(
@@ -162,7 +152,6 @@ async def test_resume_project_run_rejects_live_executor_lease(
     assert data["error"]["code"] == "RUN_ALREADY_ACTIVE"
     assert data["error"]["details"]["run_id"] == active_run.id
     assert engine_resumes == []
-
 
 @pytest.mark.asyncio
 async def test_resume_project_run_starts_resume_task_for_recoverable_run(

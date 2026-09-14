@@ -268,7 +268,6 @@ export interface AgentRun {
 	current_agent: string | null;
 	progress: number;
 	error: string | null;
-	thread_id: string | null;
 	resource_type: string | null;
 	resource_id: number | null;
 	provider_snapshot?: ProjectProviderSettings | null;
@@ -285,7 +284,6 @@ export interface RecoveryStageRead {
 export interface RecoverySummaryRead {
 	project_id: number;
 	run_id: number;
-	thread_id: string;
 	current_stage: string;
 	next_stage: string | null;
 	preserved_stages: string[];
@@ -297,7 +295,6 @@ export interface RecoveryControlRead {
 	state: "active" | "recoverable";
 	detail: string;
 	available_actions: Array<"resume" | "cancel">;
-	thread_id: string;
 	active_run: AgentRun;
 	recovery_summary: RecoverySummaryRead;
 }

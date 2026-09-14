@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-WORKFLOW_VERSION = 1
+WORKFLOW_VERSION = 2
 
 StageId = Literal[
     "plan_outline",
@@ -20,9 +20,7 @@ StageId = Literal[
     "critique_shot_images",
     "compose_videos",
     "compose_merge",
-    "add_audio",
-    "compose_approval",
-    "review"
+    "compose_approval"
 ]
 
 PHASE2_STAGE_ORDER: tuple[StageId, ...] = (
@@ -40,9 +38,7 @@ PHASE2_STAGE_ORDER: tuple[StageId, ...] = (
     "critique_shot_images",
     "compose_videos",
     "compose_merge",
-    "add_audio",
     "compose_approval",
-    "review",
 )
 
 PRODUCTION_STAGE_SEQUENCE: tuple[StageId, ...] = (
@@ -53,7 +49,6 @@ PRODUCTION_STAGE_SEQUENCE: tuple[StageId, ...] = (
     "render_shots",
     "compose_videos",
     "compose_merge",
-    "add_audio",
 )
 
 NEXT_STAGE: dict[str, str | None] = {
@@ -70,10 +65,8 @@ NEXT_STAGE: dict[str, str | None] = {
     "shot_images_approval": "critique_shot_images",
     "critique_shot_images": "compose_videos",
     "compose_videos": "compose_merge",
-    "compose_merge": "add_audio",
-    "add_audio": "compose_approval",
-    "compose_approval": "review",
-    "review": None,
+    "compose_merge": "compose_approval",
+    "compose_approval": None,
 }
 
 STAGE_AGENT_MAP: dict[str, str] = {
@@ -91,9 +84,7 @@ STAGE_AGENT_MAP: dict[str, str] = {
     "critique_shot_images": "critic",
     "compose_videos": "compose",
     "compose_merge": "compose",
-    "add_audio": "compose",
     "compose_approval": "compose",
-    "review": "review",
 }
 
 GRAPH_STAGE_FOR_AGENT: dict[str, str] = {
@@ -102,7 +93,6 @@ GRAPH_STAGE_FOR_AGENT: dict[str, str] = {
     "render": "render_characters",
     "critic": "critique_character_images",
     "compose": "compose_videos",
-    "review": "review",
 }
 
 APPROVAL_TO_PRODUCED_STAGE: dict[str, str] = {
@@ -111,7 +101,7 @@ APPROVAL_TO_PRODUCED_STAGE: dict[str, str] = {
     "shots_approval": "plan_shots",
     "character_images_approval": "render_characters",
     "shot_images_approval": "render_shots",
-    "compose_approval": "add_audio",
+    "compose_approval": "compose_merge",
 }
 
 CRITIQUE_TO_PRODUCED_STAGE: dict[str, str] = {
@@ -143,7 +133,5 @@ STAGE_TO_UI: dict[str, str] = {
     "critique_shot_images": "render",
     "compose_videos": "compose",
     "compose_merge": "compose",
-    "add_audio": "compose",
     "compose_approval": "compose",
-    "review": "review",
 }

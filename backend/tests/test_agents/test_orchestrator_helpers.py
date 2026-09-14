@@ -25,9 +25,13 @@ from tests.factories import create_project, create_run
 
 class TestStageContract:
     def test_stage_order_is_gate_inclusive_and_ordered(self):
-        assert len(PHASE2_STAGE_ORDER) == 17
+        # add_audio (stub, no AudioService caller) and the review terminal stage
+        # were removed from the contract; compose_approval is now the last stage.
+        assert len(PHASE2_STAGE_ORDER) == 15
         assert PHASE2_STAGE_ORDER[0] == "plan_outline"
-        assert PHASE2_STAGE_ORDER[-1] == "review"
+        assert PHASE2_STAGE_ORDER[-1] == "compose_approval"
+        assert "add_audio" not in PHASE2_STAGE_ORDER
+        assert "review" not in PHASE2_STAGE_ORDER
 
     def test_every_stage_has_an_agent(self):
         for stage in PHASE2_STAGE_ORDER:

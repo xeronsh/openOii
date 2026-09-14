@@ -25,7 +25,7 @@ from sqlmodel import SQLModel
 from app.api.deps import get_app_settings, get_db_session, get_ws_manager, require_admin
 from app.config import Settings
 from app.main import create_app
-from app.models import agent_run, artifact, message, project, run, stage, style_template  # noqa: F401
+from app.models import agent_run, message, project, style_template  # noqa: F401
 
 
 @pytest.fixture(scope="session")

@@ -1,3 +1,11 @@
+"""Agent primitives shared by the in-process agents.
+
+Note on the architecture constraint (ADR 0008): openOii Engine is the only
+orchestration runtime, and `BaseAgent` subclasses under `app/agents/` that run a
+loop are violations being removed. `agents/review_rules.py` is the sanctioned
+use of this module: it classifies a rerun start point and runs no agent loop.
+"""
+
 from __future__ import annotations
 
 import asyncio

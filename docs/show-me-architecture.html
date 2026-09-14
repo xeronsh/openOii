@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>openOii 架构全景 · PR #9</title>
+<style>
+  :root{
+    --bg:#14110c; --panel:#1c1811; --panel2:#231e15; --line:#3a3223; --line2:#4d4330;
+    --ink:#f4efe2; --muted:#a89c82; --subtle:#7a705c;
+    --y:#f0c050; --y-ink:#f0c050; --y-dim:rgba(240,192,80,.13);
+    --cy:oklch(.66 .12 195); --cy-dim:oklch(.66 .12 195 / .13);
+    --mg:oklch(.66 .2 340); --mg-dim:oklch(.66 .2 340 / .13);
+    --red:#ff5f56; --red-dim:rgba(255,95,86,.12);
+    --grn:#5fd08a; --grn-dim:rgba(95,208,138,.12);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:"Nunito",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --r:8px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    font-size:13px; line-height:1.45; overflow:hidden;
+  }
+  /* halftone registration texture, product identity */
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.5;
+    background-image:
+      radial-gradient(circle at 12% 8%, oklch(.66 .12 195 / .10), transparent 42%),
+      radial-gradient(circle at 88% 92%, oklch(.66 .2 340 / .10), transparent 42%);
+  }
+  .shell{position:relative; z-index:1; height:100%; display:flex; flex-direction:column}
+
+  header{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel);
+  }
+  .brand{font-family:var(--mono); font-weight:700; letter-spacing:.14em; color:var(--y); font-size:12px}
+  .brand span{color:var(--subtle)}
+  .meta{display:flex; gap:6px; flex-wrap:wrap; margin-left:auto}
+  .chip{
+    font-family:var(--mono); font-size:10px; letter-spacing:.04em;
+    border:1px solid var(--line2); border-radius:999px; padding:2px 8px; color:var(--muted);
+    white-space:nowrap;
+  }
+  .chip.ok{border-color:rgba(95,208,138,.45); color:var(--grn); background:var(--grn-dim)}
+  .chip.bad{border-color:rgba(255,95,86,.45); color:var(--red); background:var(--red-dim)}
+  .chip.y{border-color:rgba(240,192,80,.45); color:var(--y); background:var(--y-dim)}
+
+  /* pure-css tabs */
+  .tabs{display:flex; gap:2px; padding:8px 16px 0; border-bottom:1px solid var(--line); background:var(--panel); overflow-x:auto}
+  .tabs label{
+    font-family:var(--mono); font-size:11px; letter-spacing:.05em; cursor:pointer;
+    padding:7px 12px; border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0;
+    color:var(--muted); white-space:nowrap;
+  }
+  .tabs label:hover{color:var(--ink); background:var(--panel2)}
+  input.tab{display:none}
+  #t1:checked~.tabs label[for=t1],#t2:checked~.tabs label[for=t2],#t3:checked~.tabs label[for=t3],
+  #t4:checked~.tabs label[for=t4],#t5:checked~.tabs label[for=t5],#t6:checked~.tabs label[for=t6]{
+    color:var(--y); background:var(--bg); border-color:var(--line); border-bottom-color:var(--bg);
+    box-shadow:inset 0 -3px 0 0 var(--y); margin-bottom:-1px;
+  }
+
+  main{flex:1; min-height:0; overflow:hidden; position:relative}
+  .pane{position:absolute; inset:0; overflow:auto; padding:16px; display:none}
+  #t1:checked~main #p1,#t2:checked~main #p2,#t3:checked~main #p3,
+  #t4:checked~main #p4,#t5:checked~main #p5,#t6:checked~main #p6{display:block}
+
+  h2{font-size:14px; letter-spacing:.02em; margin:0 0 4px}
+  h2 .n{font-family:var(--mono); color:var(--y); font-size:11px; margin-right:8px}
+  h3{font-family:var(--mono); font-size:11px; letter-spacing:.08em; color:var(--muted);
+     text-transform:uppercase; margin:16px 0 8px; padding-bottom:4px; border-bottom:1px solid var(--line)}
+  p.note{color:var(--muted); margin:6px 0 10px; max-width:96ch}
+  code{font-family:var(--mono); font-size:11px; color:var(--y); background:var(--y-dim);
+       padding:1px 5px; border-radius:4px; white-space:nowrap}
+  code.cy{color:var(--cy); background:var(--cy-dim)}
+  code.mg{color:var(--mg); background:var(--mg-dim)}
+  code.rd{color:var(--red); background:var(--red-dim)}
+  code.mu{color:var(--muted); background:rgba(168,156,130,.1)}
+
+  .grid{display:grid; gap:12px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:12px}
+  .card.cy{border-color:oklch(.66 .12 195/.4); background:linear-gradient(180deg,var(--cy-dim),var(--panel))}
+  .card.mg{border-color:oklch(.66 .2 340/.4); background:linear-gradient(180deg,var(--mg-dim),var(--panel))}
+  .card.y{border-color:rgba(240,192,80,.4); background:linear-gradient(180deg,var(--y-dim),var(--panel))}
+  .card.bad{border-color:rgba(255,95,86,.45); background:linear-gradient(180deg,var(--red-dim),var(--panel))}
+  .card .hd{display:flex; align-items:baseline; gap:8px; margin-bottom:8px}
+  .card .hd b{font-family:var(--mono); font-size:11.5px; letter-spacing:.03em}
+  .card .hd .tag{margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--subtle)}
+  ul{list-style:none}
+  li{padding:2.5px 0 2.5px 12px; position:relative; color:var(--muted)}
+  li::before{content:""; position:absolute; left:0; top:9px; width:4px; height:4px;
+    background:var(--line2); border-radius:1px}
+  li b{color:var(--ink); font-weight:600}
+  li.hot::before{background:var(--red)}
+  li.hot{color:oklch(.78 .12 25)}
+  li.good::before{background:var(--grn)}
+
+  /* flow diagrams */
+  .flow{display:flex; align-items:stretch; gap:0; flex-wrap:wrap}
+  .node{
+    flex:1 1 150px; min-width:140px; background:var(--panel2); border:1px solid var(--line2);
+    border-radius:var(--r); padding:9px 10px;
+  }
+  .node .t{font-family:var(--mono); font-size:11px; color:var(--y); letter-spacing:.03em}
+  .node .s{font-size:11.5px; color:var(--muted); margin-top:3px}
+  .node .p{font-family:var(--mono); font-size:9.5px; color:var(--subtle); margin-top:5px}
+  .node.cy .t{color:var(--cy)} .node.mg .t{color:var(--mg)}
+  .node.bad{border-color:rgba(255,95,86,.5)} .node.bad .t{color:var(--red)}
+  .arrow{align-self:center; flex:0 0 auto; padding:0 8px; color:var(--line2);
+    font-family:var(--mono); font-size:15px}
+  .arrow b{color:var(--cy); font-size:9.5px; display:block; text-align:center; font-weight:400}
+
+  /* pipeline */
+  .pipe{display:flex; flex-direction:column; gap:0}
+  .st{display:flex; align-items:center; gap:10px; padding:6px 0}
+  .st .id{font-family:var(--mono); font-size:10px; color:var(--subtle); width:22px; text-align:right}
+  .st .box{
+    flex:1; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    border:1px solid var(--line); border-left:3px solid var(--line2);
+    background:var(--panel); border-radius:6px; padding:6px 10px;
+  }
+  .st .box .nm{font-family:var(--mono); font-size:11.5px; color:var(--ink)}
+  .st .box .ag{font-family:var(--mono); font-size:9.5px; color:var(--subtle);
+    border:1px solid var(--line2); padding:0 5px; border-radius:999px}
+  .st .box .no{margin-left:auto; font-size:11px; color:var(--subtle); text-align:right}
+  .st.gate .box{border-left-color:var(--y); background:linear-gradient(90deg,var(--y-dim),var(--panel) 32%)}
+  .st.gate .box .nm{color:var(--y)}
+  .st.crit .box{border-left-color:var(--mg); background:linear-gradient(90deg,var(--mg-dim),var(--panel) 32%)}
+  .st.crit .box .nm{color:var(--mg)}
+  .st.prod .box{border-left-color:var(--cy)}
+  .st.prod .box .nm{color:var(--cy)}
+  .st .loop{font-family:var(--mono); font-size:9.5px; color:var(--mg); width:88px; text-align:right}
+
+  /* tables */
+  table{width:100%; border-collapse:collapse; font-size:11.5px}
+  th{font-family:var(--mono); font-size:9.5px; letter-spacing:.07em; text-transform:uppercase;
+     color:var(--subtle); text-align:left; padding:6px 8px; border-bottom:1px solid var(--line2)}
+  td{padding:5px 8px; border-bottom:1px solid var(--line); color:var(--muted); vertical-align:top}
+  td.m{font-family:var(--mono); font-size:10.5px; color:var(--ink); white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--panel2)}
+
+  .db{display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(255px,1fr))}
+  .tbl{border:1px solid var(--line); border-radius:6px; overflow:hidden; background:var(--panel)}
+  .tbl .th{display:flex; align-items:baseline; gap:6px; padding:6px 9px;
+    background:var(--panel2); border-bottom:1px solid var(--line2); font-family:var(--mono); font-size:11px}
+  .tbl .th .cnt{margin-left:auto; color:var(--subtle); font-size:9.5px}
+  .tbl .th .own{font-size:9px; padding:0 5px; border-radius:999px; border:1px solid var(--line2); color:var(--subtle)}
+  .tbl .cols{padding:5px 0}
+  .tbl .cols div{display:flex; gap:8px; padding:1.5px 9px; font-family:var(--mono); font-size:10.5px}
+  .tbl .cols .k{color:var(--ink); min-width:0; flex:0 0 auto}
+  .tbl .cols .ty{color:var(--subtle); margin-left:auto; white-space:nowrap}
+  .tbl .cols .pk{color:var(--y)} .tbl .cols .fk{color:var(--cy)}
+  .tbl .cols .json{color:var(--mg)}
+  .tbl.eng{border-color:oklch(.66 .12 195/.4)}
+  .tbl.eng .th{background:var(--cy-dim)}
+  .tbl.legacy{border-color:rgba(255,95,86,.35); opacity:.82}
+  .tbl.legacy .th{background:var(--red-dim)}
+  .legend{display:flex; gap:12px; flex-wrap:wrap; font-family:var(--mono); font-size:10px;
+    color:var(--subtle); margin:8px 0 12px}
+  .legend i{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px;
+    vertical-align:middle; font-style:normal}
+  .kpi{display:flex; gap:10px; flex-wrap:wrap; margin:10px 0}
+  .kpi div{border:1px solid var(--line); background:var(--panel); border-radius:var(--r);
+    padding:7px 11px; min-width:104px}
+  .kpi b{display:block; font-family:var(--mono); font-size:16px; color:var(--y)}
+  .kpi span{font-size:10.5px; color:var(--subtle)}
+  .callout{border-left:3px solid var(--red); background:var(--red-dim); border-radius:0 6px 6px 0;
+    padding:9px 12px; margin:10px 0; color:oklch(.86 .06 25)}
+  .callout b{color:var(--red); font-family:var(--mono); font-size:11px; letter-spacing:.04em}
+  .callout.good{border-left-color:var(--grn); background:var(--grn-dim); color:oklch(.86 .06 150)}
+  .callout.good b{color:var(--grn)}
+  .tree{font-family:var(--mono); font-size:11px; line-height:1.6; color:var(--muted); white-space:pre; overflow-x:auto}
+  .tree b{color:var(--ink)} .tree .c{color:var(--subtle)} .tree .y{color:var(--y)} .tree .r{color:var(--red)}
+  @media (max-width:640px){
+    .flow{flex-direction:column} .arrow{transform:rotate(90deg); align-self:flex-start; padding:2px 0 2px 60px}
+    .st .loop{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="brand">openOii <span>/ 架构全景 · PR #9</span></div>
+    <div class="meta">
+      <span class="chip y">refactor/pi-only-simplification</span>
+      <span class="chip ok">CI 3df4adc 全绿</span>
+      <span class="chip">52e7846 local · 未 push</span>
+      <span class="chip bad">4 处 ADR 0008 违规</span>
+    </div>
+  </header>
+
+  <input class="tab" type="radio" name="t" id="t1" checked>
+  <input class="tab" type="radio" name="t" id="t2">
+  <input class="tab" type="radio" name="t" id="t3">
+  <input class="tab" type="radio" name="t" id="t4">
+  <input class="tab" type="radio" name="t" id="t5">
+  <input class="tab" type="radio" name="t" id="t6">
+
+  <nav class="tabs">
+    <label for="t1">① 进程拓扑</label>
+    <label for="t2">② 后端分层</label>
+    <label for="t3">③ Agent 编排</label>
+    <label for="t4">④ 数据库</label>
+    <label for="t5">⑤ 前端</label>
+    <label for="t6">⑥ 约束与债务</label>
+  </nav>
+
+  <main>
+
+  <!-- ① TOPOLOGY -->
+  <section class="pane" id="p1">
+    <h2><span class="n">01</span>进程拓扑：两个进程，一个 SQLite 文件</h2>
+    <p class="note">三包仓库，无根级脚本。后端与 pi engine 同容器/同机，共享 <code>backend/data/openoii.db</code>。本地开发零容器。</p>
+
+    <div class="flow">
+      <div class="node cy">
+        <div class="t">Browser</div>
+        <div class="s">React 18 + Vite<br>TanStack Query（唯一 server-state）<br>Zustand（仅客户端态）</div>
+        <div class="p">frontend/app/</div>
+      </div>
+      <div class="arrow">⇄<b>HTTP /api/v1<br>WS /ws/projects/{id}</b></div>
+      <div class="node">
+        <div class="t">FastAPI · :18765</div>
+        <div class="s">Product Backend<br><b>+ Pi Runtime 的 northbound gateway</b><br>可替换：只描述产品语义</div>
+        <div class="p">backend/app/main.py</div>
+      </div>
+      <div class="arrow">⇄<b>loopback HTTP<br>:18766</b></div>
+      <div class="node mg">
+        <div class="t">pi engine · :18766</div>
+        <div class="s"><b>唯一 Agent Runtime</b><br>阶段机 · 工具 · 媒体生成<br>checkpoint · fence</div>
+        <div class="p">engine/src/index.ts</div>
+      </div>
+      <div class="arrow">⇄<b>better-sqlite3</b></div>
+      <div class="node y">
+        <div class="t">SQLite（单文件）</div>
+        <div class="s">WAL · 唯一权威 schema<br>（Alembic 独占建表权）</div>
+        <div class="p">backend/data/openoii.db</div>
+      </div>
+    </div>
+
+    <h3>外部依赖与资源</h3>
+    <div class="grid g3">
+      <div class="card">
+        <div class="hd"><b>模型 Provider</b><span class="tag">双向</span></div>
+        <ul>
+          <li><b>text</b>：走 pi（<code>engine/src/llm.ts</code>），key 来自 <code>configitem</code> 表 + 进程 env</li>
+          <li><b>image / video</b>：Python 侧 <code>services/image.py</code>、<code>video.py</code>、<code>doubao_video.py</code></li>
+          <li class="hot"><b>分裂</b>：同一次生成里文本在 pi、媒体在 Python，配置与重试语义两套</li>
+          <li><b>fake_*</b>：<code>fake_text/image/video.py</code> 测试与本地零成本路径</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="hd"><b>静态媒体</b><span class="tag">同一挂载点</span></div>
+        <ul>
+          <li><b>目录</b>：<code>backend/app/static</code>（Compose 挂出）</li>
+          <li><b>URL</b>：<code>/static/videos|images|audio|exports|characters</code></li>
+          <li><b>写者</b>：pi engine 的 <code>MediaService</code>（与后端同容器）</li>
+          <li><b>engine 拿到的路径</b>：启动时经 <code>STATIC_DIR</code> 注入</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="hd"><b>启动编排</b><span class="tag">backend/app/services/engine_client.py</span></div>
+        <ul>
+          <li><b>拉起</b>：<code>ensure_engine_running()</code> 首次生成时 spawn sidecar</li>
+          <li><b>健康</b>：<code>GET /health</code> + <code>_assert_engine_compatible</code> 比对 workflow 版本</li>
+          <li><b>回收</b>：<code>shutdown_engine()</code> 随 FastAPI lifespan</li>
+          <li><b>活跃 run</b>：<code>GET /runs</code> → <code>engine_active_run_ids()</code></li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Docker 形态（与本地一致）</h3>
+    <div class="tree">backend/Dockerfile（多阶段）
+├── stage 1: <b>engine/</b> → pnpm build，编译 better-sqlite3
+├── stage 2: python base
+│   ├── <span class="y">node 22</span>  <span class="c">← 固定 22：better-sqlite3 13 在 node20 上 segfault(139)</span>
+│   ├── engine/dist + node_modules
+│   ├── backend/（uv sync --frozen --no-dev --extra agents）
+│   └── <span class="c">→ 同容器内两个进程，共享同一 .db 文件</span>
+└── Build context = 仓库根（不是 backend/）</div>
+  </section>
+
+  <!-- ② BACKEND -->
+  <section class="pane" id="p2">
+    <h2><span class="n">02</span>后端分层与职责边界</h2>
+    <p class="note">19,203 行 app 代码。<b>合法职责</b>：鉴权、校验、契约、ownership、转发、事件翻译。<b>不合法</b>：决定下一步做什么。</p>
+
+    <div class="kpi">
+      <div><b>19.2k</b><span>app 行数</span></div>
+      <div><b>19.1k</b><span>tests 行数</span></div>
+      <div><b>933</b><span>pytest passed</span></div>
+      <div><b>14</b><span>route 文件</span></div>
+      <div><b>22</b><span>数据表</span></div>
+      <div><b>25</b><span>Alembic 版本</span></div>
+    </div>
+
+    <h3>层地图</h3>
+    <div class="tree">backend/app/
+├── <b>main.py</b>                <span class="c">485  FastAPI 实例 · lifespan 拉起 engine · 异常 envelope · WS 端点</span>
+├── config.py                 <span class="c">Settings；测试与运行时的 .env 读取路径不同</span>
+├── exceptions.py             <span class="c">AppException → {"error":{code,message,details}}</span>
+│
+├── <b>api/</b>
+│   ├── deps.py               <span class="c">依赖注入 · require_run_id</span>
+│   └── v1/
+│       ├── router.py         <span class="c">API 聚合，prefix=/api/v1</span>
+│       └── routes/           <span class="c">14 个文件（见下表）</span>
+│
+├── <b>services/</b>             <span class="c">47 个文件 —— 产品副作用 + 转发 +（违规）agent loop</span>
+├── <b>agents/</b>               <span class="c">base/render/compose/review_rules/utils + prompts</span>
+├── <b>ws/manager.py</b>         <span class="c">ConnectionManager · durable event 分配 seq · replay</span>
+├── <b>orchestration.py</b>      <span class="c">74 行，阶段契约的<b>薄再导出</b>（真源是 generated/）</span>
+├── generated/            <span class="c">workflow_contract.py ← contracts/workflow.json 生成</span>
+├── models/               <span class="c">SQLModel 表定义（15 个文件）</span>
+├── schemas/              <span class="c">Pydantic 请求/响应（含 ws.py 事件契约）</span>
+├── db/                   <span class="c">session.py · utils.py（utcnow）</span>
+├── skills/               <span class="c">catalog.py · context.py（编辑技能）</span>
+└── aiosqlite/            <span class="c">⚠ 刻意的本地 shim，遮蔽 site-packages</span></div>
+
+    <h3>路由表（14 个文件）</h3>
+    <table>
+      <thead><tr><th>文件</th><th>prefix</th><th>关键端点 / 职责</th></tr></thead>
+      <tbody>
+        <tr><td class="m">runs.py</td><td class="m">—</td><td><code>POST /projects/{id}/runs</code> 建 run(201/409) · <code>GET …/runs/current</code> 水合 · <code>POST /runs/{id}/resume|cancel</code> · <code>POST /projects/{id}/runs/feedback</code> · <b>_dispatch_to_engine 在此</b></td></tr>
+        <tr><td class="m">projects.py</td><td class="m">/projects</td><td>CRUD · 导出 · 局部重绘<br><span style="color:var(--red)">⚠ 442/449 构造 agent_plan</span></td></tr>
+        <tr><td class="m">shots.py</td><td class="m">/shots</td><td>CRUD · approve · regenerate<br><span style="color:var(--red)">⚠ 192/197 构造 agent_plan</span></td></tr>
+        <tr><td class="m">characters.py</td><td class="m">/characters</td><td>CRUD · approve · 参考图 · embedding<br><span style="color:var(--red)">⚠ 146 构造 agent_plan</span></td></tr>
+        <tr><td class="m">universes.py</td><td class="m">/universes</td><td>IP 宇宙 · 共享角色 · 章节关联</td></tr>
+        <tr><td class="m">versions.py</td><td class="m">—</td><td>artifact revision 历史 / 回滚</td></tr>
+        <tr><td class="m">consistency.py</td><td class="m">/projects</td><td>一致性评估报告（评分/维度）</td></tr>
+        <tr><td class="m">export.py</td><td class="m">/projects</td><td>导出（webtoon 长图 / pdf）· export_cache</td></tr>
+        <tr><td class="m">assets.py</td><td class="m">/assets</td><td>图片上传</td></tr>
+        <tr><td class="m">config.py</td><td class="m">/config</td><td>运行时配置读写 · provider 测试</td></tr>
+        <tr><td class="m">text.py</td><td class="m">—</td><td>文本能力探测 / 直调（capabilities）</td></tr>
+        <tr><td class="m">skills.py</td><td class="m">—</td><td>技能目录</td></tr>
+        <tr><td class="m">style_templates.py</td><td class="m">/style-templates</td><td>风格模板</td></tr>
+        <tr><td class="m">__init__.py</td><td class="m">—</td><td>—</td></tr>
+      </tbody>
+    </table>
+
+    <h3>横切机制</h3>
+    <div class="grid g2">
+      <div class="card">
+        <div class="hd"><b>错误 envelope</b><span class="tag">ADR 0006</span></div>
+        <ul>
+          <li class="good"><b>唯一形状</b>：<code>{"error":{code,message,details}}</code>（<code>exceptions.py</code>）</li>
+          <li><b>409 是控制面</b>：<code>RecoveryControlRead</code> 带 <code>state</code>/<code>active_run</code>/<code>recovery_summary</code>，前端据此切「恢复/停止」</li>
+          <li><b>修过的坑</b>：51 处 <code>HTTPException</code> 曾回 <code>{"detail":…}</code>，前端只解析前者 → 4xx 文案退化 statusText</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="hd"><b>WS 管理器</b><span class="tag">ws/manager.py</span></div>
+        <ul>
+          <li><b>地址</b>：<code>/ws/projects/{project_id}</code></li>
+          <li><b>durable seq</b>：<code>send_durable_event_to()</code> 为事件分配 <code>event_id</code></li>
+          <li><b>replay</b>：客户端带 <code>?after=</code>，服务端回放缺失事件</li>
+          <li><b>降级</b>：无 query_params 的客户端不再 500（已修）</li>
+          <li><b>去重</b>：客户端按 <code>event_id ≤ cursor</code> 丢弃</li>
+        </ul>
+      </div>
+      <div class="card bad">
+        <div class="hd"><b>task_manager</b><span class="tag">services/task_manager.py</span></div>
+        <ul>
+          <li class="hot"><b>进程内状态</b>，多 worker 不安全</li>
+          <li><b>已修</b>：曾按 <code>project_id</code> 单槽位存，注册时 cancel 旧任务 → 重绘 A 再重绘 B，<b>A 被静默取消</b></li>
+          <li><b>现在</b>：按 <code>run_id</code> 登记，同项目多局部 run 可并行</li>
+          <li><b>锁粒度</b>：具体资源（角色/镜头），不是项目</li>
+        </ul>
+      </div>
+      <div class="card bad">
+        <div class="hd"><b>agent_runner（违规）</b><span class="tag">ADR 0008</span></div>
+        <ul>
+          <li class="hot"><code>run_agent_plan()</code> 在 FastAPI 进程内跑 agent loop</li>
+          <li><b>入口</b>：<code>LocalRunSpec.agent_plan</code>（dataclass 字段本身就是违规形状）</li>
+          <li><b>实现</b>：<code>agents/render.py</code> 501 行 + <code>agents/compose.py</code> 655 行</li>
+          <li><b>对照</b>：完整链路走 <code>_dispatch_to_engine</code> → pi，才是符合约束的形状</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>AIOSQLITE SHIM</b>
+      <div><code>backend/app/aiosqlite/</code> 刻意遮蔽 site-packages 的 aiosqlite。SQLAlchemy 与 engine 的共享库协议都依赖它。原始 sqlite 调用经 <code>asyncio.to_thread</code> 下放 —— 别改回事件循环内同步执行（busy 等待会自死锁）。</div>
+    </div>
+  </section>
+
+  <!-- ③ ORCHESTRATION -->
+  <section class="pane" id="p3">
+    <h2><span class="n">03</span>Agent 编排：pi 是唯一 Runtime</h2>
+    <p class="note">执行流：<b>FastAPI 建 run → loopback 转发 → pi 跑阶段机 → 事件回写 SQLite → 后端翻译成客户端契约</b>。</p>
+
+    <h3>run 的生命周期（符合约束的路径）</h3>
+    <div class="flow">
+      <div class="node cy"><div class="t">1 · 建 run</div><div class="s">POST /projects/{id}/runs<br>写 <code>agentrun</code>，status=<b>queued</b></div><div class="p">routes/runs.py:282</div></div>
+      <div class="arrow">→</div>
+      <div class="node cy"><div class="t">2 · 下发</div><div class="s">_dispatch_to_engine<br>ensure_engine_running → POST /runs</div><div class="p">routes/runs.py:78</div></div>
+      <div class="arrow">→</div>
+      <div class="node mg"><div class="t">3 · 抢 lease</div><div class="s">status=<b>running</b> 且必须有有效 lease<br>重复 resume → <b>409 防双执行</b></div><div class="p">engine/src/index.ts</div></div>
+      <div class="arrow">→</div>
+      <div class="node mg"><div class="t">4 · 跑阶段</div><div class="s">逐阶段 fence 校验<br>每阶段一个 durable attempt</div><div class="p">pipeline/runner.ts</div></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="t">5 · 回事件</div><div class="s">engine_run_events + WS<br>后端翻译 → 客户端契约</div><div class="p">ws/manager.py</div></div>
+    </div>
+
+    <h3>17 阶段流水线（PHASE2_STAGE_ORDER）</h3>
+    <p class="note">
+      <span class="chip y">黄 = 审批门</span>
+      <span class="chip" style="border-color:oklch(.66 .2 340/.5);color:var(--mg)">品红 = critic 循环</span>
+      <span class="chip" style="border-color:oklch(.66 .12 195/.5);color:var(--cy)">青 = 生产阶段</span>
+      <span class="chip bad">唯一权威表</span> <code>contracts/workflow.json</code> → 生成三份镜像
+    </p>
+
+    <div class="pipe">
+      <div class="st prod"><div class="id">1</div><div class="box"><span class="nm">plan_outline</span><span class="ag">outline</span><span class="no">大纲 + 视觉圣经</span></div><div class="loop"></div></div>
+      <div class="st gate"><div class="id">2</div><div class="box"><span class="nm">outline_approval</span><span class="ag">gate · outline</span><span class="no">⏸ 等 confirm 信号</span></div><div class="loop"></div></div>
+      <div class="st prod"><div class="id">3</div><div class="box"><span class="nm">plan_characters</span><span class="ag">plan</span><span class="no">角色设定</span></div><div class="loop"></div></div>
+      <div class="st gate"><div class="id">4</div><div class="box"><span class="nm">characters_approval</span><span class="ag">gate · plan</span><span class="no">⏸</span></div><div class="loop"></div></div>
+      <div class="st prod"><div class="id">5</div><div class="box"><span class="nm">plan_shots</span><span class="ag">plan</span><span class="no">分镜表</span></div><div class="loop"></div></div>
+      <div class="st gate"><div class="id">6</div><div class="box"><span class="nm">shots_approval</span><span class="ag">gate · plan</span><span class="no">⏸</span></div><div class="loop"></div></div>
+      <div class="st prod"><div class="id">7</div><div class="box"><span class="nm">render_characters</span><span class="ag">render</span><span class="no">角色立绘</span></div><div class="loop"></div></div>
+      <div class="st gate"><div class="id">8</div><div class="box"><span class="nm">character_images_approval</span><span class="ag">gate · render</span><span class="no">⏸</span></div><div class="loop"></div></div>
+      <div class="st crit"><div class="id">9</div><div class="box"><span class="nm">critique_character_images</span><span class="ag">critic</span><span class="no">评分 &lt; 阈值则回 7</span></div><div class="loop">↺ render_characters</div></div>
+      <div class="st prod"><div class="id">10</div><div class="box"><span class="nm">render_shots</span><span class="ag">render</span><span class="no">分镜图/视频</span></div><div class="loop"></div></div>
+      <div class="st gate"><div class="id">11</div><div class="box"><span class="nm">shot_images_approval</span><span class="ag">gate · render</span><span class="no">⏸</span></div><div class="loop"></div></div>
+      <div class="st crit"><div class="id">12</div><div class="box"><span class="nm">critique_shot_images</span><span class="ag">critic</span><span class="no">评分 &lt; 阈值则回 10</span></div><div class="loop">↺ render_shots</div></div>
+      <div class="st prod"><div class="id">13</div><div class="box"><span class="nm">compose_videos</span><span class="ag">compose</span><span class="no">逐镜拼接</span></div><div class="loop"></div></div>
+      <div class="st prod"><div class="id">14</div><div class="box"><span class="nm">compose_merge</span><span class="ag">compose</span><span class="no">总合成</span></div><div class="loop"></div></div>
+      <div class="st"><div class="id">15</div><div class="box" style="border-left-color:var(--red)"><span class="nm" style="color:var(--red)">add_audio</span><span class="ag">compose</span><span class="no">⚠ stub —— 无人调用 AudioService</span></div><div class="loop"></div></div>
+      <div class="st gate"><div class="id">16</div><div class="box"><span class="nm">compose_approval</span><span class="ag">gate · compose</span><span class="no">⏸</span></div><div class="loop"></div></div>
+      <div class="st"><div class="id">17</div><div class="box" style="border-left-color:var(--line2)"><span class="nm" style="color:var(--muted)">review</span><span class="ag">review</span><span class="no">反馈入口 / 终止</span></div><div class="loop"></div></div>
+    </div>
+
+    <h3>四个 run 命令的语义</h3>
+    <table>
+      <thead><tr><th>命令</th><th>HTTP</th><th>起点</th><th>语义</th></tr></thead>
+      <tbody>
+        <tr><td class="m">start</td><td class="m">POST /projects/{id}/runs</td><td>plan_outline</td><td>201 建 run；409 返控制面（不抛裸错）</td></tr>
+        <tr><td class="m">resume</td><td class="m">POST /runs/{id}/resume</td><td>checkpoint 推得</td><td>按 <b>run id 寻址</b>；重复 resume → <b>409</b>（lease 仍活）</td></tr>
+        <tr><td class="m">cancel</td><td class="m">POST /runs/{id}/cancel</td><td>—</td><td>202；引擎置 <code>cancel_requested</code>，阶段边界检查</td></tr>
+        <tr><td class="m">feedback</td><td class="m">POST /projects/{id}/runs/feedback</td><td>ReviewAgent 定</td><td>ReviewAgent <b>只分类 rerun 起点</b>，不决定删数据</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Feedback invalidation：从「agent 决定」改成「确定性策略」</h3>
+    <div class="flow">
+      <div class="node"><div class="t">ReviewAgent</div><div class="s">只输出<b>起始阶段</b>分类<br>不碰数据删除</div><div class="p">agents/review_rules.py</div></div>
+      <div class="arrow">→</div>
+      <div class="node y"><div class="t">build_invalidation_plan</div><div class="s">确定性依赖图 → 生成<br><b>patch_plan</b> 并持久化</div><div class="p">services/invalidation.py</div></div>
+      <div class="arrow">→</div>
+      <div class="node mg"><div class="t">applyInvalidationPlan</div><div class="s">拿到 <b>fencing lease</b> 后才执行<br>写 <code>__invalidation__</code> checkpoint</div><div class="p">engine/src/invalidation.ts</div></div>
+    </div>
+    <p class="note" style="margin-top:10px">plan 内容：start stage · entity scope · checkpoint boundary · invalidated artifacts。<b>幂等靠 durable checkpoint</b>，crash/replay 不会重复删。</p>
+    <table>
+      <thead><tr><th>反馈目标</th><th>失效范围</th></tr></thead>
+      <tbody>
+        <tr><td class="m">character（定向修改）</td><td>自身 image + 依赖它的 shots</td></tr>
+        <tr><td class="m">shot（定向修改）</td><td>仅该 shot 的媒体</td></tr>
+        <tr><td class="m">definition 级变化</td><td>扩大到 downstream 全量失效</td></tr>
+      </tbody>
+    </table>
+
+    <h3>resumability 的四个 durable 机制</h3>
+    <div class="grid g2">
+      <div class="card cy">
+        <div class="hd"><b>checkpoints</b><span class="tag">engine_checkpoints</span></div>
+        <ul>
+          <li>按 <code>(run_id, stage)</code> 主键存 <code>state_json</code></li>
+          <li><code>resume</code> 从 checkpoint 推起点；全量 run 先 <code>clearCheckpoints</code></li>
+          <li>critic 回退时 <code>invalidateCheckpointsFrom(stage)</code> 清掉下游</li>
+        </ul>
+      </div>
+      <div class="card cy">
+        <div class="hd"><b>stage attempts</b><span class="tag">engine_stage_attempts</span></div>
+        <ul>
+          <li><b>at-least-once</b>，不假装 exactly-once</li>
+          <li>副作用<b>之前</b>记录 <code>input_hash</code> + <code>idempotency_key</code></li>
+          <li>resume 复用同一 operation identity，<code>provider_request_id</code> 落库</li>
+        </ul>
+      </div>
+      <div class="card mg">
+        <div class="hd"><b>fencing lease</b><span class="tag">agentrun.lease_token</span></div>
+        <ul>
+          <li>TTL 120s，心跳 30s，<code>ownerId = engine-{pid}-{uuid}</code></li>
+          <li>每个阶段边界 <code>assertExecutionFence()</code></li>
+          <li>失去 lease 的旧 executor 立即停手 → 防双写</li>
+        </ul>
+      </div>
+      <div class="card mg">
+        <div class="hd"><b>durable events</b><span class="tag">engine_run_events</span></div>
+        <ul>
+          <li>单调 <code>seq</code>，是 WS replay 的唯一依据</li>
+          <li>客户端 sessionStorage 存 cursor，断线带 <code>?after=</code></li>
+          <li>WS 只是提醒，<b>状态真相在表里</b></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>APPROVAL GATE 的跨进程握手</b>
+      <div>pi 停在 gate → 写 <code>agentrun.awaiting_payload</code> + 置 <code>confirm_requested</code> → 后端 <code>wait_for_confirm_signal()</code> 每 0.3s 轮询（<code>run_signals.py</code>）→ 用户点确认 → 写回列 → pi 继续。<b>这是唯一的 gate 协议</b>，超时 1800s。</div>
+    </div>
+
+    <div class="callout good">
+      <b>为什么 pi 是唯一 Runtime</b>
+      <div>Anthropic《Building Effective Agents》：最成功的实现用简单可组合模式，而非复杂框架。Cognition《Don't Build Multi-Agents》：单线程线性 agent 是默认架构。多 agent 在本仓库的实际形态是「同一批 agent 两份实现靠口头 parity 维持同步」，不是协作。</div>
+    </div>
+  </section>
+
+  <!-- ④ DATABASE -->
+  <section class="pane" id="p4">
+    <h2><span class="n">04</span>数据库：单文件 SQLite，22 张表</h2>
+    <div class="legend">
+      <span><i style="background:var(--cy)"></i>引擎运行时（engine 使用，Alembic 建）</span>
+      <span><i style="background:var(--y)"></i>产品域</span>
+      <span><i style="background:var(--red)"></i>legacy（待删）</span>
+      <span><i style="background:var(--mg)"></i>JSON 列</span>
+      <span style="color:var(--y)">■ PK</span><span style="color:var(--cy)">■ FK</span>
+    </div>
+
+    <h3>权威与边界</h3>
+    <div class="grid g3">
+      <div class="card y">
+        <div class="hd"><b>单一 schema 权威</b><span class="tag">Alembic</span></div>
+        <ul>
+          <li><code>backend/alembic/versions/</code> 25 个版本</li>
+          <li class="good">engine <b>从不</b> CREATE/ALTER；启动只 <code>assertSchema()</code> 校验三张运行时表存在</li>
+          <li>引擎侧 <code>db.ts</code> 只配 pragma：WAL / foreign_keys / busy_timeout=5000</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="hd"><b>连接串</b><span class="tag">config.py</span></div>
+        <ul>
+          <li><code>sqlite+aiosqlite:///./data/openoii.db</code></li>
+          <li>WAL 模式（并发读 + 单写）</li>
+          <li>Python 经 SQLModel/SQLAlchemy；engine 经 better-sqlite3</li>
+          <li class="hot">两边必须指向<b>同一文件</b>，否则跨进程通信全断</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="hd"><b>仅 SQLite 存在</b><span class="tag">ADR 0005</span></div>
+        <ul>
+          <li>PostgreSQL / Redis 已删，<b>无存储回退</b></li>
+          <li>多实例写入能力不存在</li>
+          <li>启动 <code>init_db()</code>：create_all → 初始化配置 → 遗留 queued/running run 标 cancelled</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>引擎运行时表</h3>
+    <div class="db">
+      <div class="tbl eng">
+        <div class="th">engine_run_events <span class="own">engine</span><span class="cnt">0023</span></div>
+        <div class="cols">
+          <div><span class="k pk">seq</span><span class="ty">INTEGER PK autoinc</span></div>
+          <div><span class="k fk">run_id</span><span class="ty">INTEGER NOT NULL</span></div>
+          <div><span class="k fk">project_id</span><span class="ty">INTEGER NOT NULL</span></div>
+          <div><span class="k">type</span><span class="ty">VARCHAR</span></div>
+          <div><span class="k json">payload</span><span class="ty">TEXT (JSON)</span></div>
+          <div><span class="k">created_at</span><span class="ty">strftime Z</span></div>
+          <div><span class="k">idx_run</span><span class="ty">(run_id, seq)</span></div>
+          <div><span class="k">idx_project</span><span class="ty">(project_id, seq)</span></div>
+        </div>
+      </div>
+      <div class="tbl eng">
+        <div class="th">engine_checkpoints <span class="own">engine</span><span class="cnt">0023</span></div>
+        <div class="cols">
+          <div><span class="k fk">run_id</span><span class="ty">PK (composite)</span></div>
+          <div><span class="k">stage</span><span class="ty">PK (composite)</span></div>
+          <div><span class="k json">state_json</span><span class="ty">TEXT (JSON)</span></div>
+          <div><span class="k">updated_at</span><span class="ty">strftime Z</span></div>
+        </div>
+      </div>
+      <div class="tbl eng">
+        <div class="th">engine_stage_attempts <span class="own">engine</span><span class="cnt">0024</span></div>
+        <div class="cols">
+          <div><span class="k pk">id</span><span class="ty">INTEGER PK</span></div>
+          <div><span class="k">stage_attempt_id</span><span class="ty">UNIQUE 64</span></div>
+          <div><span class="k fk">run_id</span><span class="ty">INTEGER</span></div>
+          <div><span class="k">stage / attempt</span><span class="ty">64 / INT</span></div>
+          <div><span class="k">execution_attempt</span><span class="ty">INT def 0</span></div>
+          <div><span class="k">input_hash</span><span class="ty">64 NOT NULL</span></div>
+          <div><span class="k">idempotency_key</span><span class="ty">128 NOT NULL</span></div>
+          <div><span class="k">status</span><span class="ty">started|succeeded|failed|cancelled</span></div>
+          <div><span class="k">provider_request_id</span><span class="ty">255 NULL</span></div>
+          <div><span class="k json">result_json / error</span><span class="ty">TEXT NULL</span></div>
+          <div><span class="k">started_at / updated_at</span><span class="ty">strftime Z</span></div>
+        </div>
+      </div>
+    </div>
+
+    <h3>产品域表</h3>
+    <div class="db">
+      <div class="tbl">
+        <div class="th">project <span class="own">product</span><span class="cnt">+8 迁移</span></div>
+        <div class="cols">
+          <div><span class="k pk">id</span><span class="ty">PK</span></div>
+          <div><span class="k">title / story / style</span><span class="ty">str</span></div>
+          <div><span class="k">summary</span><span class="ty">str · 剧情摘要</span></div>
+          <div><span class="k json">story_outline</span><span class="ty">JSON</span></div>
+          <div><span class="k">visual_bible</span><span class="ty">str</span></div>
+          <div><span class="k">outline_approved</span><span class="ty">bool</span></div>
+          <div><span class="k">video_url / status</span><span class="ty">final 输出</span></div>
+          <div><span class="k">target_shot_count</span><span class="ty">int</span></div>
+          <div><span class="k json">character_hints / reference_images</span><span class="ty">JSON list</span></div>
+          <div><span class="k">creation_mode</span><span class="ty">quick|universe</span></div>
+          <div><span class="k json">exports</span><span class="ty">JSON list</span></div>
+          <div><span class="k json">provider_settings</span><span class="ty">JSON</span></div>
+          <div><span class="k fk">universe_id</span><span class="ty">FK universe</span></div>
+          <div><span class="k">chapter_number / chapter_title</span><span class="ty">str</span></div>
+          <div><span class="k">skill_id</span><span class="ty">str</span></div>
+        </div>
+      </div>
+      <div class="tbl">
+        <div class="th">character <span class="own">product</span><span class="cnt">0012</span></div>
+        <div class="cols">
+          <div><span class="k pk">id</span><span class="ty">PK</span></div>
+          <div><span class="k fk">project_id</span><span class="ty">FK project (idx)</span></div>
+          <div><span class="k">name / description</span><span class="ty">str</span></div>
+          <div><span class="k">image_url</span><span class="ty">str</span></div>
+          <div><span class="k json">reference_images</span><span class="ty">JSON list</span></div>
+          <div><span class="k json">face_embedding</span><span class="ty">TEXT · 512 维</span></div>
+          <div><span class="k">visual_notes</span><span class="ty">角色视觉圣经</span></div>
+          <div><span class="k">approved_name/desc/image_url</span><span class="ty">审批快照</span></div>
+          <div><span class="k">approved_at / approval_version</span><span class="ty">datetime / int</span></div>
+          <div><span class="k">approval_state</span><span class="ty">@property: draft|approved|superseded</span></div>
+        </div>
+      </div>
+      <div class="tbl">
+        <div class="th">shot <span class="own">product</span><span class="cnt">0006/0011/0014</span></div>
+        <div class="cols">
+          <div><span class="k pk">id</span><span class="ty">PK</span></div>
+          <div><span class="k fk">project_id</span><span class="ty">FK project (idx)</span></div>
+          <div><span class="k">order</span><span class="ty">int (idx)</span></div>
+          <div><span class="k">description</span><span class="ty">str</span></div>
+          <div><span class="k">prompt / image_prompt</span><span class="ty">视频 / 首帧</span></div>
+          <div><span class="k">image_url / video_url</span><span class="ty">媒体产物</span></div>
+          <div><span class="k">duration / seed</span><span class="ty">float / int</span></div>
+          <div><span class="k">camera motion_note scene</span><span class="ty">镜头语言</span></div>
+          <div><span class="k">action expression lighting</span><span class="ty">表演</span></div>
+          <div><span class="k">dialogue sfx</span><span class="ty">对白 / 音效</span></div>
+          <div><span class="k">tts_url / bgm_type</span><span class="ty">0014 音频</span></div>
+          <div><span class="k json">character_ids</span><span class="ty">JSON list</span></div>
+          <div><span class="k">approved_* (12 列)</span><span class="ty">审批快照</span></div>
+        </div>
+      </div>
+      <div class="tbl">
+        <div class="th">agentrun <span class="own">product+engine</span><span class="cnt">0010/0021/0022</span></div>
+        <div class="cols">
+          <div><span class="k pk">id</span><span class="ty">PK</span></div>
+          <div><span class="k fk">project_id</span><span class="ty">FK project (idx)</span></div>
+          <div><span class="k">status</span><span class="ty">queued|running|waiting_for_approval|…|terminal</span></div>
+          <div><span class="k">current_agent / progress</span><span class="ty">str / 0..1</span></div>
+          <div><span class="k json">route_decision</span><span class="ty">TEXT</span></div>
+          <div><span class="k">thread_id</span><span class="ty">0010 legacy 痕迹</span></div>
+          <div><span class="k">confirm_requested</span><span class="ty">gate 信号列</span></div>
+          <div><span class="k json">awaiting_payload</span><span class="ty">gate 载荷</span></div>
+          <div><span class="k">lease_token / lease_expires_at</span><span class="ty">0022 fencing</span></div>
+          <div><span class="k json">context_snapshot</span><span class="ty">provider 快照</span></div>
+          <div><span class="k json">patch_plan</span><span class="ty">invalidation plan</span></div>
+          <div><span class="k fk">resource_type / resource_id</span><span class="ty">局部 run 寻址</span></div>
+        </div>
+      </div>
+      <div class="tbl">
+        <div class="th">universe / sharedcharacter / universeprojectlink <span class="own">0019</span></div>
+        <div class="cols">
+          <div><span class="k pk">universe.id</span><span class="ty">PK · name/cover/is_active</span></div>
+          <div><span class="k fk">sharedcharacter.universe_id</span><span class="ty">FK</span></div>
+          <div><span class="k">name desc visual_notes</span><span class="ty">跨项目角色圣经</span></div>
+          <div><span class="k json">reference_images / face_embedding</span><span class="ty">JSON</span></div>
+          <div><span class="k">canonical_image_url / tags</span><span class="ty">标准形象</span></div>
+          <div><span class="k fk">source_project_id / source_character_id</span><span class="ty">溯源</span></div>
+          <div><span class="k">version / is_active</span><span class="ty">int / bool</span></div>
+          <div><span class="k fk">link.universe_id + link.project_id</span><span class="ty">章节关联</span></div>
+          <div><span class="k">chapter_number / chapter_title</span><span class="ty">第几章</span></div>
+          <div><span class="k">is_main_story</span><span class="ty">主线/外传</span></div>
+        </div>
+      </div>
+      <div class="tbl">
+        <div class="th">artifact / artifactversion <span class="own">0016</span></div>
+        <div class="cols">
+          <div><span class="k pk">artifact.id</span><span class="ty">PK</span></div>
+          <div><span class="k">entity_type / entity_id</span><span class="ty">character|shot 多态</span></div>
+          <div><span class="k pk">artifactversion.id</span><span class="ty">PK</span></div>
+          <div><span class="k fk">artifact_id</span><span class="ty">FK artifact</span></div>
+          <div><span class="k">version</span><span class="ty">int</span></div>
+          <div><span class="k json">payload</span><span class="ty">版本快照</span></div>
+          <div><span class="k">trigger</span><span class="ty">generation|manual|rollback</span></div>
+        </div>
+      </div>
+      <div class="tbl">
+        <div class="th">message / agentmessage <span class="own">0005</span></div>
+        <div class="cols">
+          <div><span class="k pk">id</span><span class="ty">PK</span></div>
+          <div><span class="k fk">project_id</span><span class="ty">FK</span></div>
+          <div><span class="k">agent / role / content</span><span class="ty">对话流</span></div>
+          <div><span class="k">progress / summary</span><span class="ty">float / str</span></div>
+          <div><span class="k">created_at</span><span class="ty">datetime</span></div>
+        </div>
+      </div>
+      <div class="tbl">
+        <div class="th">configitem <span class="own">运行时配置</span></div>
+        <div class="cols">
+          <div><span class="k pk">id</span><span class="ty">PK</span></div>
+          <div><span class="k">key / value</span><span class="ty">加密敏感项</span></div>
+          <div><span class="k">category</span><span class="ty">text|image|video|…</span></div>
+          <div><span class="k">updated_at</span><span class="ty">datetime</span></div>
+          <div style="color:var(--muted);font-size:10px;padding-top:3px">⚠ <b>覆盖 .env</b>：种子以进程 env 优先（config_service.ensure_initialized）</div>
+        </div>
+      </div>
+      <div class="tbl">
+        <div class="th">其他 <span class="own">product</span></div>
+        <div class="cols">
+          <div><span class="k">consistencyreport</span><span class="ty">0018 评分/维度 JSON</span></div>
+          <div><span class="k">styletemplate</span><span class="ty">0013 风格模板</span></div>
+          <div><span class="k">exportcache</span><span class="ty">0021 导出缓存</span></div>
+          <div><span class="k">asset</span><span class="ty">0009 上传资源</span></div>
+          <div><span class="k">shotcharacterbinding</span><span class="ty">显式表 · FK shot/character</span></div>
+        </div>
+      </div>
+      <div class="tbl legacy">
+        <div class="th">run / stage <span class="own">LEGACY</span><span class="cnt">待删</span></div>
+        <div class="cols">
+          <div><span class="k" style="color:var(--red)">run</span><span class="ty">旧编排残留</span></div>
+          <div><span class="k" style="color:var(--red)">stage</span><span class="ty">旧阶段残留</span></div>
+          <div style="color:var(--muted);font-size:10px;padding-top:3px">已无生产引用，随「legacy Run/Stage 删除」一并清掉</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>跨进程读写分工（同库不同写者）</h3>
+    <table>
+      <thead><tr><th>表</th><th>Python 侧</th><th>engine 侧</th></tr></thead>
+      <tbody>
+        <tr><td class="m">agentrun</td><td>建 run / 置 confirm / 读恢复态</td><td>抢 lease · 更新 status/progress · 写 patch_plan 执行结果</td></tr>
+        <tr><td class="m">engine_run_events</td><td>读（replay / 状态真相）</td><td><b>写</b>（唯一写者）</td></tr>
+        <tr><td class="m">engine_checkpoints</td><td><code>run_recovery.py</code> 表驱动读完成阶段</td><td><b>写</b>（唯一写者）</td></tr>
+        <tr><td class="m">engine_stage_attempts</td><td>读（审计/测试）</td><td><b>写</b></td></tr>
+        <tr><td class="m">project / character / shot</td><td>HTTP CRUD（用户动作）</td><td><b>写</b>（生成产物）</td></tr>
+        <tr><td class="m">artifactversion / agentmessage</td><td>读（版本/对话接口）</td><td><b>写</b>（生成时落库）</td></tr>
+        <tr><td class="m">message</td><td>写（用户消息）</td><td>—</td></tr>
+        <tr><td class="m">configitem / styletemplate / universe</td><td colspan="2">Python 独占</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <b>两处真正脆弱的地方</b>
+      <div>① 两边必须指向<b>同一个 db 文件</b> —— Compose/本地路径不一致就静默失联。② 无 WAL 之外的多写者协调：engine 单写 + Python 并发写靠 <code>busy_timeout=5000</code> 顶，真冲突会 SQLITE_BUSY。</div>
+    </div>
+  </section>
+
+  <!-- ⑤ FRONTEND -->
+  <section class="pane" id="p5">
+    <h2><span class="n">05</span>前端：Query 是唯一 server-state 源</h2>
+    <p class="note"><b>本轮刚完成</b>：Zustand 里 23 个服务端副本已删。ADR 0007。</p>
+
+    <h3>状态归属（迁移后）</h3>
+    <div class="grid g2">
+      <div class="card cy">
+        <div class="hd"><b>TanStack Query —— 服务端状态</b><span class="tag">唯一 SSOT</span></div>
+        <ul>
+          <li><b>key 工厂</b>：<code>projectQueryKeys</code>（<code>app/query/queryKeys.ts</code>）</li>
+          <li><b>app 级单例</b>：<code>appQueryClient</code>，HTTP 与 WS 共用</li>
+          <li><b>HTTP 水合</b> → 同 key</li>
+          <li><b>WS 投影</b>：<code>applyServerEvent()</code> 写同 key</li>
+          <li><b>缓存内容</b>：project · characters · shots · messages · generation-state · projects</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="hd"><b>Zustand —— 客户端状态</b><span class="tag">editorStore</span></div>
+        <ul>
+          <li><b>选择</b>：selectedShotId · selectedCharacterId · highlightedMessageIndex</li>
+          <li><b>运行 UI</b>：isGenerating · currentStage · currentAgent · progress</li>
+          <li><b>恢复</b>：recoveryControl · recoverySummary · recoveryGate · awaitingConfirm · currentRunId</li>
+          <li><b>消息流</b>：messages（WS 追加 + 启动水合一次）</li>
+          <li><b>其他 store</b>：settingsStore · themeStore · toast.store</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>WS 事件路径（顺序不可换）</h3>
+    <div class="flow">
+      <div class="node"><div class="t">1 · 传输</div><div class="s"><code>useProjectWebSocket</code><br>cursor 去重 · 重连 · replay</div><div class="p">hooks/useWebSocket.ts</div></div>
+      <div class="arrow">→<b>先</b></div>
+      <div class="node cy"><div class="t">2 · 服务端状态</div><div class="s"><code>applyServerEvent()</code><br>WS → Query cache</div><div class="p">query/applyServerEvent.ts</div></div>
+      <div class="arrow">→<b>后</b></div>
+      <div class="node mg"><div class="t">3 · UI 投影</div><div class="s"><code>applyWsEvent()</code><br>只动 run/UI/消息</div><div class="p">hooks/applyWsEvent.ts</div></div>
+    </div>
+    <p class="note" style="margin-top:8px">Cursor 只在两步都完成后写 <code>sessionStorage</code>；<code>event_id ≤ cursor</code> 直接丢弃。</p>
+
+    <h3>关键模块</h3>
+    <div class="tree">frontend/app/
+├── <b>App.tsx</b>          <span class="c">ErrorBoundary → QueryClientProvider(appQueryClient) → BrowserRouter</span>
+├── <b>query/</b>
+│   ├── client.ts       <span class="y">appQueryClient · staleTime 5min · retry 1</span>
+│   ├── queryKeys.ts    <span class="y">projectQueryKeys 唯一 key 源</span>
+│   └── applyServerEvent.ts  <span class="y">唯一 WS→cache 边界 + cache 写助手</span>
+├── <b>hooks/</b>
+│   ├── useWebSocket.ts <span class="c">transport + cursor + 两步派发</span>
+│   ├── applyWsEvent.ts <span class="c">UI/run/message 投影</span>
+│   └── wsCursor.ts
+├── <b>pages/</b>           <span class="c">Home · Projects · Project(1058→~900) · Universes · UniverseDetail</span>
+├── <b>features/comic-workflow/</b>
+│   ├── canvas/         <span class="c">tldraw 投影 + shapes + cardActions(直写 appQueryClient)</span>
+│   ├── graph/          <span class="c">buildComicWorkflow：project+characters+shots → 节点图</span>
+│   ├── inspector/      <span class="c">WorkflowInspector：编辑/审批/重绘/删除</span>
+│   ├── sidebar/        <span class="c">Agent Column + 时间线</span>
+│   ├── mobile/         <span class="c">&lt;lg 只读预览</span>
+│   └── state/          <span class="c">deriveWorkbenchStatus</span>
+├── <b>services/api.ts</b>   <span class="c">12 个 api 组，唯一 fetch 边界（含套 envelope）</span>
+├── <b>styles/</b>
+│   ├── tokens.css      <span class="y">Design Contract 可执行真源（ADR 0002）</span>
+│   └── globals.css
+└── <b>stores/</b>           <span class="c">editor(big) · settings · theme · toast</span></div>
+
+    <h3>Design Contract（可执行 token 是权威）</h3>
+    <div class="grid g3">
+      <div class="card y">
+        <div class="hd"><b>品牌底版</b><span class="tag">CMYK 套准</span></div>
+        <ul>
+          <li><code>--cmyk-cyan: .55 .14 180</code></li>
+          <li><code>--cmyk-magenta: .55 .26 330</code></li>
+          <li>两套主题各自达到同一对比目标，不是同一 alpha</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="hd"><b>文字对比 token</b><span class="tag">theme-aware</span></div>
+        <ul>
+          <li><code>--bc-muted</code> ≥ 4.5:1（次级正文）</li>
+          <li><code>--bc-subtle</code> ≥ 3:1（装饰标签）</li>
+          <li><code>--primary-ink</code>：品牌黄作「文字」的形态，填充继续用 <code>--p</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="hd"><b>密度 D2 · Dense Comic Workbench</b><span class="tag">非冷 SaaS</span></div>
+        <ul>
+          <li>字号：2xs 10px · xs 12 · sm 13 · <b>base 14（desk 正文）</b></li>
+          <li>radius 6/8/12/16 · motion 150/200/300ms</li>
+          <li>触控：<code>--touch-target-min 44px</code>；<code>-dense 32px</code> 仅 chrome chip</li>
+          <li>约束：workbench shell 不得产生 document 级滚动</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note"><b>批次顺序 O1</b>：tokens → Workbench Shell → Home → Director Desk → list pages → settings/drawers。每批需 vitest + tsc/build 绿 + 一条手工路径检查。</p>
+  </section>
+
+  <!-- ⑥ CONSTRAINTS -->
+  <section class="pane" id="p6">
+    <h2><span class="n">06</span>约束、违规与未完成项</h2>
+
+    <h3>ADR 索引</h3>
+    <table>
+      <thead><tr><th>ADR</th><th>主题</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td class="m">0001</td><td>前端重设计 C2/C3（契约优先 · 领域批次）</td><td>进行中</td></tr>
+        <tr><td class="m">0002</td><td>Design Contract：可执行 token 是 SSOT</td><td>已接受</td></tr>
+        <tr><td class="m">0003</td><td>交互软冻结（F2）</td><td>已接受</td></tr>
+        <tr><td class="m">0004</td><td>pi 引擎 + 单文件 SQLite</td><td>已接受</td></tr>
+        <tr><td class="m">0005</td><td>删除 LangGraph / PostgreSQL</td><td>已完成 · 不可逆</td></tr>
+        <tr><td class="m">0006</td><td>接口以 run 为一等资源 + 错误 envelope</td><td>已完成</td></tr>
+        <tr><td class="m" style="color:var(--y)">0007</td><td>前端服务端状态归一到 TanStack Query</td><td><b style="color:var(--y)">本轮完成（local）</b></td></tr>
+        <tr><td class="m" style="color:var(--y)">0008</td><td>Pi Core 是唯一 Agent Runtime；FastAPI 只做 northbound gateway</td><td><b style="color:var(--y)">本轮新增约束</b></td></tr>
+      </tbody>
+    </table>
+
+    <h3>ADR 0008 约束正文</h3>
+    <div class="card y">
+      <ul>
+        <li><b>禁止</b>在 FastAPI 层重新实现 Agent Loop / Planner / Tool orchestration / Subagent orchestration</li>
+        <li>FastAPI 只有两个身份：<b>Product Backend</b> 与 <b>Pi Runtime 的 northbound gateway</b></li>
+        <li>合法职责：鉴权 · 校验 · schema 契约 · ownership 与持久化 · HTTP/WSS 端点 · 转发给 pi · 把 pi 事件翻译成客户端契约</li>
+        <li>编排决策全归 pi：阶段推进 · agent 选择 · 工具调用 · 子 agent 扇出 · 重试 · 恢复 · 失效计划执行</li>
+        <li><b>判据</b>：这段代码是否让 FastAPI 决定「下一步做什么」？是 → 违规</li>
+        <li>需要新能力 → <b>给 pi 加能力</b>，不是往 FastAPI 加代码</li>
+      </ul>
+    </div>
+
+    <h3>4 处违规（已加注释标记，待清理）</h3>
+    <table>
+      <thead><tr><th>位置</th><th>性质</th><th>处置</th></tr></thead>
+      <tbody>
+        <tr><td class="m" style="color:var(--red)">services/agent_runner.py</td><td>进程内 agent loop（<code>run_agent_plan</code>）</td><td>删</td></tr>
+        <tr><td class="m" style="color:var(--red)">agents/render.py · 501 行</td><td>被 route 直接实例化执行</td><td>删（先确认 pi 侧有 identity lock / 风格模板 / 角色圣经 / 人脸嵌入）</td></tr>
+        <tr><td class="m" style="color:var(--red)">agents/compose.py · 655 行</td><td>同上</td><td>删</td></tr>
+        <tr><td class="m" style="color:var(--red)">services/run_lifecycle.py<br><code>LocalRunSpec.agent_plan</code></td><td>字段形状本身即违规</td><td>改成对 pi 的指令描述</td></tr>
+        <tr><td class="m">调用点</td><td>projects.py 442/449 · shots.py 192/197 · characters.py 146</td><td>随上面一起改</td></tr>
+        <tr><td class="m" style="color:var(--grn)">agents/review_rules.py</td><td><b>不算违规</b>：只分类 rerun 起点，不跑 loop</td><td>保留</td></tr>
+        <tr><td class="m" style="color:var(--grn)">routes/runs.py · _dispatch_to_engine</td><td><b>参照实现</b>：转发给 pi</td><td>新能力的模板</td></tr>
+      </tbody>
+    </table>
+
+    <h3>清理前置条件（硬门）</h3>
+    <div class="callout">
+      <b>删 Python 实现前必须确认</b>
+      <div>单角色重绘的质量特性目前<b>只在 Python 侧</b>：<code>CHARACTER_IDENTITY_LOCK</code> · 风格模板 · 角色圣经 · 人脸嵌入。<b>pi 侧不存在这些</b>。先删 = 功能回退。这是迁移的前置条件，不是可选项。</div>
+    </div>
+
+    <h3>PR #9 剩余未完成项</h3>
+    <table>
+      <thead><tr><th>#</th><th>项</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td class="m">1</td><td class="m">ProjectPage Query→Zustand hydration 删除 + editorStore server mirrors 删除</td><td style="color:var(--grn)"><b>✓ 本轮完成</b>（−538 行）</td></tr>
+        <tr><td class="m">2</td><td class="m">artifact revision ↔ approval 重构</td><td>未做</td></tr>
+        <tr><td class="m">3</td><td class="m">legacy <code>Run</code> / <code>Stage</code> 表删除</td><td>未做</td></tr>
+        <tr><td class="m">4</td><td class="m">provider AbortSignal / cancel reconciliation（引擎取消打不断 in-flight fetch）</td><td>未做 · <code>cancelRequested</code> 布尔 + 阶段边界轮询</td></tr>
+        <tr><td class="m">5</td><td class="m">observability / chaos matrix</td><td>未做</td></tr>
+        <tr><td class="m">6</td><td class="m">文档 / ADR / PR body 收口 + 最新 head 全 CI green</td><td>进行中</td></tr>
+      </tbody>
+    </table>
+
+    <h3>长期遗留（ADR 记录在案）</h3>
+    <div class="grid g2">
+      <div class="card">
+        <div class="hd"><b>结构债</b></div>
+        <ul>
+          <li><b>阶段契约三份镜像</b>：<code>contracts/workflow.json</code> → Python / <code>engine/src/contract.ts</code> / <code>workflowStage.ts</code>，靠测试断言防漂移，无 codegen</li>
+          <li><b>音频未移植</b>：<code>add_audio</code> 是 stub，全仓库无人调用 <code>AudioService</code>（早于本 PR）</li>
+          <li><b>media 仍在 Python</b>：text 在 pi，image/video 在 Python，配置与重试两套</li>
+          <li><b>task_manager 进程内</b>，多 worker 不安全</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="hd"><b>刻意不做（有证据支持）</b></div>
+        <ul>
+          <li><b>不引入 codegen</b>：实测前端 22 个同名 schema <b>21 个完全对齐</b>，证据不支持为 1/22 漂移加构建链</li>
+          <li><b>不迁 Effect</b>：<code>effect@rc</code>=4.0.0-rc.115（API 仍动），48MB 解包，且<b>不解决</b> crash/replay 幂等（fiber 随进程死）；真痛点（取消穿透、重试）<b>~30 行</b>可解</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout good">
+      <b>本轮已验证</b>
+      <div>frontend <b>454 passed</b> (53 files) + <code>tsc</code> + <code>build</code> ✓ ｜ backend <b>933 passed</b> + <code>ruff</code> ✓ ｜ head <code>3df4adc</code> CI 五项全绿 ｜ <code>52e7846</code> 为本地提交，未 push。</div>
+    </div>
+  </section>
+
+  </main>
+</div>
+</body>
+</html>

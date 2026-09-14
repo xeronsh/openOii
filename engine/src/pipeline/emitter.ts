@@ -35,6 +35,27 @@ export class PipelineEmitter {
     this.db.appendEvent(this.runId, this.projectId, type, data);
   }
 
+  /**
+   * Mutate domain state and append its durable event in ONE transaction.
+   *
+   * A crash between the two used to leave the database new while no client ever
+   * received the corresponding event (or the reverse). The mutation callback
+   * performs the writes and returns the exact event payload, so the append
+   * cannot drift from what was written.
+   *
+   * The callback must be synchronous; better-sqlite3 transactions cannot span
+   * an await point.
+   */
+  commit<T extends Record<string, unknown>>(type: string, mutation: () => T): T {
+    this.shared.assertExecutionFence();
+    let payload!: T;
+    this.db.transaction(() => {
+      payload = mutation();
+      this.db.appendEvent(this.runId, this.projectId, type, payload);
+    });
+    return payload;
+  }
+
   async sendMessage(
     agent: string,
     content: string,

@@ -25,11 +25,6 @@ from app.schemas.project import (
     RecoverySummaryRead,
 )
 
-def thread_id_for_run(run: AgentRun) -> str:
-    """稳定 thread id（run 未落库时用 pending 占位）。"""
-    return f"agent-run-{run.id}" if run.id is not None else "agent-run-pending"
-
-
 def _safe_stage_name(value: Any) -> str | None:
     if isinstance(value, str) and value in PHASE2_STAGE_ORDER:
         return value
@@ -70,7 +65,7 @@ def _infer_current_stage(run: AgentRun, completed: Sequence[str]) -> str:
 async def _stage_artifact_counts(session: AsyncSession, project_id: int) -> dict[str, int]:
     """Per-stage entity counts derived from persisted project entities.
 
-    The legacy Stage/Artifact tables have no writer under the pi engine; the
+    The legacy Stage/Artifact tables were dropped in migration 0027; the
     entities themselves are the durable record, so count those instead.
     """
     project_id_col = cast(InstrumentedAttribute[int], cast(object, Character.project_id))
@@ -125,7 +120,6 @@ async def build_recovery_summary(
     return RecoverySummaryRead(
         project_id=run.project_id,
         run_id=run_pk,
-        thread_id=thread_id_for_run(run),
         current_stage=current_stage,
         next_stage=current_stage,
         preserved_stages=preserved_stages,
@@ -148,7 +142,6 @@ async def build_recovery_control_surface(
     return RecoveryControlRead(
         state=state,
         detail=detail,
-        thread_id=summary.thread_id,
         active_run=AgentRunRead.model_validate(run),
         recovery_summary=summary,
     )

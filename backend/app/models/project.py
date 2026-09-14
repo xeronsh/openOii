@@ -36,6 +36,9 @@ class Project(SQLModel, table=True):
     exports: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=True))
     skill_id: Optional[str] = Field(default=None, index=True)
     reimagine_meta: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # Optimistic concurrency: the engine and the HTTP API both write this row.
+    # A writer states the revision it read; a stale write affects zero rows.
+    revision: int = Field(default=1, ge=1, sa_column_kwargs={"server_default": "1"})
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -68,6 +71,8 @@ class Character(SQLModel, table=True):
     approved_image_url: Optional[str] = None
     approved_at: Optional[datetime] = None
     approval_version: int = Field(default=0, ge=0)
+    # Optimistic concurrency: the engine and the HTTP API both write this row.
+    revision: int = Field(default=1, ge=1, sa_column_kwargs={"server_default": "1"})
 
     project: Optional[Project] = Relationship(back_populates="characters")
 
@@ -132,6 +137,8 @@ class Shot(SQLModel, table=True):
     )
     approved_at: Optional[datetime] = None
     approval_version: int = Field(default=0, ge=0)
+    # Optimistic concurrency: the engine and the HTTP API both write this row.
+    revision: int = Field(default=1, ge=1, sa_column_kwargs={"server_default": "1"})
 
     project: Optional[Project] = Relationship(back_populates="shots")
     character_bindings: List["ShotCharacterBinding"] = Relationship(

@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.db.utils import redact_credentials, utcnow
 # Import model modules so application metadata/relationships are registered for
 # normal ORM use. Schema creation itself belongs exclusively to Alembic.
-from app.models import agent_run, artifact, artifact_version, config_item, message, project, run, stage  # noqa: F401
+from app.models import agent_run, artifact_version, config_item, message, project  # noqa: F401
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 

@@ -24,11 +24,21 @@ describe("durable stage attempts", () => {
 
   it("reuses an interrupted operation identity for the same stage input", () => {
     const db = new EngineDatabase(path);
-    const first = db.beginStageAttempt(7, "render_shots", "input-a", 1);
+    const first = db.beginStageAttempt({
+      runId: 7,
+      stage: "render_shots",
+      input: { shots: [] },
+      executionAttempt: 1,
+    });
 
-    // Simulate process death after the provider request but before either the
-    // stage checkpoint or attempt terminal status was committed.
-    const resumed = db.beginStageAttempt(7, "render_shots", "input-a", 2);
+    // Process death after the provider request but before checkpoint/terminal
+    // status. The stage had already mutated character/shot rows by then.
+    const resumed = db.beginStageAttempt({
+      runId: 7,
+      stage: "render_shots",
+      input: { shots: [] },
+      executionAttempt: 2,
+    });
 
     expect(resumed.stage_attempt_id).toBe(first.stage_attempt_id);
     expect(resumed.idempotency_key).toBe(first.idempotency_key);
@@ -36,12 +46,73 @@ describe("durable stage attempts", () => {
     db.close();
   });
 
+  it("keeps the original identity even though the stage mutated the database", () => {
+    // Regression: identity used to be keyed on a hash recomputed from live
+    // state, so a resume after partial writes created a SECOND attempt with a
+    // new idempotency key and re-called the provider for one operation.
+    const db = new EngineDatabase(path);
+    const first = db.beginStageAttempt({
+      runId: 7,
+      stage: "render_characters",
+      input: { characters: ["before"] },
+      executionAttempt: 1,
+    });
+
+    // A resumed run now observes mutated state, so the recomputed input differs.
+    const resumed = db.beginStageAttempt({
+      runId: 7,
+      stage: "render_characters",
+      input: { characters: ["after"] },
+      executionAttempt: 2,
+    });
+
+    expect(resumed.stage_attempt_id).toBe(first.stage_attempt_id);
+    expect(resumed.idempotency_key).toBe(first.idempotency_key);
+    expect(resumed.input_hash).toBe(first.input_hash);
+    db.close();
+  });
+
+  it("freezes the stage input so a resume reads the same values", () => {
+    const db = new EngineDatabase(path);
+    const frozen = { characters: [{ id: 1, name: "Mika" }] };
+    const first = db.beginStageAttempt({
+      runId: 7,
+      stage: "render_characters",
+      input: frozen,
+      executionAttempt: 1,
+    });
+
+    expect(db.stageAttemptInput(first.stage_attempt_id)).toEqual(frozen);
+
+    // The second caller passes mutation-polluted state; identity is unchanged,
+    // so the persisted snapshot keeps describing the operation that ran.
+    db.beginStageAttempt({
+      runId: 7,
+      stage: "render_characters",
+      input: { characters: [{ id: 1, name: "Mika (rewritten)" }] },
+      executionAttempt: 2,
+    });
+
+    expect(db.stageAttemptInput(first.stage_attempt_id)).toEqual(frozen);
+    db.close();
+  });
+
   it("creates a new operation identity after an explicit terminal failure", () => {
     const db = new EngineDatabase(path);
-    const first = db.beginStageAttempt(7, "render_shots", "input-a", 1);
+    const first = db.beginStageAttempt({
+      runId: 7,
+      stage: "render_shots",
+      input: { shots: [] },
+      executionAttempt: 1,
+    });
     db.completeStageAttempt(first.stage_attempt_id, "failed", { error: "provider 503" });
 
-    const retry = db.beginStageAttempt(7, "render_shots", "input-a", 2);
+    const retry = db.beginStageAttempt({
+      runId: 7,
+      stage: "render_shots",
+      input: { shots: [] },
+      executionAttempt: 2,
+    });
 
     expect(retry.attempt).toBe(2);
     expect(retry.stage_attempt_id).not.toBe(first.stage_attempt_id);
@@ -49,14 +120,25 @@ describe("durable stage attempts", () => {
     db.close();
   });
 
-  it("does not reuse an interrupted identity when authoritative inputs changed", () => {
+  it("forces a new operation identity on explicit rerun", () => {
     const db = new EngineDatabase(path);
-    const first = db.beginStageAttempt(7, "render_shots", "input-a", 1);
-    const changed = db.beginStageAttempt(7, "render_shots", "input-b", 2);
+    const first = db.beginStageAttempt({
+      runId: 7,
+      stage: "render_shots",
+      input: { shots: [] },
+      executionAttempt: 1,
+    });
 
-    expect(changed.attempt).toBe(2);
-    expect(changed.stage_attempt_id).not.toBe(first.stage_attempt_id);
-    expect(changed.idempotency_key).not.toBe(first.idempotency_key);
+    const rerun = db.beginStageAttempt({
+      runId: 7,
+      stage: "render_shots",
+      input: { shots: [] },
+      executionAttempt: 1,
+      forceNew: true,
+    });
+
+    expect(rerun.stage_attempt_id).not.toBe(first.stage_attempt_id);
+    expect(rerun.idempotency_key).not.toBe(first.idempotency_key);
     db.close();
   });
 });

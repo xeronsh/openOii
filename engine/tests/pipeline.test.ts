@@ -162,6 +162,75 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
     }
   }, 60000);
 
+  it("resume reuses interrupted stage attempt instead of re-calling the provider", async () => {
+    const { runner, shared, edb } = boot();
+    const projectId = seedProject(edb);
+    edb.db
+      .prepare(
+        `INSERT INTO agentrun (project_id, status, current_agent, progress, confirm_requested, created_at, updated_at)
+         VALUES (?, 'queued', 'outline', 0, 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+      )
+      .run(projectId);
+    const runId = Number(
+      (edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get() as { id: number | null }).id ?? 0,
+    );
+
+    const confirmer = setInterval(() => {
+      shared.updateRun(runId, { confirm_requested: 1 });
+    }, 100);
+    const outcome = await runner.run({ projectId, runId, autoMode: true, userFeedback: "" });
+    clearInterval(confirmer);
+    expect(outcome.status, outcome.error ?? "pipeline failed").toBe("completed");
+
+    // Replay the last production stage the way a crash-after-side-effect would:
+    // the stage left no checkpoint, but it already mutated shot rows. Resume
+    // must adopt the persisted operation identity rather than mint a new one.
+    const attempts = edb.db
+      .prepare(
+        `SELECT * FROM engine_stage_attempts WHERE run_id = ? AND stage = 'render_shots'
+         ORDER BY attempt DESC LIMIT 1`,
+      )
+      .all(runId) as Array<{
+      stage_attempt_id: string;
+      idempotency_key: string;
+      attempt: number;
+      input_hash: string;
+    }>;
+    expect(attempts.length).toBe(1);
+    const original = attempts[0]!;
+
+    // Simulate the crash window: identity was persisted, work done, but the
+    // process died before the attempt reached a terminal status.
+    edb.db
+      .prepare("UPDATE engine_stage_attempts SET status = 'started' WHERE stage_attempt_id = ?")
+      .run(original.stage_attempt_id);
+
+    const resumed = edb.beginStageAttempt({
+      runId,
+      stage: "render_shots",
+      // The live rows are now mutated, so a recomputed input would differ.
+      input: { shots: shared.shotsForProject(projectId) },
+      executionAttempt: 2,
+    });
+
+    expect(resumed.stage_attempt_id).toBe(original.stage_attempt_id);
+    expect(resumed.idempotency_key).toBe(original.idempotency_key);
+    expect(resumed.input_hash).toBe(original.input_hash);
+    expect(resumed.attempt).toBe(original.attempt);
+
+    const attemptCount = Number(
+      (
+        edb.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM engine_stage_attempts WHERE run_id = ? AND stage = 'render_shots'",
+          )
+          .get(runId) as { n: number }
+      ).n,
+    );
+    expect(attemptCount).toBe(1);
+    edb.close();
+  }, 60000);
+
   it("durable lease rejects a second owner and fences stale writers", () => {
     const { shared, edb } = boot();
     const projectId = seedProject(edb);

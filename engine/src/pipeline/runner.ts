@@ -3,7 +3,6 @@
  * stage checkpoints, durable stage attempts, critique regeneration routing,
  * cancellation and execution fencing.
  */
-import { createHash } from "node:crypto";
 import {
   AGENT_COMPLETION_INFO,
   GATE_AGENT,
@@ -22,8 +21,13 @@ import {
 } from "../media/media.js";
 import { TextLlmService, type RunCreativeContext } from "../llm.js";
 import { SharedDb, parseJsonColumn } from "../shared-db.js";
+import type {
+  CharacterRow,
+  FrozenStageInput,
+  ProjectRow,
+  ShotRow,
+} from "../shared-db.js";
 import {
-  runAddAudio,
   runComposeMerge,
   runComposeVideos,
   runCritique,
@@ -35,6 +39,7 @@ import {
   type StageContext,
 } from "../agents/index.js";
 import { PipelineEmitter } from "./emitter.js";
+import { resolveStageStyleContext } from "../style.js";
 
 export interface PipelineRequest {
   projectId: number;
@@ -42,6 +47,13 @@ export interface PipelineRequest {
   autoMode: boolean;
   userFeedback: string;
   startStage?: StageId;
+  /**
+   * Restrict work to these entities (targeted redraw / fill). Absent means
+   * "every entity in scope". This is the engine-side replacement for the Python
+   * `agent_plan` + `TargetIds` dispatch that FastAPI used to build itself.
+   */
+  targetCharacterIds?: number[];
+  targetShotIds?: number[];
 }
 
 export interface PipelineOutcome {
@@ -76,6 +88,12 @@ function asNumber(value: unknown, fallback: number): number {
 
 export class PipelineRunner {
   private cancelRequested = false;
+  /**
+   * Cancellation reaches the providers through this signal, not only through
+   * the stage-boundary flag: an in-flight LLM or media request is aborted
+   * immediately instead of running to completion after the run was stopped.
+   */
+  private readonly abortController = new AbortController();
 
   constructor(
     private readonly db: EngineDatabase,
@@ -84,12 +102,23 @@ export class PipelineRunner {
     private readonly runContext?: RunCreativeContext,
   ) {}
 
+  get abortSignal(): AbortSignal {
+    return this.abortController.signal;
+  }
+
   requestCancel(): void {
     this.cancelRequested = true;
+    if (!this.abortController.signal.aborted) this.abortController.abort();
   }
 
   private shouldCancel(runId: number): boolean {
-    return this.cancelRequested || this.shared.runCancelRequested(runId);
+    // A cancel observed in the database must also abort in-flight provider work,
+    // otherwise a resumed owner keeps the old requests alive.
+    if (!this.cancelRequested && this.shared.runCancelRequested(runId)) {
+      this.requestCancel();
+    }
+    if (this.abortController.signal.aborted) this.cancelRequested = true;
+    return this.cancelRequested;
   }
 
   private policy(): Record<string, unknown> | null {
@@ -130,9 +159,12 @@ export class PipelineRunner {
     this.db.deleteCheckpoints(runId, STAGE_ORDER.slice(index));
   }
 
-  /** Stable fingerprint of the authoritative inputs visible to one stage. */
-  private stageInputHash(stage: StageId, request: PipelineRequest): string {
-    const payload = {
+  /**
+   * Authoritative inputs a stage is allowed to see, captured once at attempt
+   * start and persisted with the operation identity.
+   */
+  private stageInputSnapshot(stage: StageId, request: PipelineRequest): unknown {
+    return {
       workflow_version: this.runContext?.workflow_version ?? null,
       stage,
       project: this.shared.getProject(request.projectId) ?? null,
@@ -149,26 +181,31 @@ export class PipelineRunner {
           }
         : null,
     };
-    return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
   }
 
   /**
-   * Record operation identity before any side effect. If the process died with
-   * status=started, beginStageAttempt reuses the row/idempotency key on resume.
+   * Record operation identity (plus the frozen input) before any side effect.
+   *
+   * Resume reuses a non-terminal attempt's identity rather than re-deriving it
+   * from current state, so crash/replay cannot mint a second idempotency key for
+   * one operation. `forceNew` is reserved for explicit rerun / feedback
+   * invalidation, never for crash recovery.
    */
   private async executeStageAttempt<T>(
     stage: StageId,
     request: PipelineRequest,
     fn: (attempt: StageAttemptRow) => Promise<T>,
+    options: { forceNew?: boolean } = {},
   ): Promise<T> {
     this.shared.assertExecutionFence();
     const run = this.shared.getRun(request.runId);
-    const attempt = this.db.beginStageAttempt(
-      request.runId,
+    const attempt = this.db.beginStageAttempt({
+      runId: request.runId,
       stage,
-      this.stageInputHash(stage, request),
-      run?.execution_attempt ?? 0,
-    );
+      input: this.stageInputSnapshot(stage, request),
+      executionAttempt: run?.execution_attempt ?? 0,
+      forceNew: options.forceNew ?? false,
+    });
     try {
       const result = await fn(attempt);
       this.shared.assertExecutionFence();
@@ -192,6 +229,8 @@ export class PipelineRunner {
 
   async resume(request: PipelineRequest): Promise<PipelineOutcome> {
     this.shared.assertExecutionFence();
+    // A cancel recorded while no executor was running must abort this one too.
+    if (this.shared.runCancelRequested(request.runId)) this.requestCancel();
     const completed = new Set(this.db.checkpointStages(request.runId));
     if (completed.size === 0) return this.run(request);
     const lastCompleted = STAGE_ORDER.filter((stage) => completed.has(stage)).at(-1);
@@ -203,6 +242,10 @@ export class PipelineRunner {
 
   async run(request: PipelineRequest): Promise<PipelineOutcome> {
     this.shared.assertExecutionFence();
+    if (this.shared.runCancelRequested(request.runId)) this.requestCancel();
+    if (request.targetCharacterIds || request.targetShotIds) {
+      return this.runTargeted(request);
+    }
     const startStage = request.startStage ?? "plan_outline";
     if (startStage === STAGE_ORDER[0]) {
       this.db.clearCheckpoints(request.runId);
@@ -244,6 +287,7 @@ export class PipelineRunner {
 
     const mediaSettings = resolveMediaSettings(this.db, this.mediaSnapshot());
     const media = new MediaService(mediaSettings);
+    media.setAbortSignal(this.abortController.signal);
     const emitter = new PipelineEmitter(this.db, this.shared, request.projectId, request.runId, {
       thinkingChainEnabled: this.boolPolicy(
         "thinking_chain_enabled",
@@ -292,6 +336,13 @@ export class PipelineRunner {
       projectId: request.projectId,
       runId: request.runId,
       userFeedback: request.userFeedback,
+      signal: this.abortController.signal,
+      targetCharacterIds: request.targetCharacterIds,
+      targetShotIds: request.targetShotIds,
+      ...resolveStageStyleContext(
+        this.db,
+        this.shared.getProject(request.projectId) ?? null,
+      ),
       critiqueRounds: { characters: 0, shots: 0 },
       critiqueEnabled: this.boolPolicy("critique_enabled", "CRITIQUE_ENABLED", true),
       critiqueScoreThreshold: this.numberPolicy(
@@ -311,7 +362,6 @@ export class PipelineRunner {
         guard += 1;
         this.shared.assertExecutionFence();
         if (this.shouldCancel(request.runId)) return await this.finishCancelled(request, emitter);
-        if (stage === "review") break;
 
         if (isGate(stage)) {
           await this.runGate(stage, request, ctx);
@@ -322,9 +372,15 @@ export class PipelineRunner {
 
         if (isCritique(stage)) {
           const entityType = stage === "critique_character_images" ? "character" : "shot";
-          const outcome = await this.executeStageAttempt(stage, request, async () =>
-            runCritique(ctx, entityType),
+          const outcome = await this.executeStageAttempt(
+            stage,
+            request,
+            async (attempt) => {
+              ctx.shared = this.shared.withFrozenStageInput(readFrozenStageInput(attempt));
+              return runCritique(ctx, entityType);
+            },
           );
+          ctx.shared = this.shared;
           this.shared.assertExecutionFence();
           if (this.shouldCancel(request.runId)) return await this.finishCancelled(request, emitter);
           const roundsKey: "characters" | "shots" =
@@ -346,11 +402,13 @@ export class PipelineRunner {
         }
 
         await this.executeStageAttempt(stage, request, async (attempt) => {
+          ctx.shared = this.shared.withFrozenStageInput(readFrozenStageInput(attempt));
           ctx.media.setOperationIdentity(attempt.idempotency_key);
           try {
             await this.runProduction(stage, ctx, request);
           } finally {
             ctx.media.setOperationIdentity(null);
+            ctx.shared = this.shared;
           }
         });
         this.shared.assertExecutionFence();
@@ -423,7 +481,6 @@ export class PipelineRunner {
       case "render_shots": await runRenderShots(ctx); break;
       case "compose_videos": await runComposeVideos(ctx); break;
       case "compose_merge": await runComposeMerge(ctx); break;
-      case "add_audio": await runAddAudio(ctx); break;
       case "outline_approval":
       case "characters_approval":
       case "shots_approval":
@@ -432,8 +489,182 @@ export class PipelineRunner {
       case "compose_approval":
       case "critique_character_images":
       case "critique_shot_images":
-      case "review":
         throw new Error(`stage ${stage} reached runProduction`);
+    }
+  }
+
+  /**
+   * Targeted redraw / fill: run only the stages the requested entities need.
+   *
+   * This is the engine-side capability that replaces the Python
+   * `RenderAgent`/`ComposeAgent` + `agent_plan` dispatch. FastAPI passes entity
+   * ids and an intent; the engine decides which stages run (ADR 0008).
+   *
+   * Skip-if-satisfied: a target whose output already exists is dropped, so the
+   * caller can pass "everything" without forcing a full redraw.
+   */
+  private async runTargeted(request: PipelineRequest): Promise<PipelineOutcome> {
+    this.shared.assertExecutionFence();
+    const project = this.shared.getProject(request.projectId);
+    if (!project) return { status: "failed", error: `project ${request.projectId} not found` };
+
+    const characterIds = request.targetCharacterIds ?? [];
+    const shotIds = request.targetShotIds ?? [];
+    // Intent comes from startStage; default to image work for the given scope.
+    const intent: StageId = request.startStage ?? "render_characters";
+
+    const characters = this.shared.charactersForProject(request.projectId);
+    const shots = this.shared.shotsForProject(request.projectId);
+
+    let effectiveCharacterIds: number[] = [];
+    let effectiveShotIds: number[] = [];
+    if (characterIds.length > 0) {
+      effectiveCharacterIds =
+        intent === "render_characters"
+          ? characters
+              .filter((c) => characterIds.includes(c.id) && !c.image_url)
+              .map((c) => c.id)
+          : characterIds;
+    }
+    if (shotIds.length > 0) {
+      effectiveShotIds = shots
+        .filter((s) =>
+          shotIds.includes(s.id) &&
+          (intent === "compose_videos" ? !s.video_url : !s.image_url),
+        )
+        .map((s) => s.id);
+    }
+
+    const scoped: PipelineRequest = {
+      ...request,
+      targetCharacterIds: characterIds.length > 0 ? effectiveCharacterIds : undefined,
+      targetShotIds: shotIds.length > 0 ? effectiveShotIds : undefined,
+    };
+
+    if (characterIds.length > 0 && effectiveCharacterIds.length === 0) {
+      return { status: "completed" };
+    }
+    if (shotIds.length > 0 && effectiveShotIds.length === 0) {
+      return { status: "completed" };
+    }
+
+    const stages: StageId[] =
+      characterIds.length > 0
+        ? ["render_characters"]
+        : intent === "compose_videos"
+          ? ["compose_videos"]
+          : ["render_shots"];
+
+    return this.runStages(request, stages, scoped);
+  }
+
+  /** Run an explicit stage list under the normal fence/attempt discipline. */
+  private async runStages(
+    request: PipelineRequest,
+    stages: StageId[],
+    scoped: PipelineRequest,
+  ): Promise<PipelineOutcome> {
+    const mediaSettings = resolveMediaSettings(this.db, this.mediaSnapshot());
+    const media = new MediaService(mediaSettings);
+    media.setAbortSignal(this.abortController.signal);
+    const emitter = new PipelineEmitter(this.db, this.shared, request.projectId, request.runId, {
+      thinkingChainEnabled: this.boolPolicy(
+        "thinking_chain_enabled",
+        "THINKING_CHAIN_ENABLED",
+        true,
+      ),
+      thinkingDetailLevel: this.stringPolicy(
+        "thinking_chain_detail_level",
+        "THINKING_CHAIN_DETAIL_LEVEL",
+        "normal",
+      ) as "minimal" | "normal" | "verbose",
+    });
+    const first = stages[0]!;
+    const ctx: StageContext = {
+      shared: this.shared,
+      emitter,
+      llm: this.llm,
+      media,
+      mediaSettings,
+      projectId: request.projectId,
+      runId: request.runId,
+      userFeedback: request.userFeedback,
+      signal: this.abortController.signal,
+      targetCharacterIds: scoped.targetCharacterIds,
+      targetShotIds: scoped.targetShotIds,
+      ...resolveStageStyleContext(this.db, this.shared.getProject(request.projectId) ?? null),
+      critiqueRounds: { characters: 0, shots: 0 },
+      critiqueEnabled: false,
+      critiqueScoreThreshold: 0,
+      critiqueMaxRounds: 0,
+      completionInfo: null,
+      willRegenerate: false,
+    };
+
+    const startAgent = agentForStage(first);
+    this.shared.updateRun(request.runId, {
+      status: "running",
+      current_agent: startAgent,
+      progress: progressForStage(first),
+      error: null,
+    });
+    emitter.emit("run_started", {
+      run_id: request.runId,
+      project_id: request.projectId,
+      current_stage: first,
+      stage: first,
+      next_stage: null,
+      progress: progressForStage(first),
+      current_agent: startAgent,
+      preserved_stages: [],
+    });
+
+    try {
+      for (const stage of stages) {
+        this.shared.assertExecutionFence();
+        if (this.shouldCancel(request.runId)) return await this.finishCancelled(request, emitter);
+        await this.executeStageAttempt(stage, request, async (attempt) => {
+          ctx.shared = this.shared.withFrozenStageInput(readFrozenStageInput(attempt));
+          ctx.media.setOperationIdentity(attempt.idempotency_key);
+          try {
+            await this.runProduction(stage, ctx, request);
+          } finally {
+            ctx.media.setOperationIdentity(null);
+            ctx.shared = this.shared;
+          }
+        });
+      }
+      this.shared.assertExecutionFence();
+      if (this.shouldCancel(request.runId)) return await this.finishCancelled(request, emitter);
+      this.shared.updateRun(request.runId, {
+        status: "succeeded",
+        progress: 1,
+        awaiting_payload: null,
+      });
+      emitter.emit("run_completed", {
+        run_id: request.runId,
+        project_id: request.projectId,
+        current_stage: stages[stages.length - 1],
+        current_agent: startAgent,
+        message: null,
+        video_generation_pending: null,
+      });
+      return { status: "completed" };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith("execution lease lost for run")) {
+        return { status: "failed", error: message };
+      }
+      if (this.shouldCancel(request.runId)) return await this.finishCancelled(request, emitter);
+      this.shared.assertExecutionFence();
+      this.shared.updateRun(request.runId, { status: "failed", error: message });
+      emitter.emit("run_failed", {
+        run_id: request.runId,
+        project_id: request.projectId,
+        error: message,
+        agent: startAgent,
+      });
+      return { status: "failed", error: message };
     }
   }
 
@@ -459,7 +690,6 @@ export class PipelineRunner {
       recovery_summary: {
         project_id: request.projectId,
         run_id: request.runId,
-        thread_id: `agent-run-${request.runId}`,
         current_stage: currentStage,
       },
       preserved_stages: [],
@@ -517,7 +747,6 @@ export class PipelineRunner {
       recovery_summary: {
         project_id: request.projectId,
         run_id: request.runId,
-        thread_id: `agent-run-${request.runId}`,
         current_stage: postStage,
       },
     });
@@ -556,4 +785,25 @@ function videoSkippedFor(db: EngineDatabase, runId: number): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Decode the input frozen onto a stage attempt before its first side effect.
+ *
+ * Entity rows are restored into the exact shapes `SharedDb` serves, so the
+ * frozen read-view is indistinguishable from a live read at stage start.
+ */
+function readFrozenStageInput(attempt: StageAttemptRow): FrozenStageInput {
+  const snapshot = attempt.input_snapshot
+    ? (JSON.parse(attempt.input_snapshot) as {
+        project?: ProjectRow | null;
+        characters?: CharacterRow[];
+        shots?: ShotRow[];
+      })
+    : {};
+  return {
+    project: snapshot.project ?? null,
+    characters: snapshot.characters ?? [],
+    shots: snapshot.shots ?? [],
+  };
 }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, cast
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse
@@ -9,9 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
-from app.agents.base import TargetIds
-from app.agents.compose import ComposeAgent
-from app.agents.render import RenderAgent
 from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404
 from app.config import Settings
 from app.db.utils import utcnow
@@ -439,14 +436,14 @@ async def fill_empty_shots(
             raise HTTPException(status_code=400, detail="All shot cells already have images")
         for shot in empty:
             await invalidate_shot_storyboard_outputs(session, project, shot)
-        agent_plan: list[Any] = [RenderAgent()]
+        stage = "render_shots"
         resource_type = "shot_fill_image"
     else:
         empty = [s for s in shots if s.id is not None and not s.video_url]
         if not empty:
             raise HTTPException(status_code=400, detail="All shot cells already have videos")
         await invalidate_shot_clip_output(session, project)
-        agent_plan = [ComposeAgent()]
+        stage = "compose_videos"
         resource_type = "shot_fill_video"
 
     await session.commit()
@@ -462,11 +459,8 @@ async def fill_empty_shots(
             project_id=project_id,
             resource_type="project",
             resource_id=None,
-            agent_plan=agent_plan,
-            target_ids=TargetIds(
-                shot_ids=[s.id for s in empty if s.id is not None],
-                character_ids=[],
-            ),
+            stage=stage,
+            target_shot_ids=tuple(s.id for s in empty if s.id is not None),
         ),
     )
     run = result.run

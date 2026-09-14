@@ -27,6 +27,7 @@ export interface StageAttemptRow {
   attempt: number;
   execution_attempt: number;
   input_hash: string;
+  input_snapshot: string | null;
   idempotency_key: string;
   status: "started" | "succeeded" | "failed" | "cancelled";
   provider_request_id: string | null;
@@ -34,6 +35,20 @@ export interface StageAttemptRow {
   error: string | null;
   started_at: string;
   updated_at: string;
+}
+
+export interface BeginStageAttemptInput {
+  runId: number;
+  stage: string;
+  /** Frozen authoritative input; hashed here so resume never re-derives it. */
+  input: unknown;
+  executionAttempt: number;
+  /**
+   * Forces a fresh operation identity even when a non-terminal attempt exists.
+   * Set by explicit rerun / feedback invalidation / new execution attempt —
+   * never by crash recovery.
+   */
+  forceNew?: boolean;
 }
 
 const REQUIRED_RUNTIME_TABLES = [
@@ -68,6 +83,21 @@ export class EngineDatabase {
           "Run backend Alembic migrations before starting the engine.",
       );
     }
+  }
+
+  /**
+   * Run `fn` inside one SQLite transaction on this connection.
+   *
+   * `EngineDatabase` and `SharedDb` are two view classes over the SAME
+   * better-sqlite3 handle, so this is the single transaction boundary that
+   * makes "mutate business state + append its durable event" atomic. Without
+   * it a crash between the two leaves the HTTP state new while clients never
+   * receive the event (or vice versa).
+   *
+   * better-sqlite3 transactions are synchronous; `fn` must not await.
+   */
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
   }
 
   appendEvent(runId: number, projectId: number, type: string, payload: unknown): number {
@@ -135,24 +165,35 @@ export class EngineDatabase {
   }
 
   /**
-   * Persist stage identity before side effects. An interrupted "started" row is
-   * deliberately reused when the same input is resumed, keeping the same
-   * idempotency key across at-least-once retries.
+   * Persist stage identity before side effects, plus the exact input it saw.
+   *
+   * Resume must NOT re-derive identity from current database state. A stage
+   * mutates `character`/`shot`/`project` before it commits its checkpoint, so
+   * after a crash the recomputed input no longer matches the interrupted row;
+   * keying on it minted a NEW idempotency key and re-called the provider for
+   * one logical operation, destroying the at-least-once guarantee.
+   *
+   * Identity is therefore: `(run_id, stage)` plus "is there a non-terminal
+   * attempt?". A `started` row IS the interrupted operation and is reused
+   * as-is. A new attempt is created only when the previous one is terminal
+   * (succeeded/failed/cancelled/superseded) or when the caller explicitly
+   * forces one (rerun / feedback invalidation).
    */
-  beginStageAttempt(
-    runId: number,
-    stage: string,
-    inputHash: string,
-    executionAttempt: number,
-  ): StageAttemptRow {
-    const interrupted = this.db
-      .prepare(
-        `SELECT * FROM engine_stage_attempts
-         WHERE run_id = ? AND stage = ? AND input_hash = ? AND status = 'started'
-         ORDER BY attempt DESC LIMIT 1`,
-      )
-      .get(runId, stage, inputHash) as StageAttemptRow | undefined;
-    if (interrupted) return interrupted;
+  beginStageAttempt(input: BeginStageAttemptInput): StageAttemptRow {
+    const { runId, stage, input: stageInput, executionAttempt, forceNew = false } = input;
+    const frozen = JSON.stringify(stageInput ?? null);
+    const inputHash = createHash("sha256").update(frozen).digest("hex");
+
+    if (!forceNew) {
+      const interrupted = this.db
+        .prepare(
+          `SELECT * FROM engine_stage_attempts
+           WHERE run_id = ? AND stage = ? AND status = 'started'
+           ORDER BY attempt DESC LIMIT 1`,
+        )
+        .get(runId, stage) as StageAttemptRow | undefined;
+      if (interrupted) return interrupted;
+    }
 
     const latest = this.db
       .prepare(
@@ -168,8 +209,8 @@ export class EngineDatabase {
       .prepare(
         `INSERT INTO engine_stage_attempts
           (stage_attempt_id, run_id, stage, attempt, execution_attempt, input_hash,
-           idempotency_key, status, started_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'started',
+           input_snapshot, idempotency_key, status, started_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'started',
                  strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
       .run(
@@ -179,9 +220,19 @@ export class EngineDatabase {
         attempt,
         executionAttempt,
         inputHash,
+        frozen,
         idempotencyKey,
       );
     return this.stageAttemptById(stageAttemptId)!;
+  }
+
+  /** Frozen stage input recorded before the attempt's first side effect. */
+  stageAttemptInput(stageAttemptId: string): unknown {
+    const row = this.db
+      .prepare("SELECT input_snapshot FROM engine_stage_attempts WHERE stage_attempt_id = ?")
+      .get(stageAttemptId) as { input_snapshot: string | null } | undefined;
+    if (!row || row.input_snapshot === null) return null;
+    return JSON.parse(row.input_snapshot);
   }
 
   stageAttemptById(stageAttemptId: string): StageAttemptRow | null {

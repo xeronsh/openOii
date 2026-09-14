@@ -12,7 +12,6 @@ from app import main as main_module
 from app.schemas.project import RecoverySummaryRead
 from app.ws.manager import ws_manager
 
-
 class _FakeWebSocket:
     client_state = WebSocketState.CONNECTED
 
@@ -21,7 +20,6 @@ class _FakeWebSocket:
 
     async def send_json(self, payload: dict[str, Any]) -> None:
         self.sent.append(payload)
-
 
 class _InboundWebSocket:
     def __init__(self, messages: list[dict[str, Any]]) -> None:
@@ -41,7 +39,6 @@ class _InboundWebSocket:
     async def send_json(self, _payload: dict[str, Any]) -> None:
         return None
 
-
 class _FakeManager:
     def __init__(self) -> None:
         self.events: list[tuple[int, dict[str, Any]]] = []
@@ -55,7 +52,6 @@ class _FakeManager:
     async def send_event(self, project_id: int, event: dict[str, Any]) -> None:
         self.events.append((project_id, event))
 
-
 class _Result:
     def __init__(self, rows: list[Any]) -> None:
         self._rows = rows
@@ -65,7 +61,6 @@ class _Result:
 
     def all(self) -> list[Any]:
         return self._rows
-
 
 class _SessionContext:
     def __init__(self, rows: list[Any]) -> None:
@@ -80,7 +75,6 @@ class _SessionContext:
     async def execute(self, _statement: Any) -> _Result:
         return self._result
 
-
 def _patch_ws_app(monkeypatch: pytest.MonkeyPatch, manager: _FakeManager) -> None:
     monkeypatch.setattr(main_module, "ws_manager", manager)
     monkeypatch.setattr(
@@ -94,7 +88,6 @@ def _patch_ws_app(monkeypatch: pytest.MonkeyPatch, manager: _FakeManager) -> Non
         ),
     )
 
-
 def _ws_handler():
     app = main_module.create_app()
     return next(
@@ -102,7 +95,6 @@ def _ws_handler():
         for route in app.routes
         if getattr(route, "path", None) == "/ws/projects/{project_id}"
     )
-
 
 @pytest.mark.asyncio
 async def test_websocket_ping_echo(monkeypatch):
@@ -120,7 +112,6 @@ async def test_websocket_ping_echo(monkeypatch):
     assert (1, {"type": "connected", "data": {"project_id": 1}}) in manager.events
     assert (1, {"type": "pong", "data": {}}) in manager.events
     assert (1, {"type": "echo", "data": {"hello": "world"}}) in manager.events
-
 
 @pytest.mark.asyncio
 async def test_websocket_manager_enriches_recovery_payloads():
@@ -144,7 +135,6 @@ async def test_websocket_manager_enriches_recovery_payloads():
                 "recovery_summary": {
                     "project_id": 1,
                     "run_id": 7,
-                    "thread_id": "agent-run-7",
                     "current_stage": "script",
                     "next_stage": "character",
                     "preserved_stages": ["ideate"],
@@ -170,7 +160,6 @@ async def test_websocket_manager_enriches_recovery_payloads():
     assert recovery_summary["next_stage"] == "character"
     assert data["current_stage"] == "script"
 
-
 @pytest.mark.asyncio
 async def test_websocket_connection_replays_awaiting_payload(monkeypatch):
     project_id = 1
@@ -187,7 +176,6 @@ async def test_websocket_connection_replays_awaiting_payload(monkeypatch):
                 "recovery_summary": RecoverySummaryRead(
                     project_id=project_id,
                     run_id=run_id,
-                    thread_id=f"agent-run-{run_id}",
                     current_stage="ideate",
                     next_stage="script",
                     preserved_stages=["ideate"],
@@ -212,7 +200,6 @@ async def test_websocket_connection_replays_awaiting_payload(monkeypatch):
     assert events[1]["type"] == "run_awaiting_confirm"
     assert events[1]["data"]["run_id"] == run_id
     assert events[1]["data"]["gate"] == "director"
-
 
 @pytest.mark.asyncio
 async def test_websocket_connection_replays_run_progress_for_non_awaiting_run(monkeypatch):
@@ -252,7 +239,6 @@ async def test_websocket_connection_replays_run_progress_for_non_awaiting_run(mo
     assert events[1]["data"]["current_agent"] == "character"
     assert events[1]["data"]["progress"] == 0.65
 
-
 @pytest.mark.asyncio
 async def test_websocket_manager_scopes_project_updated_events_to_project_connections():
     fake_ws_1 = _FakeWebSocket()
@@ -284,7 +270,6 @@ async def test_websocket_manager_scopes_project_updated_events_to_project_connec
     assert project["video_url"] == "https://cdn.example.com/final.mp4"
     assert fake_ws_2.sent == []
 
-
 @pytest.mark.asyncio
 async def test_websocket_manager_rejects_invalid_project_updated_payload():
     ws_manager._conns.clear()
@@ -301,7 +286,6 @@ async def test_websocket_manager_rejects_invalid_project_updated_payload():
                 },
             },
         )
-
 
 @pytest.mark.asyncio
 async def test_websocket_manager_rejects_invalid_outbound_payload():

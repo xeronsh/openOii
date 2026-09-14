@@ -35,6 +35,7 @@ export function installEngineRuntimeSchema(db: SqliteDatabase.Database): void {
       attempt INTEGER NOT NULL,
       execution_attempt INTEGER NOT NULL DEFAULT 0,
       input_hash TEXT NOT NULL,
+      input_snapshot TEXT,
       idempotency_key TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL,
       provider_request_id TEXT,
@@ -51,7 +52,7 @@ export function installEngineRuntimeSchema(db: SqliteDatabase.Database): void {
   `);
 }
 
-/** Bring the historical app-schema fixture up to migration 0022. */
+/** Bring the historical app-schema fixture up to migration 0026. */
 export function installExecutionLeaseColumns(db: SqliteDatabase.Database): void {
   const existing = new Set(
     (db.prepare("PRAGMA table_info(agentrun)").all() as Array<{ name: string }>).map(
@@ -71,4 +72,16 @@ export function installExecutionLeaseColumns(db: SqliteDatabase.Database): void 
     if (!existing.has(name)) db.exec(`ALTER TABLE agentrun ADD COLUMN ${name} ${ddl}`);
   }
   db.exec("CREATE INDEX IF NOT EXISTS ix_agentrun_lease_token ON agentrun(lease_token)");
+
+  // Migration 0026: optimistic concurrency on the product entities.
+  for (const table of ["project", "character", "shot"]) {
+    const columns = new Set(
+      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(
+        (row) => row.name,
+      ),
+    );
+    if (!columns.has("revision")) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`);
+    }
+  }
 }

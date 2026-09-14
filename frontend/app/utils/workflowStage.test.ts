@@ -8,8 +8,11 @@ describe("workflowStage mapping", () => {
 		expect(toSimplifiedStage("plan_characters")).toBe("plan");
 		expect(toSimplifiedStage("render_shots")).toBe("render");
 		expect(toSimplifiedStage("compose_merge")).toBe("compose");
-		expect(toSimplifiedStage("add_audio")).toBe("compose");
+		expect(toSimplifiedStage("compose_approval")).toBe("compose");
+		// `review` is still a valid UI stage (the feedback path uses it), but it
+		// is no longer a pipeline stage: add_audio and review were removed.
 		expect(toSimplifiedStage("review")).toBe("review");
+		expect(toSimplifiedStage("add_audio")).toBeUndefined();
 	});
 
 	it("treats granular backend stage names as valid workflow stages", () => {
