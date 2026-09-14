@@ -290,6 +290,7 @@ function ProjectDraftForm({
 		setSaving(true);
 		try {
 			const updated = await projectsApi.update(projectId, {
+				expected_revision: project.revision,
 				title: title.trim() || project.title,
 				story: story.trim() || null,
 			});
@@ -344,6 +345,7 @@ function CharacterDraftForm({
 		setSaving(true);
 		try {
 			const updated = await charactersApi.update(character.id, {
+				expected_revision: character.revision,
 				name: textOrNull(draft.name),
 				description: textOrNull(draft.description),
 				visual_notes: textOrNull(draft.visual_notes),
@@ -427,6 +429,7 @@ function ShotDraftForm({ shot, disabled }: { shot: Shot; disabled: boolean }) {
 		setSaving(true);
 		try {
 			const updated = await shotsApi.update(shot.id, {
+				expected_revision: shot.revision,
 				description: textOrNull(draft.description),
 				scene: textOrNull(draft.scene),
 				action: textOrNull(draft.action),

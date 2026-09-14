@@ -23,6 +23,7 @@ from app.services.creative_control import (
     invalidate_shot_storyboard_outputs,
 )
 from app.services.file_cleaner import delete_file
+from app.services.revision import assert_expected_revision, commit_versioned
 from app.ws.manager import ConnectionManager
 
 router = APIRouter()
@@ -107,6 +108,8 @@ async def update_shot(
     project_id = shot.project_id
 
     data = payload.model_dump(exclude_unset=True)
+    data.pop("expected_revision", None)
+    assert_expected_revision(shot, payload.expected_revision, entity="shot")
     character_ids_updated = False
     if "character_ids" in data:
         character_ids = list(
@@ -121,7 +124,7 @@ async def update_shot(
     session.add(shot)
     if character_ids_updated:
         await _sync_shot_character_bindings(session, shot)
-    await session.commit()
+    await commit_versioned(session, shot, entity="shot")
     await session.refresh(shot)
 
     await ws.send_event(
@@ -143,7 +146,7 @@ async def approve_shot(
     await _validate_shot_character_ids(session, shot.project_id, list(shot.character_ids))
     shot.freeze_approval()
     session.add(shot)
-    await session.commit()
+    await commit_versioned(session, shot, entity="shot")
     await session.refresh(shot)
 
     payload = _shot_read(shot)
@@ -180,7 +183,7 @@ async def regenerate_shot(
 
     if payload.type == "image":
         await invalidate_shot_storyboard_outputs(session, project, shot)
-        await session.commit()
+        await commit_versioned(session, shot, entity="shot")
         await session.refresh(shot)
         await session.refresh(project)
         await ws.send_event(
@@ -189,7 +192,7 @@ async def regenerate_shot(
         stage = "render_shots"
     else:
         await invalidate_shot_clip_output(session, project)
-        await session.commit()
+        await commit_versioned(session, project, entity="project")
         await session.refresh(project)
         stage = "compose_videos"
 
@@ -235,7 +238,7 @@ async def delete_shot(
 
     # 删除数据库记录
     await session.delete(shot)
-    await session.commit()
+    await commit_versioned(session, shot, entity="shot")
 
     # 发送 WebSocket 事件
     await ws.send_event(project_id, {"type": "shot_deleted", "data": {"shot_id": shot_id}})

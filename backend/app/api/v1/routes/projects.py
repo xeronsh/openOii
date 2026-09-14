@@ -44,6 +44,7 @@ from app.services.creative_control import (
 )
 from app.services.file_cleaner import get_local_path
 from app.services.project_deletion import delete_project_by_id, delete_projects_by_ids
+from app.services.revision import assert_expected_revision, commit_versioned
 from app.services.provider_resolution import resolve_project_provider_settings_async
 from app.ws.manager import ConnectionManager
 
@@ -61,6 +62,7 @@ async def _project_provider_settings(
 async def _project_read_model(project: Project, settings: Settings) -> ProjectRead:
     return ProjectRead(
         id=project.id if project.id is not None else 0,
+        revision=project.revision,
         title=project.title,
         story=project.story,
         style=project.style,
@@ -128,7 +130,7 @@ async def create_project(
         skill_id=skill_defaults["skill_id"],
     )
     session.add(project)
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
     await session.refresh(project)
 
     if universe is not None:
@@ -183,6 +185,8 @@ async def update_project_outline(
     project = await get_or_404(session, Project, project_id)
     outline = dict(project.story_outline or {})
     data = payload.model_dump(exclude_unset=True)
+    data.pop("expected_revision", None)
+    assert_expected_revision(project, payload.expected_revision, entity="project")
     visual_bible = data.pop("visual_bible", None)
     summary = data.pop("summary", None)
     outline_approved = data.pop("outline_approved", None)
@@ -200,7 +204,7 @@ async def update_project_outline(
         project.outline_approved = False
     project.updated_at = utcnow()
     session.add(project)
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
     await session.refresh(project)
     return StoryOutlineRead.model_validate(project.story_outline)
 
@@ -228,13 +232,15 @@ async def update_project(
 ):
     project = await get_or_404(session, Project, project_id)
     data = payload.model_dump(exclude_unset=True)
+    data.pop("expected_revision", None)
+    assert_expected_revision(project, payload.expected_revision, entity="project")
     for k, v in data.items():
         if k == "style":
             v = (v or "").strip() or "anime"
         setattr(project, k, v)
     project.updated_at = utcnow()
     session.add(project)
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
     await session.refresh(project)
     return await _project_read_model(project, settings)
 
@@ -290,7 +296,7 @@ async def upload_reference_image(
     project.reference_images = images
     project.updated_at = utcnow()
     session.add(project)
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
 
     return {"url": url_path, "reference_images": images}
 
@@ -363,7 +369,7 @@ async def reorder_shots(
         project.status = "superseded"
         session.add(project)
 
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
 
     ordered_res = await session.execute(
         select(Shot).where(shot_project_id_col == project_id).order_by(shot_order_col.asc())
@@ -386,6 +392,7 @@ async def reorder_shots(
                 "data": {
                     "project": {
                         "id": project_id,
+                        "revision": project.revision,
                         "status": project.status,
                         "video_url": project.video_url,
                     },
@@ -446,7 +453,7 @@ async def fill_empty_shots(
         stage = "compose_videos"
         resource_type = "shot_fill_video"
 
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
     await session.refresh(project)
 
     await ws.send_event(project_id, await project_updated_event(session, project))

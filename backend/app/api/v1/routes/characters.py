@@ -33,6 +33,7 @@ from app.services.creative_control import (
     invalidate_character_downstream_outputs,
 )
 from app.services.file_cleaner import delete_file
+from app.services.revision import assert_expected_revision, commit_versioned
 from app.ws.manager import ConnectionManager
 
 router = APIRouter()
@@ -53,11 +54,13 @@ async def update_character(
     character = await get_or_404(session, Character, character_id)
 
     data = payload.model_dump(exclude_unset=True)
+    data.pop("expected_revision", None)
+    assert_expected_revision(character, payload.expected_revision, entity="character")
     for k, v in data.items():
         setattr(character, k, v)
 
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     await ws.send_event(
@@ -77,7 +80,7 @@ async def approve_character(
 
     character.freeze_approval()
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     payload = _character_read(character)
@@ -123,7 +126,7 @@ async def regenerate_character(
         image_url=payload.image_url,
     )
     await invalidate_character_downstream_outputs(session, project, character_id)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
     await session.refresh(project)
 
@@ -163,7 +166,7 @@ async def delete_character(
 
     # 删除数据库记录
     await session.delete(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
 
     # 发送 WebSocket 事件
     await ws.send_event(
@@ -244,6 +247,8 @@ async def update_character_bible(
 
     visual_notes_updated = False
     data = payload.model_dump(exclude_unset=True)
+    data.pop("expected_revision", None)
+    assert_expected_revision(character, payload.expected_revision, entity="character")
 
     if "visual_notes" in data:
         character.visual_notes = data["visual_notes"]
@@ -252,7 +257,7 @@ async def update_character_bible(
         character.reference_images = data["reference_images"]
 
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     await _send_bible_updated_event(ws, character, visual_notes_updated=visual_notes_updated)
@@ -287,7 +292,7 @@ async def add_reference_image(
     character.reference_images = images
 
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     await _send_bible_updated_event(ws, character)
@@ -325,7 +330,7 @@ async def delete_reference_image(
     character.reference_images = images
 
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
 
     await _send_bible_updated_event(ws, character)
 
@@ -364,7 +369,7 @@ async def compute_character_embedding(
 
     character.face_embedding = _json.dumps(embedding)
     session.add(character)
-    await session.commit()
+    await commit_versioned(session, character, entity="character")
     await session.refresh(character)
 
     await _send_bible_updated_event(ws, character)

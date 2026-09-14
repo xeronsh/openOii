@@ -48,7 +48,7 @@ function ProjectRow({
 	onCancelRename,
 	onRenameChange,
 }: {
-	project: { id: number; title: string | null; status: string; updated_at: string; style: string | null; target_shot_count: number | null };
+	project: { id: number; revision?: number; title: string | null; status: string; updated_at: string; style: string | null; target_shot_count: number | null };
 	isSelected: boolean;
 	onToggle: (checked: boolean) => void;
 	onNavigate: () => void;
@@ -164,8 +164,8 @@ export function HistoryDrawer({ open, onClose, onNavigate }: HistoryDrawerProps)
 	});
 
 	const renameMutation = useMutation({
-		mutationFn: ({ id, title }: { id: number; title: string }) =>
-			projectsApi.update(id, { title }),
+		mutationFn: ({ id, revision, title }: { id: number; revision?: number; title: string }) =>
+			projectsApi.update(id, { expected_revision: revision, title }),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["projects"] });
 			setRenamingId(null);
@@ -206,7 +206,8 @@ export function HistoryDrawer({ open, onClose, onNavigate }: HistoryDrawerProps)
 
 	const handleConfirmRename = () => {
 		if (renamingId !== null && renameValue.trim()) {
-			renameMutation.mutate({ id: renamingId, title: renameValue.trim() });
+			const row = projects?.find((item) => item.id === renamingId);
+			renameMutation.mutate({ id: renamingId, revision: row?.revision, title: renameValue.trim() });
 		}
 	};
 

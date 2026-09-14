@@ -15,6 +15,7 @@ from app.config import Settings
 from app.models.project import Character, Project, Shot
 from app.schemas.export import ExportResponse
 from app.services.export_service import ExportService
+from app.services.revision import commit_versioned
 from app.ws.manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ async def _append_project_export(
         exports.append(download_url)
         project.exports = exports
         session.add(project)
-    await session.commit()
+    await commit_versioned(session, project, entity="project")
 
 
 async def _run_export_task(

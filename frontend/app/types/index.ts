@@ -46,7 +46,7 @@ export interface CreateProjectPayload extends ProjectProviderOverridesPayload {
 	chapter_title?: string | null;
 }
 
-export type UpdateProjectPayload = Partial<
+export type UpdateProjectPayload = { expected_revision?: number } & Partial<
 	Pick<
 		Project,
 			| "title"
@@ -83,6 +83,7 @@ export interface StoryOutline {
 }
 
 export interface StoryOutlineUpdatePayload {
+	expected_revision?: number;
 	logline?: string | null;
 	genre?: string[] | null;
 	themes?: string[] | null;
@@ -98,6 +99,8 @@ export interface StoryOutlineUpdatePayload {
 // Project types
 export interface Project {
 	id: number;
+	/** Optimistic-concurrency version; echoes on writes as expected_revision. */
+	revision?: number;
 	title: string;
 	story: string | null;
 	style: string | null;
@@ -125,6 +128,8 @@ export interface Project {
 
 export interface Character {
 	id: number;
+	/** Optimistic-concurrency version; echoes on writes as expected_revision. */
+	revision?: number;
 	project_id: number;
 	name: string;
 	description: string | null;
@@ -142,6 +147,8 @@ export interface Character {
 
 export interface Shot {
 	id: number;
+	/** Optimistic-concurrency version; echoes on writes as expected_revision. */
+	revision?: number;
 	project_id: number;
 	order: number;
 	description: string;
@@ -183,6 +190,7 @@ export interface Shot {
 export type ReviewState = "draft" | "approved" | "superseded";
 
 export interface CharacterUpdatePayload {
+	expected_revision?: number;
 	name?: string | null;
 	description?: string | null;
 	image_url?: string | null;
@@ -191,6 +199,7 @@ export interface CharacterUpdatePayload {
 }
 
 export interface ShotUpdatePayload {
+	expected_revision?: number;
 	order?: number | null;
 	description?: string | null;
 	prompt?: string | null;

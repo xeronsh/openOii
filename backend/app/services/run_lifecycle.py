@@ -143,6 +143,7 @@ async def project_updated_event(
         "data": {
             "project": {
                 "id": project.id,
+                "revision": project.revision,
                 "video_url": project.video_url,
                 "status": project.status,
                 "blocking_clips": await collect_project_blocking_clips(session, project),

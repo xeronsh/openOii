@@ -507,7 +507,10 @@ function ShotCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "shot" }>
 						disabled={editLocked}
 						displayClassName="line-clamp-3 p-0.5 text-xs leading-relaxed text-bc-muted"
 						save={(next) =>
-							saveShotPatch(node.entityId, { description: next || null })
+							saveShotPatch(node.entityId, {
+								expected_revision: node.shot.revision,
+								description: next || null,
+							})
 						}
 					/>
 				</div>
@@ -520,7 +523,10 @@ function ShotCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "shot" }>
 						disabled={editLocked}
 						displayClassName="line-clamp-2 p-0.5 text-xs italic text-primary-ink"
 						save={(next) =>
-							saveShotPatch(node.entityId, { dialogue: next || null })
+							saveShotPatch(node.entityId, {
+								expected_revision: node.shot.revision,
+								dialogue: next || null,
+							})
 						}
 					/>
 				</div>

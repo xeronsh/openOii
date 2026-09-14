@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, Integer, JSON
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.db.utils import utcnow
@@ -37,10 +37,23 @@ class Project(SQLModel, table=True):
     skill_id: Optional[str] = Field(default=None, index=True)
     reimagine_meta: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     # Optimistic concurrency: the engine and the HTTP API both write this row.
-    # A writer states the revision it read; a stale write affects zero rows.
-    revision: int = Field(default=1, ge=1, sa_column_kwargs={"server_default": "1"})
+    # The mapper-level version_id_col turns every SQLAlchemy write into a
+    # compare-and-set on revision (UPDATE ... WHERE revision = read-value,
+    # bump on success); a stale or concurrent writer flush fails with
+    # StaleDataError instead of silently clobbering the other writer's edit.
+    _revision_col = Column(
+        "revision",
+        Integer,
+        nullable=False,
+        default=1,  # client-side: keeps version_id out of RETURNING paths
+    )
+    revision: int = Field(default=1, ge=1, sa_column=_revision_col)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+    # Default version_id_generator: ORM bumps revision (+1) on every flush and
+    # asserts the previously-read value in the UPDATE predicate.
+    __mapper_args__ = {"version_id_col": _revision_col}
 
     universe: Optional["Universe"] = Relationship(back_populates="projects")
     universe_link: Optional["UniverseProjectLink"] = Relationship(back_populates="project")
@@ -71,8 +84,18 @@ class Character(SQLModel, table=True):
     approved_image_url: Optional[str] = None
     approved_at: Optional[datetime] = None
     approval_version: int = Field(default=0, ge=0)
-    # Optimistic concurrency: the engine and the HTTP API both write this row.
-    revision: int = Field(default=1, ge=1, sa_column_kwargs={"server_default": "1"})
+    # Mapper-level compare-and-set on revision; see Project.revision.
+    _revision_col = Column(
+        "revision",
+        Integer,
+        nullable=False,
+        default=1,  # client-side: keeps version_id out of RETURNING paths
+    )
+    revision: int = Field(default=1, ge=1, sa_column=_revision_col)
+
+    # Default version_id_generator: ORM bumps revision (+1) on every flush and
+    # asserts the previously-read value in the UPDATE predicate.
+    __mapper_args__ = {"version_id_col": _revision_col}
 
     project: Optional[Project] = Relationship(back_populates="characters")
 
@@ -138,7 +161,18 @@ class Shot(SQLModel, table=True):
     approved_at: Optional[datetime] = None
     approval_version: int = Field(default=0, ge=0)
     # Optimistic concurrency: the engine and the HTTP API both write this row.
-    revision: int = Field(default=1, ge=1, sa_column_kwargs={"server_default": "1"})
+    # Mapper-level compare-and-set on revision; see Project.revision.
+    _revision_col = Column(
+        "revision",
+        Integer,
+        nullable=False,
+        default=1,  # client-side: keeps version_id out of RETURNING paths
+    )
+    revision: int = Field(default=1, ge=1, sa_column=_revision_col)
+
+    # Default version_id_generator: ORM bumps revision (+1) on every flush and
+    # asserts the previously-read value in the UPDATE predicate.
+    __mapper_args__ = {"version_id_col": _revision_col}
 
     project: Optional[Project] = Relationship(back_populates="shots")
     character_bindings: List["ShotCharacterBinding"] = Relationship(

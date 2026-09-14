@@ -126,6 +126,7 @@ export function characterApprovalState(c: CharacterRow): "draft" | "approved" | 
 export function characterReadPayload(c: CharacterRow): Record<string, unknown> {
   return {
     id: c.id,
+    revision: c.revision,
     project_id: c.project_id,
     name: c.name,
     description: c.description,
@@ -145,6 +146,7 @@ export function characterReadPayload(c: CharacterRow): Record<string, unknown> {
 export function shotReadPayload(s: ShotRow): Record<string, unknown> {
   return {
     id: s.id,
+    revision: s.revision,
     project_id: s.project_id,
     order: s.order,
     description: s.description,

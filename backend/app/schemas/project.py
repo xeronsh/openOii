@@ -78,6 +78,7 @@ class StoryOutlineRead(BaseModel):
 
 
 class StoryOutlineUpdate(BaseModel):
+    expected_revision: int | None = Field(default=None, ge=1)
     logline: str | None = None
     genre: list[str] | None = None
     themes: list[str] | None = None
@@ -126,6 +127,7 @@ class ProjectUpdate(BaseModel):
     chapter_number: int | None = None
     chapter_title: str | None = None
     skill_id: str | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class ProjectBatchDeleteRequest(BaseModel):
@@ -136,6 +138,7 @@ class ProjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    revision: int = 1
     title: str
     story: str | None
     style: str | None
@@ -168,6 +171,7 @@ class CharacterRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    revision: int = 1
     project_id: int
     name: str
     description: str | None
@@ -200,6 +204,7 @@ class ShotRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    revision: int = 1
     project_id: int
     order: int
     description: str
@@ -254,6 +259,7 @@ class ShotUpdate(BaseModel):
     sfx: str | None = None
     seed: int | None = None
     character_ids: list[int] | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class ShotReorderItem(BaseModel):
@@ -275,6 +281,7 @@ class CharacterUpdate(BaseModel):
     image_url: str | None = None
     visual_notes: str | None = None
     reference_images: list[str] | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class RegenerateRequest(BaseModel):
@@ -439,6 +446,7 @@ class CharacterBibleUpdate(BaseModel):
 
     visual_notes: str | None = None
     reference_images: list[str] | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class ReferenceImageCreate(BaseModel):
