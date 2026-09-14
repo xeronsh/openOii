@@ -8,14 +8,16 @@ import {
   type TextProviderSnapshot,
 } from "./llm.js";
 import { SharedDb, parseJsonColumn } from "./shared-db.js";
+import { PipelineRunner } from "./pipeline/runner.js";
 import {
-  PipelineRunner,
+  applyInvalidationPlan,
   type InvalidationPlan,
-} from "./pipeline/runner.js";
+} from "./invalidation.js";
 import { PRODUCTION_STAGE_SEQUENCE, type StageId, WORKFLOW_VERSION } from "./contract.js";
 
 const LEASE_TTL_SECONDS = 120;
 const LEASE_HEARTBEAT_MS = 30_000;
+const INVALIDATION_CHECKPOINT = "__invalidation__";
 
 export function createEngineApp(dbPath: string) {
   const db = new EngineDatabase(dbPath);
@@ -69,9 +71,22 @@ export function createEngineApp(dbPath: string) {
       return false;
     }
 
-    request.invalidationPlan ??= runInvalidationPlan(runId);
     const context = runContext(runId);
     const fencedShared = shared.fenced(runId, leaseToken);
+    const plan = runInvalidationPlan(runId);
+    if (plan && !db.checkpointStages(runId).includes(INVALIDATION_CHECKPOINT)) {
+      // Artifact invalidation is part of execution ownership, so it must happen
+      // only after the fencing lease is acquired. The marker makes replay safe:
+      // crash before marker -> idempotently reapply; crash after marker -> skip.
+      applyInvalidationPlan(fencedShared, request.projectId, plan);
+      db.saveCheckpoint(runId, INVALIDATION_CHECKPOINT, {
+        applied_at: new Date().toISOString(),
+        version: plan.version,
+        start_stage: plan.start_stage,
+        scope: plan.scope,
+      });
+    }
+
     const runner = new PipelineRunner(db, fencedShared, runScopedLlm(context), context);
     pipelines.set(runId, runner);
 
