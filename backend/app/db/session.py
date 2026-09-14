@@ -134,8 +134,9 @@ async def init_db() -> None:
                 lease_expires_at=None,
             )
         )
-        if result.rowcount:
-            log.warning("init_db: reconciled %s stale workflow run(s)", result.rowcount)
+        reconciled = int(getattr(result, "rowcount", 0) or 0)
+        if reconciled:
+            log.warning("init_db: reconciled %s stale workflow run(s)", reconciled)
 
         await session.execute(
             update(Project)
