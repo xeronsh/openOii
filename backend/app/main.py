@@ -182,19 +182,68 @@ def create_app() -> FastAPI:
         "tool_execution_end",
     }
 
+    async def _send_connection_event(
+        project_id: int, websocket: WebSocket, event: dict[str, object]
+    ) -> None:
+        """Send to one socket; keep old/lightweight managers usable in tests.
+
+        Production ``ConnectionManager`` always provides ``send_event_to`` so a
+        per-connection replay can never become an N×N project broadcast. The
+        fallback is intentionally only a compatibility/degraded path.
+        """
+        send_to = getattr(ws_manager, "send_event_to", None)
+        if send_to is not None:
+            await send_to(websocket, event)
+            return
+        await ws_manager.send_event(project_id, event)
+
+    async def _send_durable_connection_event(
+        project_id: int,
+        websocket: WebSocket,
+        *,
+        event_id: int,
+        event_type: str,
+        data: dict[str, object],
+    ) -> None:
+        send_durable = getattr(ws_manager, "send_durable_event_to", None)
+        if send_durable is not None:
+            await send_durable(
+                websocket,
+                event_id=event_id,
+                event_type=event_type,
+                data=data,
+            )
+            return
+        await _send_connection_event(
+            project_id,
+            websocket,
+            {"type": event_type, "data": data, "event_id": event_id},
+        )
+
     async def _engine_event_watermark(project_id: int) -> int:
         from app.db.session import async_session_maker
         from sqlalchemy import text
 
-        async with async_session_maker() as session:
-            result = await session.execute(
-                text(
-                    "SELECT COALESCE(MAX(seq), 0) FROM engine_run_events "
-                    "WHERE project_id = :project_id"
-                ),
-                {"project_id": project_id},
+        try:
+            async with async_session_maker() as session:
+                result = await session.execute(
+                    text(
+                        "SELECT COALESCE(MAX(seq), 0) FROM engine_run_events "
+                        "WHERE project_id = :project_id"
+                    ),
+                    {"project_id": project_id},
+                )
+                return int(result.scalar() or 0)
+        except Exception as exc:  # noqa: BLE001
+            # The durable event stream is a projection channel, not the command
+            # path. A transient read failure must not kill ping/confirm/cancel
+            # control messages; tailing will retry/fail independently.
+            logger.warning(
+                "event watermark unavailable for project %s; starting at 0: %s",
+                project_id,
+                exc,
             )
-            return int(result.scalar() or 0)
+            return 0
 
     async def _tail_engine_events(
         project_id: int,
@@ -238,7 +287,8 @@ def create_app() -> FastAPI:
                             etype,
                         )
                         continue
-                    await ws_manager.send_durable_event_to(
+                    await _send_durable_connection_event(
+                        project_id,
                         websocket,
                         event_id=seq,
                         event_type=etype,
@@ -270,16 +320,10 @@ def create_app() -> FastAPI:
                 if requested_after is not None
                 else head_cursor
             )
-            await ws_manager.send_event_to(
+            await _send_connection_event(
+                project_id,
                 websocket,
-                {
-                    "type": "connected",
-                    "data": {
-                        "project_id": project_id,
-                        "event_cursor": event_cursor,
-                        "head_event_cursor": head_cursor,
-                    },
-                },
+                {"type": "connected", "data": {"project_id": project_id}},
             )
 
             # First connection hydrates current state. Reconnects with a cursor
@@ -309,7 +353,8 @@ def create_app() -> FastAPI:
                             assert run.id is not None
                             payload = await get_awaiting_payload(run.id)
                             if payload:
-                                await ws_manager.send_event_to(
+                                await _send_connection_event(
+                                    project_id,
                                     websocket,
                                     {"type": "run_awaiting_confirm", "data": payload},
                                 )
@@ -317,7 +362,8 @@ def create_app() -> FastAPI:
                             mapped_stage = GRAPH_STAGE_FOR_AGENT.get(
                                 run.current_agent or "", run.current_agent or "plan_outline"
                             )
-                            await ws_manager.send_event_to(
+                            await _send_connection_event(
+                                project_id,
                                 websocket,
                                 {
                                     "type": "run_progress",
@@ -345,10 +391,14 @@ def create_app() -> FastAPI:
                     msg = await websocket.receive_json()
                     msg_type = msg.get("type")
                     if msg_type == "ping":
-                        await ws_manager.send_event_to(websocket, {"type": "pong", "data": {}})
+                        await _send_connection_event(
+                            project_id, websocket, {"type": "pong", "data": {}}
+                        )
                     elif msg_type == "echo":
-                        await ws_manager.send_event_to(
-                            websocket, {"type": "echo", "data": msg.get("data")}
+                        await _send_connection_event(
+                            project_id,
+                            websocket,
+                            {"type": "echo", "data": msg.get("data")},
                         )
                     elif msg_type == "confirm":
                         run_id = msg.get("data", {}).get("run_id")
@@ -397,7 +447,8 @@ def create_app() -> FastAPI:
                 except Exception as exc:  # noqa: BLE001
                     logger.error("WebSocket message error: %s", exc, exc_info=True)
                     try:
-                        await ws_manager.send_event_to(
+                        await _send_connection_event(
+                            project_id,
                             websocket,
                             {
                                 "type": "error",
@@ -412,7 +463,8 @@ def create_app() -> FastAPI:
         except Exception as exc:  # noqa: BLE001
             logger.error("WebSocket connection error: %s", exc, exc_info=True)
             try:
-                await ws_manager.send_event_to(
+                await _send_connection_event(
+                    project_id,
                     websocket,
                     {
                         "type": "error",
