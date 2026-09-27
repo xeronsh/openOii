@@ -3,6 +3,8 @@
 - 状态:Accepted(2026-02-14)
 - 关联:`docs/adr/0004-pi-engine-sqlite.md`(前序迁移)、`docs/pi-core-sqlite-migration.md`(迁移执行记录)、AGENTS.md
 
+> 当前状态注记（2026-09-25）：本 ADR 记录接受时的实现。阶段契约现以 `contracts/workflow.json` 为唯一来源并生成 backend、engine、frontend 镜像；Engine 也已接管 targeted rerun、资源失效和 Python media helper 调用。
+
 ## 背景
 
 ADR 0004 把生成编排迁到 pi-agent-core sidecar + 单文件 SQLite，但刻意保留了
@@ -52,7 +54,7 @@ ADR 0004 把生成编排迁到 pi-agent-core sidecar + 单文件 SQLite，但刻
 
 负/注意:
 - **不再有存储回退**。PostgreSQL 部署路径消失；需要多实例写入的能力也没有了
-  （`task_manager` 仍是进程内的，本来就只单 worker 安全）。
+  （Engine 子进程所有权仍由 backend 进程持有，因此仍只支持单 worker）。
 - 阶段契约仍是三份镜像（`app/orchestration.py` 权威 + `engine/src/contract.ts`
   + `frontend/app/utils/workflowStage.ts`）。本轮**没有**引入 codegen；漂移风险靠测试
   断言而非生成器控制。要根除需另立工作。

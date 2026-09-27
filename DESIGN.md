@@ -140,7 +140,7 @@ px 数值，tokens.css 不保留 rem 副本（避免两套数字漂移）。
 | `--leading-tight` | `leading-tight` | ~~`leading-4`~~ |
 | `--rhythm-zone` | `gap-5` | ~~`gap-[var(--rhythm-zone)]`~~ |
 
-不透明度阶梯只允许 5 的倍数（`base-content/8` 这类随手档已收敛）。
+不透明度阶梯只允许 5 的倍数（`ink/8` 这类随手档已收敛）。
 focus ring 不手写：全局 `:focus-visible` 已是 2px primary outline，别再加 `focus-visible:outline-*` / `ring-*`。
 执行者：`app/styles/designContract.test.ts`（几何）+ `themeContrast.test.ts`（颜色）。
 
@@ -186,13 +186,13 @@ The palette is a CMYK printing system translated to a UI: Cyan for structural el
 - **Ink Cyan** (#2AA8B8): Tertiary accent, card-comic first shadow layer, info semantic state. The cyan plate in CMYK, used structurally in offset shadows and as a registration-mark accent. Dark theme shifts to #40C0D0.
 
 ### Neutral
-- **Workshop Cream** (#FAFAF5): Base-100 surface in light theme. Warm paper white, tinted yellow to avoid clinical sterility.
-- **Workshop Linen** (#F0EFE6): Base-200 in light theme. Sidebar and panel backgrounds. Slightly cooler cream.
-- **Workshop Ecru** (#E2E0D4): Base-300 in light theme. Elevated surfaces, input backgrounds, speech-bubble fills.
+- **Workshop Cream** (#FAFAF5): Paper-100 surface in light theme. Warm paper white, tinted yellow to avoid clinical sterility.
+- **Workshop Linen** (#F0EFE6): Paper-200 in light theme. Sidebar and panel backgrounds. Slightly cooler cream.
+- **Workshop Ecru** (#E2E0D4): Paper-300 in light theme. Elevated surfaces, input backgrounds, speech-bubble fills.
 - **Workshop Text** (#2C2C3A): Primary text in light theme. Near-black with blue undertone for depth.
-- **Pressroom Base** (#16161E): Base-100 surface in dark theme. Deep ink-black with blue undertone.
-- **Pressroom Surface** (#1E1E28): Base-200 in dark theme. Sidebar and panel layer.
-- **Pressroom Elevated** (#28283A): Base-300 in dark theme. Input backgrounds, elevated cards.
+- **Pressroom Base** (#16161E): Paper-100 surface in dark theme. Deep ink-black with blue undertone.
+- **Pressroom Surface** (#1E1E28): Paper-200 in dark theme. Sidebar and panel layer.
+- **Pressroom Elevated** (#28283A): Paper-300 in dark theme. Input backgrounds, elevated cards.
 - **Pressroom Text** (#D8D8E8): Primary text in dark theme. Warm white with blue cast.
 
 ### Named Rules
@@ -230,11 +230,11 @@ The palette is a CMYK printing system translated to a UI: Cyan for structural el
 The Comic Workbench uses CMYK offset shadows as structural elevation. Shadows are not ambient (they don't simulate light falling on objects); they are offset-printing registration marks that communicate layer identity. Each shadow layer is a "plate" with a specific color role.
 
 ### Shadow Vocabulary
-- **Brutal** (`4px 4px 0px 0px oklch(var(--bc) / 0.3)`): Default card elevation. Single-plate offset shadow in the base-content color. Used on card-doodle, btn-doodle.
-- **Brutal Small** (`2px 2px 0px 0px oklch(var(--bc) / 0.3)`): Subtle elevation for small elements (chips, tags, inline badges).
-- **Brutal Large** (`6px 6px 0px 0px oklch(var(--bc) / 0.3)`): Hover-state elevation. The shadow grows when the card is lifted.
+- **Brutal** (`4px 4px 0px 0px rgb(var(--color-ink) / 0.3)`): Default card elevation. Single-plate offset shadow in the ink color. Used on card-doodle and btn-doodle.
+- **Brutal Small** (`2px 2px 0px 0px rgb(var(--color-ink) / 0.3)`): Subtle elevation for small elements (chips, tags, inline badges).
+- **Brutal Large** (`6px 6px 0px 0px rgb(var(--color-ink) / 0.3)`): Hover-state elevation. The shadow grows when the card is lifted.
 - **Comic** (`4px 4px 0px 0px oklch(var(--cmyk-cyan) / 0.7), 7px 7px 0px 0px oklch(var(--cmyk-magenta) / 0.5)`): Two-plate CMYK shadow. Cyan first layer, magenta second layer, both theme-aware via `--cmyk-cyan` / `--cmyk-magenta`. Used on card-comic. Signals "this element has a distinct visual identity."
-- **Comic Magenta** (`4px 4px 0px 0px oklch(var(--cmyk-magenta) / 0.7), 7px 7px 0px 0px oklch(var(--bc) / 0.3)`): Magenta first layer. Used for emphasis variants, pressed states, or elements that demand attention.
+- **Comic Magenta** (`4px 4px 0px 0px oklch(var(--cmyk-magenta) / 0.7), 7px 7px 0px 0px rgb(var(--color-ink) / 0.3)`): Magenta first layer. Used for emphasis variants, pressed states, or elements that demand attention.
 - **Comic Pop** (`5px 5px 0px 0px oklch(var(--cmyk-cyan) / 0.8), 9px 9px 0px 0px oklch(var(--cmyk-magenta) / 0.6)`): Larger CMYK shadow. Hover state for comic elements. The expanded offset signals "this plate has shifted during printing."
 
 ### Tonal Layering
@@ -251,15 +251,15 @@ The Comic Workbench uses CMYK offset shadows as structural elevation. Shadows ar
 
 ### Buttons
 - **Shape:** Rounded (8px), bold 3px border, uppercase tracking
-- **Primary (Inkwell Gold):** `btn-doodle` with `bg-primary text-primary-content`. 3px border in `base-content/30`, brutal shadow, font-heading bold. Padding: md (20px 10px), lg (28px 12px).
+- **Primary (Inkwell Gold):** `btn-doodle` with `bg-primary text-primary-content`. 3px border in `ink/30`, brutal shadow, font-heading bold. Padding: md (20px 10px), lg (28px 12px).
 - **Secondary (Press Magenta):** `bg-secondary text-secondary-content`. Same shadow model.
 - **Accent (Ink Cyan):** `bg-accent text-accent-content`. Same shadow model.
-- **Ghost:** Transparent background, no border, no shadow. Hover adds `bg-base-200` and `shadow-brutal-sm`.
+- **Ghost:** Transparent background, no border, no shadow. Hover adds `bg-paper-200` and `shadow-brutal-sm`.
 - **Error:** `bg-error text-error-content`. Same shadow model.
 - **Hover:** Translate -0.5px, shadow expands from brutal to brutal-lg (or comic to comic-pop for comic variants).
 - **Active:** Translate +1px, shadow collapses to none. The button physically presses into the surface.
 - **Disabled:** 50% opacity, cursor-not-allowed. No hover or active transforms.
-- **Loading:** DaisyUI spinner replaces content. All interaction blocked.
+- **Loading:** Project-owned CSS spinner replaces content. All interaction blocked.
 
 ### Cards / Containers
 - **card-doodle:** Rounded-xl (16px), 3px border, brutal shadow. Background: Workshop Cream. Hover: -0.5px translate, shadow to brutal-lg. The default card for content sections.
@@ -267,25 +267,25 @@ The Comic Workbench uses CMYK offset shadows as structural elevation. Shadows ar
 - **Internal padding:** 24px (p-6) standard, 16px (p-4) compact.
 
 ### Inputs / Fields
-- **input-doodle:** 3px border in `base-content/30`, rounded-lg (8px), Workshop Cream background. Focus: border shifts to primary (Inkwell Gold). No glow, no ring, just a decisive border-color change.
+- **input-doodle:** 3px border in `ink/30`, rounded-lg (8px), Workshop Cream background. Focus: border shifts to primary (Inkwell Gold). No glow, no ring, just a decisive border-color change.
 - **Error state:** Border shifts to error color (`#C03A3A` light / `#E86868` dark). Error message in error color below.
 - **Label:** font-heading medium weight, sitting above the input.
 
 ### Chips / Tags
-- **Style:** Rounded-full, thin border, bg-base-200 surface. Selected state uses the accent color (Ink Cyan) as background tint.
-- **State:** Unselected: base-200 bg, base-content text. Selected: accent/10 bg, accent text with accent border.
+- **Style:** Rounded-full, thin border, paper-200 surface. Selected state uses the accent color (Ink Cyan) as background tint.
+- **State:** Unselected: paper-200 background, ink text. Selected: accent/10 background, accent text with accent border.
 
 ### Navigation
 - **Sidebar:** 288px overlay panel (18rem, `--workbench-sidebar`), Pressroom Surface / Workshop Linen background. Active project: left border highlight in Inkwell Gold (3px). Project names in font-heading, compact row layout. Delete button revealed on hover only.
 - **TopBar:** 44px height (2.75rem, `--workbench-header`), 2px thick bottom border, compact dot+icon+label stage indicators. Bold progress dots in stage accent color. Stage labels in font-heading.
 
 ### Speech Bubbles
-- **speech-bubble:** Rounded-xl, base-300/50 background, font-comic type. Left-pointing triangle arrow (6px border-width) for AI messages.
+- **speech-bubble:** Rounded-xl, paper-300/50 background, font-comic type. Left-pointing triangle arrow (6px border-width) for AI messages.
 - **speech-bubble-user:** Rounded-xl, primary/10 background. Right-pointing triangle arrow for user messages. Dark mode: increased arrow opacity from 0.1 to 0.3.
 - **Use case:** Chat panel messages. The directional arrows follow comic convention (left = incoming, right = outgoing).
 
 ### Halftone Backgrounds
-- **halftone-bg:** Radial gradient dots in `base-content / 0.08`, 7px grid. Standard background texture for sections needing surface identity.
+- **halftone-bg:** Radial gradient dots in `ink / 0.08`, 7px grid. Standard background texture for sections needing surface identity.
 - **halftone-bg-accent:** Dots in `primary / 0.16`, 7px grid. Accent variant for hero sections and featured areas.
 - **Dark mode:** Opacity increases (0.08→0.2, 0.16→0.3) to maintain halftone visibility against dark surfaces.
 

@@ -51,18 +51,18 @@ outline → approve → characters → approve → shots → approve
 
 1. 用「openOii Engine 是唯一 orchestration runtime」取代旧表述。Workflow Runtime
    是默认形态;Agent Runtime 是**按需的局部能力**,不是系统的核心隐喻。
-2. 违反约束的 Python 侧 agent 实现按以下顺序清理(不在本 ADR 内完成):
-   1. 先确认 engine 侧具备 `CHARACTER_IDENTITY_LOCK`、风格模板、角色圣经、
-      人脸嵌入 —— 这些目前**只在 Python 侧**,是清理的硬前置门。
-   2. 迁移完成后删除 `services/agent_runner.py`、`agents/render.py`、
-      `agents/compose.py`,并把局部 run 的 spec 从「agent 列表」改成对 engine 的
-      指令描述（`TargetedRunSpec`）。
-   3. `agents/review_rules.py` **不算违规**:它只把反馈分类成 rerun 起始阶段,
-      不跑 agent loop。
+2. Python generation runtime cutover 已落地：`services/agent_runner.py`、
+   `agents/render.py`、`agents/compose.py`、`LocalRunSpec.agent_plan` 和
+   `task_manager` 已删除；局部 run 使用 `TargetedRunSpec` 下发 engine 指令。
+   能力 parity 逐项状态见
+   [`docs/architecture/engine-capability-matrix.md`](../architecture/engine-capability-matrix.md)。
+   Engine 在角色渲染时计算并持久化 face embedding，并通过 `engine_media_cli` 复用
+   ImageComposer、AudioService 和 InsightFace helper；手动计算与相似角色查询仍是 Product API。
 3. `engine/src/agent/` 只定义 Agent Loop 的**类型化接缝**(接口 + tool registry +
    step budget + AbortSignal 传播),由测试驱动验证,**不接入产品 pipeline**。
    等出现真正需要自主 tool-use 的用例时再接线。
-4. 清理完成前,`AGENTS.md` 的「已知违规」清单是权威登记处,新增/删除同步更新。
+4. `agents/review_rules.py` **不算违规**:它只把反馈分类成 rerun 起始阶段,
+   不跑 agent loop。
 
 ## 后果
 
@@ -71,7 +71,8 @@ outline → approve → characters → approve → shots → approve
 - FastAPI 的可替换性成立:它只描述产品语义,不含编排策略。
 - 编排只有一份实现,消除 Python/TS 双侧 parity 维护成本与漂移缺陷
   (critic system prompt 为空、WS 丢 `skill_id` 都出自这类重复)。
-- 进程内 `task_manager` 的单 worker 限制随 agent loop 一起消失。
+- engine 子进程所有权仍使用 backend 的进程内状态，部署仍需单 worker；
+  `task_manager` 单 worker 限制已消失，但不能据此推断 sidecar 生命周期支持多 worker。
 
 负/注意:
 - Agent Runtime 接缝在接入前是**未被产品使用的能力面**;没有真实用例时它的价值

@@ -3,6 +3,10 @@
 - 状态:Accepted(2026-02-15)
 - 关联:ADR 0004/0005(编排收敛到 pi 引擎)
 
+> 当前状态（2026-09-25）：本 ADR 第 4 项及其后果中的 `task_manager` 设计已由
+> ADR 0008 取代。`task_manager` 已删除，Engine run lease 持有执行生命周期；本 ADR
+> 其余 API、错误 envelope 与 `project_updated_event()` 决策仍适用。
+
 ## 背景
 
 编排收敛成 pi 引擎后,后端只剩「HTTP 外壳 + 尾随引擎事件」,但接口形状还留着
