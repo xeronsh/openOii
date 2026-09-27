@@ -105,7 +105,8 @@ export function HomePage() {
 							}
 						/>
 
-						<div className="mx-auto flex w-full max-w-5xl flex-col gap-5" data-shell="create-desk">
+						{/* 列宽由 PageContent 一层决定：这里不再叠第二道宽度约束 */}
+						<div className="flex w-full flex-col gap-5" data-shell="create-desk">
 							<DeskSection
 								icon={<SvgIcon name="pencil" size={16} />}
 								title="故事创意"

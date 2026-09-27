@@ -71,29 +71,15 @@ export function PageHeader({
 export function PageContent({
 	children,
 	className,
-	width = "default",
 }: {
 	children: ReactNode;
 	className?: string;
-	/**
-	 * 宽度约定：普通页一律 "default"（max-w-6xl）。
-	 * "wide"（max-w-7xl）仅限重表格页（目前只有 ProjectsPage）——跨页导航时内容左边缘会平移，这是刻意取舍，勿为对齐改掉。
-	 * "narrow" 留给纯文本/表单页。
-	 */
-	width?: "default" | "wide" | "narrow";
 }) {
-	const max =
-		width === "wide"
-			? "max-w-7xl"
-			: width === "narrow"
-				? "max-w-3xl"
-				: "max-w-6xl";
 	return (
 		<div
 			className={clsx(
 				// gap-5 = --rhythm-zone（比块内 gap-3/--rhythm-block 宽一档），页面才有节奏
-				"mx-auto flex w-full flex-col gap-5 px-3 py-3 sm:px-4",
-				max,
+				"mx-auto flex w-full max-w-6xl flex-col gap-5 px-3 py-3 sm:px-4",
 				className,
 			)}
 			data-shell="page-content"
