@@ -30,7 +30,7 @@ export function PageHeader({
 		<header
 			className={clsx(
 				"flex gap-2",
-				divider && "border-b border-base-content/10 pb-3",
+				divider && "border-b border-ink/10 pb-3",
 				actionsAlign === "title"
 					? "flex-row flex-wrap items-center justify-between"
 					: "flex-col lg:flex-row lg:items-end lg:justify-between",
@@ -40,22 +40,22 @@ export function PageHeader({
 		>
 			<div className="min-w-0">
 				{eyebrow ? (
-					<p className="m-0 font-mono text-2xs uppercase tracking-wide text-bc-muted">
+					<p className="m-0 font-mono text-2xs uppercase tracking-wide text-ink-muted">
 						{eyebrow}
 					</p>
 				) : null}
 				<div className="mt-0.5 flex flex-wrap items-end gap-2">
-					<h1 className="m-0 font-heading text-xl font-bold leading-tight text-pretty">
+					<h1 className="m-0 font-heading text-2xl font-bold leading-tight text-pretty sm:text-3xl">
 						{title}
 					</h1>
 					{meta ? (
-						<div className="pb-0.5 font-mono text-2xs tabular-nums text-bc-muted">
+						<div className="pb-0.5 font-mono text-2xs tabular-nums text-ink-muted">
 							{meta}
 						</div>
 					) : null}
 				</div>
 				{description ? (
-					<p className="m-0 mt-1 max-w-2xl text-sm text-bc-muted text-pretty">
+					<p className="m-0 mt-1 max-w-2xl text-sm text-ink-muted text-pretty">
 						{description}
 					</p>
 				) : null}

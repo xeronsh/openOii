@@ -1340,7 +1340,7 @@ describe("useProjectWebSocket", () => {
         }),
         expect.objectContaining({
           agent: "critic",
-          role: "assistant",
+          role: "result",
           content: expect.stringContaining("总分 8.6/10"),
         }),
         expect.objectContaining({
@@ -1369,4 +1369,3 @@ describe("useProjectWebSocket", () => {
     );
   });
 });
-

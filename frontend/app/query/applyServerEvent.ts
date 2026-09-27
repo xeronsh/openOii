@@ -211,7 +211,7 @@ export function applyServerEvent(
     case "run_failed":
     case "run_cancelled": {
       clearBlockingClips(queryClient, projectId);
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.generationState(projectId) });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.runState(projectId) });
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.project(projectId) });
       return;
     }

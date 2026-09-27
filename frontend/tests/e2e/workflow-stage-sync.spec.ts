@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-type JsonValue = Record<string, unknown> | unknown[];
+type JsonValue = Record<string, unknown> | unknown[] | null;
 
 declare global {
 	interface Window {
@@ -143,7 +143,11 @@ async function mockProjectPageApis(
 			return fulfillJson(messages);
 		}
 
-		if (path === "/api/v1/projects/7/generate" && method === "POST") {
+		if (path === "/api/v1/projects/7/runs/current" && method === "GET") {
+			return fulfillJson(null);
+		}
+
+		if (path === "/api/v1/projects/7/runs" && method === "POST") {
 			state.generateCalls += 1;
 			if (options?.generateResponse) {
 				return fulfillJson(
@@ -160,7 +164,7 @@ async function mockProjectPageApis(
 			});
 		}
 
-		if (path === "/api/v1/projects/7/resume" && method === "POST") {
+		if (path === "/api/v1/runs/2002/resume" && method === "POST") {
 			state.resumeCalls += 1;
 			return fulfillJson(
 				options?.resumeResponse ?? {
@@ -172,7 +176,7 @@ async function mockProjectPageApis(
 			);
 		}
 
-		if (path === "/api/v1/projects/7/feedback" && method === "POST") {
+		if (path === "/api/v1/projects/7/runs/feedback" && method === "POST") {
 			state.feedbackCalls += 1;
 			return fulfillJson({ ok: true });
 		}
@@ -196,7 +200,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function openChatPanel(page: Page) {
-	await page.locator("aside").getByRole("button", { name: "对话" }).click();
+	await page.locator("aside").getByRole("tab", { name: "活动" }).click();
 }
 
 test("canvas progressively reveals sections following 3-stage plan→render→compose pipeline", async ({
@@ -244,8 +248,8 @@ test("canvas progressively reveals sections following 3-stage plan→render→co
 		});
 	});
 
-	await expect(page.getByText("确认继续？")).toBeVisible();
-	await expect(page.getByRole("button", { name: "通过" })).toBeVisible();
+	await expect(page.getByText("确认继续，或输入修改意见")).toBeVisible();
+	await expect(page.getByRole("button", { name: "通过并继续" })).toBeVisible();
 
 	await page.evaluate(() => {
 		window.__mockWs.dispatch({
@@ -279,8 +283,8 @@ test("canvas progressively reveals sections following 3-stage plan→render→co
 		});
 	});
 
-	await expect(page.getByText("确认继续？")).toBeVisible();
-	await expect(page.getByRole("button", { name: "通过" })).toBeVisible();
+	await expect(page.getByText("确认继续，或输入修改意见")).toBeVisible();
+	await expect(page.getByRole("button", { name: "通过并继续" })).toBeVisible();
 
 	await page.evaluate(() => {
 		window.__mockWs.dispatch({
@@ -331,7 +335,7 @@ test("recovery card keeps plan_approval checkpoint as resume target", async ({ p
 
 	await openChatPanel(page);
 
-	await page.getByRole("button", { name: "开始生成漫剧" }).click();
+	await page.getByRole("button", { name: /开始生成|重新生成|重试失败阶段/ }).click();
 
 	await expect(page.getByText("恢复", { exact: true })).toBeVisible();
 
@@ -412,7 +416,7 @@ test("full business flow: generate → plan → confirm → render → confirm �
 		.toBeGreaterThan(0);
 
 	await openChatPanel(page);
-	await page.getByRole("button", { name: "开始生成漫剧" }).click();
+	await page.getByRole("button", { name: /开始生成|重新生成|重试失败阶段/ }).click();
 
 	await page.evaluate(() => {
 		window.__mockWs.dispatch({
@@ -459,10 +463,10 @@ test("full business flow: generate → plan → confirm → render → confirm �
 		});
 	});
 
-	await expect(page.getByText("确认继续？")).toBeVisible();
-	await expect(page.getByRole("button", { name: "通过" })).toBeVisible();
+	await expect(page.getByText("确认继续，或输入修改意见")).toBeVisible();
+	await expect(page.getByRole("button", { name: "通过并继续" })).toBeVisible();
 
-	await page.getByRole("button", { name: "通过" }).click();
+	await page.getByRole("button", { name: "通过并继续" }).click();
 
 	await page.evaluate(() => {
 		window.__mockWs.dispatch({
@@ -500,9 +504,9 @@ test("full business flow: generate → plan → confirm → render → confirm �
 		});
 	});
 
-	await expect(page.getByText("确认继续？")).toBeVisible();
+	await expect(page.getByText("确认继续，或输入修改意见")).toBeVisible();
 
-	await page.getByRole("button", { name: "通过" }).click();
+	await page.getByRole("button", { name: "通过并继续" }).click();
 
 	await page.evaluate(() => {
 		window.__mockWs.dispatch({

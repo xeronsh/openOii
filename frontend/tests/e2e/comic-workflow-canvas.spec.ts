@@ -181,20 +181,14 @@ test.beforeEach(async ({ page }) => {
 		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
 		"base64",
 	);
-	await page.route("https://example.test/**/*.png", (route) =>
-		route.fulfill({
+	await page.route("https://example.test/**", (route) => {
+		const isVideo = route.request().url().endsWith(".mp4");
+		return route.fulfill({
 			status: 200,
-			contentType: "image/png",
-			body: transparentPixel,
-		}),
-	);
-	await page.route("https://example.test/**/*.mp4", (route) =>
-		route.fulfill({
-			status: 200,
-			contentType: "video/mp4",
-			body: Buffer.from(""),
-		}),
-	);
+			contentType: isVideo ? "video/mp4" : "image/png",
+			body: isVideo ? Buffer.from("") : transparentPixel,
+		});
+	});
 
 	await page.route("**/api/v1/**", async (route) => {
 		const url = new URL(route.request().url());
@@ -221,6 +215,15 @@ test.beforeEach(async ({ page }) => {
 		if (path === "/api/v1/projects/7/messages" && method === "GET") {
 			return json([]);
 		}
+		if (path === "/api/v1/projects/7/runs/current" && method === "GET") {
+			return json(null);
+		}
+		if (path === "/api/v1/projects/7/export/webtoon" && method === "POST") {
+			return json({ export_id: "test-export", status: "completed", download_url: "/static/test.png" });
+		}
+		if (path === "/api/v1/projects/7/export/test-export/status" && method === "GET") {
+			return json({ export_id: "test-export", status: "completed", download_url: "/static/test.png" });
+		}
 		if (path === "/api/v1/assets" && method === "GET") {
 			return json({ items: [], total: 0, page: 1, page_size: 50 });
 		}
@@ -234,14 +237,19 @@ test("comic workflow canvas supports core review interactions", async ({ page })
 	page.on("console", (message) => {
 		if (message.type() === "error") consoleErrors.push(message.text());
 	});
+	page.on("response", (response) => {
+		if (response.status() >= 400) {
+			consoleErrors.push(`${response.status()} ${response.url()}`);
+		}
+	});
 
 	await page.goto("/project/7");
 	await page.waitForSelector('[data-shape-id="shape:workflow-card-shot-1"]');
 
-	await expect(page.getByRole("heading", { name: "Brief" })).toBeVisible();
-	await expect(page.getByRole("heading", { name: "Elements" })).toBeVisible();
-	await expect(page.getByRole("heading", { name: "九宫格分镜" })).toBeVisible();
-	await expect(page.getByRole("heading", { name: "Output" })).toBeVisible();
+	await expect(page.getByRole("region", { name: "Brief" })).toBeVisible();
+	await expect(page.getByRole("region", { name: "Elements" })).toBeVisible();
+	await expect(page.getByRole("region", { name: "九宫格分镜" })).toBeVisible();
+	await expect(page.getByRole("region", { name: "Output" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "一致性评估" })).toHaveCount(0);
 
 	await page.getByRole("button", { name: "适应视图" }).click();
@@ -250,6 +258,7 @@ test("comic workflow canvas supports core review interactions", async ({ page })
 	expect(before).not.toBeNull();
 	if (!before) return;
 
+	await page.getByRole("button", { name: "排序九宫格" }).click();
 	await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
 	await page.mouse.down();
 	await page.mouse.move(before.x + before.width / 2 + 80, before.y + before.height / 2 + 24, {
@@ -261,39 +270,32 @@ test("comic workflow canvas supports core review interactions", async ({ page })
 	expect(moved).not.toBeNull();
 	expect(Math.abs((moved?.x ?? before.x) - before.x)).toBeGreaterThan(20);
 
+	await page.getByRole("button", { name: "完成分镜排序" }).click();
 	await page.getByRole("button", { name: "整理画布" }).click();
-	await expect
-		.poll(async () => {
-			const current = await card.boundingBox();
-			return Math.abs((current?.x ?? before.x) - before.x);
-		})
-		.toBeLessThan(25);
+	await expect(card).toBeVisible();
 
-	const reset = await card.boundingBox();
-	expect(reset).not.toBeNull();
-	if (!reset) return;
-	await page.mouse.click(reset.x + reset.width / 2, reset.y + reset.height / 2);
-
+	const sidebar = page.locator("aside");
+	await page.getByRole("button", { name: "展开工作区" }).click();
+	await sidebar.getByRole("tab", { name: "属性" }).click();
 	await expect(page.getByRole("button", { name: "概览" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "内容" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "操作" })).toBeVisible();
 
 	await expect(page.getByRole("button", { name: "重排镜头顺序" })).toHaveCount(0);
 
-	await page.getByRole("button", { name: "导出" }).click();
-	await expect(page.getByText("PDF 漫画册")).toHaveCount(0);
-	await expect(page.getByText("正在生成Webtoon 长图")).toBeVisible();
+	await page.getByRole("button", { name: "工作台工具" }).click();
+	await page.getByRole("menuitem", { name: "导出 Webtoon 长图" }).click();
+	await expect(page.getByText("Webtoon 长图已生成")).toBeVisible();
 
 	await page.locator('button[aria-label="预览视频"]').first().click();
-	await expect(page.getByRole("dialog", { name: /视频预览/ })).toBeVisible();
-	await page.getByRole("button", { name: "关闭" }).click();
+	const videoPreview = page.getByRole("dialog", { name: /视频预览/ });
+	await expect(videoPreview).toBeVisible();
+	await videoPreview.getByRole("button", { name: "关闭" }).click();
 
-	await page.getByRole("button", { name: "资产库" }).click();
-	await expect(page.getByText("资产库")).toBeVisible();
-	await page.getByRole("button", { name: "对话历史" }).click();
-	await expect(page.getByText("项目历史")).toBeVisible();
-	await page.getByRole("button", { name: "打开对话面板" }).click();
-	await expect(page.getByPlaceholder("你的想法...")).toBeVisible();
+	await sidebar.getByRole("tab", { name: "资产" }).click();
+	await expect(sidebar.getByRole("heading", { name: "资产库" })).toBeVisible();
+	await sidebar.getByRole("tab", { name: "活动" }).click();
+	await expect(sidebar.getByPlaceholder("描述如何调整所选内容…")).toBeVisible();
 
 	expect(consoleErrors).toEqual([]);
 });

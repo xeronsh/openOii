@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 describe('LoadingOverlay', () => {
   it('renders the loading spinner', () => {
     const { container } = render(<LoadingOverlay />);
-    expect(container.querySelector('.loading-spinner')).toBeInTheDocument();
+    expect(container.querySelector('.spinner-doodle')).toBeInTheDocument();
   });
 
   it('does not render text when text prop is not provided', () => {

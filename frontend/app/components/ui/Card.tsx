@@ -17,7 +17,7 @@ export function Card({
   variant = "default",
 }: CardProps) {
   const variantStyles = {
-    default: "bg-base-100",
+    default: "bg-paper-100",
     primary: "bg-primary/10 border-primary",
     secondary: "bg-secondary/10 border-secondary",
     accent: "bg-accent/10 border-accent",

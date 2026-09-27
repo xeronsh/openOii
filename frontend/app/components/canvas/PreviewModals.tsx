@@ -31,7 +31,7 @@ export function ImagePreviewModal({ src, alt, onClose }: ImagePreviewModalProps)
         />
         <button
           type="button"
-          className="absolute -top-3 -right-3 btn btn-circle btn-sm btn-neutral"
+          className="absolute -top-3 -right-3 btn-doodle rounded-full h-8 min-h-8 w-8 p-0 bg-neutral text-neutral-content"
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           aria-label="关闭"
         >
@@ -83,20 +83,20 @@ export function VideoPreviewModal({
         </video>
         <button
           type="button"
-          className="absolute -top-3 -right-3 btn btn-circle btn-sm btn-neutral"
+          className="absolute -top-3 -right-3 btn-doodle rounded-full h-8 min-h-8 w-8 p-0 bg-neutral text-neutral-content"
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           aria-label="关闭"
         >
           <XMarkIcon className="w-5 h-5" aria-hidden="true" />
         </button>
         {showDownload && (
-          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between bg-neutral/80 rounded-xl px-4 py-3 border border-base-content/10">
+          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between bg-neutral/80 rounded-xl px-4 py-3 border border-ink/10">
             <span className="text-primary-content text-sm font-medium truncate">
               {title}
             </span>
             <button
               type="button"
-              className="btn btn-sm btn-accent gap-2 border-2 border-base-content/30 shadow-brutal-sm hover:shadow-brutal hover:-translate-y-0.5 transition-all"
+              className="btn-doodle h-8 min-h-8 gap-2 px-2.5 text-sm bg-accent text-accent-content border-2 border-ink/30 shadow-brutal-sm hover:shadow-brutal hover:-translate-y-0.5"
               onClick={(e) => {
                 e.stopPropagation();
                 if (onDownload) {
@@ -141,7 +141,7 @@ export function PreviewableImage({
   return (
     <button
       type="button"
-      className={`${className} cursor-zoom-in hover:opacity-90 transition-opacity p-0 bg-transparent border-0`}
+      className={`${className} cursor-zoom-in hover:opacity-90 transition-opacity duration-fast p-0 bg-transparent border-0`}
       onClick={() => onPreview(src, alt)}
       aria-label={`预览图片：${alt}`}
     >

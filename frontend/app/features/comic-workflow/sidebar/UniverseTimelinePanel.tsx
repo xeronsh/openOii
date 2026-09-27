@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GlobeAltIcon } from "@heroicons/react/24/outline";
 import { universesApi } from "~/services/api";
 import { EmptyState } from "~/components/ui/EmptyState";
+import { Button } from "~/components/ui/Button";
 import { toast } from "~/utils/toast";
 
 interface UniverseTimelinePanelProps {
@@ -60,7 +61,7 @@ export function UniverseTimelinePanel({
 	if (isLoading) {
 		return (
 			<div className="flex h-full items-center justify-center p-3">
-				<span className="loading loading-spinner loading-sm text-primary" />
+						<span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-primary border-r-transparent" role="status" aria-label="加载中" />
 			</div>
 		);
 	}
@@ -78,8 +79,8 @@ export function UniverseTimelinePanel({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col" data-shell="universe-timeline">
-			<div className="shrink-0 border-b border-base-content/10 px-2 py-1.5">
-				<p className="m-0 font-mono text-2xs uppercase tracking-wide text-bc-muted">
+			<div className="shrink-0 border-b border-ink/10 px-2 py-1.5">
+				<p className="m-0 font-mono text-2xs uppercase tracking-wide text-ink-muted">
 					universe
 				</p>
 				<div className="mt-0.5 flex items-center gap-1.5">
@@ -88,17 +89,18 @@ export function UniverseTimelinePanel({
 						{data.universe_name}
 					</h3>
 				</div>
-				<p className="m-0 mt-0.5 text-2xs text-bc-muted">
+				<p className="m-0 mt-0.5 text-2xs text-ink-muted">
 					跨章节时间线 · {data.shared_character_count} 共享角色
 				</p>
 				{data.world_setting ? (
-					<p className="m-0 mt-1 line-clamp-2 text-2xs text-bc-muted">
+					<p className="m-0 mt-1 line-clamp-2 text-2xs text-ink-muted">
 						{data.world_setting}
 					</p>
 				) : null}
-				<button
-					type="button"
-					className="btn btn-primary btn-xs mt-2 h-7 min-h-7 w-full"
+				<Button
+					variant="primary"
+					size="sm"
+					className="mt-2 h-7 min-h-7 w-full"
 					disabled={
 						importCastMutation.isPending || data.shared_character_count === 0
 					}
@@ -107,7 +109,7 @@ export function UniverseTimelinePanel({
 					{importCastMutation.isPending
 						? "导入中…"
 						: `沿用共享卡司到本章（${data.shared_character_count}）`}
-				</button>
+				</Button>
 			</div>
 
 			<ul className="m-0 min-h-0 flex-1 list-none space-y-1 overflow-y-auto overscroll-contain p-2">
@@ -115,10 +117,10 @@ export function UniverseTimelinePanel({
 					<li key={ch.project_id}>
 						<Link
 							to={`/project/${ch.project_id}`}
-							className={`block rounded-md border px-2 py-1.5 transition-colors ${
+							className={`block rounded-md border px-2 py-1.5 transition-colors duration-fast ${
 								ch.is_current
 									? "border-primary/40 bg-primary/10"
-									: "border-base-content/10 bg-base-200/40 hover:border-primary/30"
+									: "border-ink/10 bg-paper-200/40 hover:border-primary/30"
 							}`}
 						>
 							<div className="flex items-center justify-between gap-1">
@@ -126,13 +128,13 @@ export function UniverseTimelinePanel({
 									{ch.chapter_number != null ? (
 										`第${ch.chapter_number}章`
 									) : (
-										<span className="badge badge-ghost badge-xs font-normal">
+											<span className="inline-flex rounded-full border border-ink/15 bg-paper-200 px-1.5 py-0.5 text-2xs font-normal text-ink-muted">
 											未编号
 										</span>
 									)}
 									{ch.is_current ? " · 当前" : ""}
 								</span>
-								<span className="font-mono text-2xs text-bc-muted">
+								<span className="font-mono text-2xs text-ink-muted">
 									{ch.shot_count}格 · {ch.character_count}角
 									{ch.has_video ? " · 成片" : ""}
 								</span>
@@ -141,11 +143,11 @@ export function UniverseTimelinePanel({
 								{ch.chapter_title || ch.title}
 							</p>
 							{ch.summary ? (
-								<p className="m-0 mt-0.5 line-clamp-2 text-2xs text-bc-muted">
+								<p className="m-0 mt-0.5 line-clamp-2 text-2xs text-ink-muted">
 									{ch.summary}
 								</p>
 							) : (
-								<p className="m-0 mt-0.5 text-2xs text-bc-muted">
+								<p className="m-0 mt-0.5 text-2xs text-ink-muted">
 									{ch.status}
 								</p>
 							)}
@@ -154,10 +156,10 @@ export function UniverseTimelinePanel({
 				))}
 			</ul>
 
-			<div className="shrink-0 border-t border-base-content/10 p-2">
+			<div className="shrink-0 border-t border-ink/10 p-2">
 				<Link
 					to={`/universes/${universeId}`}
-					className="btn btn-ghost btn-xs h-7 min-h-7 w-full"
+					className="btn-doodle inline-flex h-7 min-h-7 w-full items-center justify-center bg-transparent px-2 text-xs text-ink-muted shadow-none hover:bg-paper-200 hover:shadow-brutal-sm"
 				>
 					打开宇宙管理
 				</Link>

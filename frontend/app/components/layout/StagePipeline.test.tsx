@@ -80,7 +80,9 @@ describe("StagePipeline", () => {
 
 		await user.click(trigger);
 		await user.click(screen.getByRole("menuitem", { name: "打开版本对比" }));
+		await user.click(trigger);
 		await user.click(screen.getByRole("menuitem", { name: "打开一致性报告" }));
+		await user.click(trigger);
 		await user.click(screen.getByRole("menuitem", { name: "导出 Webtoon 长图" }));
 
 		expect(onOpenVersions).toHaveBeenCalledTimes(1);

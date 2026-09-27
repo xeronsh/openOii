@@ -32,10 +32,10 @@ export function DeskSection({
 			)}
 			data-shell="desk-section"
 		>
-			<div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-base-content/10 pb-1.5">
+			<div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-ink/10 pb-1.5">
 				<div className="flex min-w-0 items-center gap-1.5">
 					{icon ? (
-						<span className="shrink-0 text-bc-muted" aria-hidden="true">
+						<span className="shrink-0 text-ink-muted" aria-hidden="true">
 							{icon}
 						</span>
 					) : null}
@@ -43,7 +43,7 @@ export function DeskSection({
 						{title}
 					</h2>
 					{meta ? (
-						<span className="font-mono text-2xs tabular-nums text-bc-muted">
+						<span className="font-mono text-2xs tabular-nums text-ink-muted">
 							{meta}
 						</span>
 					) : null}

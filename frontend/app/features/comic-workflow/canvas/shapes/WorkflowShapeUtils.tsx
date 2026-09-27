@@ -41,19 +41,19 @@ const SECTION_STYLE = {
 		surface: "bg-accent/5 halftone-bg",
 	},
 	output: {
-		accent: "bg-base-content",
-		surface: "bg-base-200/45",
+		accent: "bg-ink",
+		surface: "bg-paper-200/45",
 	},
 } as const;
 
 const STATUS_COPY: Record<WorkflowNodeStatus, { label: string; cls: string }> = {
-	draft: { label: "待生成", cls: "badge-ghost" },
-	generating: { label: "生成中", cls: "badge-warning" },
-	review: { label: "待审阅", cls: "badge-warning" },
-	approved: { label: "已批准", cls: "badge-success" },
-	blocked: { label: "阻塞", cls: "badge-error" },
-	superseded: { label: "需重合成", cls: "badge-warning" },
-	ready: { label: "可用", cls: "badge-success" },
+	draft: { label: "待生成", cls: "bg-paper-200 text-ink-muted" },
+	generating: { label: "生成中", cls: "bg-warning/15 text-warning" },
+	review: { label: "待审阅", cls: "bg-warning/15 text-warning" },
+	approved: { label: "已批准", cls: "bg-success/15 text-success" },
+	blocked: { label: "阻塞", cls: "bg-error/15 text-error" },
+	superseded: { label: "需重合成", cls: "bg-warning/15 text-warning" },
+	ready: { label: "可用", cls: "bg-success/15 text-success" },
 };
 
 function stopCanvasPointer(e: React.PointerEvent<HTMLElement>) {
@@ -117,12 +117,12 @@ function InlineEditableText({
 					setDraft(value ?? "");
 					setEditing(true);
 				}}
-				className={`block w-full cursor-text rounded-sm text-left transition-colors hover:bg-base-content/5 ${displayClassName}`}
+				className={`block w-full cursor-text rounded-sm text-left transition-colors duration-fast hover:bg-ink/5 ${displayClassName}`}
 			>
 				{value ? (
 					value
 				) : (
-					<span className="italic text-bc-subtle">{placeholder}</span>
+					<span className="italic text-ink-subtle">{placeholder}</span>
 				)}
 			</button>
 		);
@@ -147,7 +147,7 @@ function InlineEditableText({
 				if (e.key === "Escape") setEditing(false);
 			}}
 			onBlur={() => void commit()}
-			className="w-full resize-none rounded-sm border-2 border-primary bg-base-100 p-1.5 text-xs leading-relaxed text-base-content focus:outline-none"
+			className="w-full resize-none rounded-sm border-2 border-primary bg-paper-100 p-1.5 text-xs leading-relaxed text-ink focus:outline-none"
 		/>
 	);
 }
@@ -177,10 +177,10 @@ function ReviewActions({
 					stopAll(e);
 					void run("approve", onApprove);
 				}}
-				className="btn btn-success btn-xs h-6 min-h-6 flex-1 gap-1 px-1.5 text-xs"
+				className="btn-doodle touch-target-dense h-6 min-h-6 flex-1 px-1.5 text-xs bg-success text-success-content"
 			>
 				{busy === "approve" ? (
-					<span className="loading loading-spinner loading-xs" />
+					<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" />
 				) : (
 					<SvgIcon name="check" size={11} />
 				)}
@@ -193,10 +193,10 @@ function ReviewActions({
 					stopAll(e);
 					void run("redo", onRedo);
 				}}
-				className="btn btn-ghost btn-xs h-6 min-h-6 flex-1 gap-1 border-base-content/20 px-1.5 text-xs"
+				className="btn-doodle touch-target-dense h-6 min-h-6 flex-1 px-1.5 text-xs bg-transparent text-ink hover:bg-paper-200"
 			>
 				{busy === "redo" ? (
-					<span className="loading loading-spinner loading-xs" />
+					<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" />
 				) : (
 					<SvgIcon name="refresh-cw" size={11} />
 				)}
@@ -213,7 +213,7 @@ function selectWorkflowNode(nodeId: string) {
 function statusBadge(status: WorkflowNodeStatus) {
 	const copy = STATUS_COPY[status] ?? STATUS_COPY.draft;
 	return (
-		<span className={`badge badge-sm gap-1 whitespace-nowrap ${copy.cls}`}>
+		<span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-ink/15 px-2 py-0.5 text-2xs font-medium ${copy.cls}`}>
 			<span className="h-2 w-2 rounded-full bg-current opacity-60" />
 			{copy.label}
 		</span>
@@ -234,7 +234,7 @@ function MediaPreviewButton({
 	return (
 		<button
 			type="button"
-			className="btn btn-circle pointer-events-auto h-12 min-h-12 w-12 border-2 border-base-content/20 bg-base-100/90 text-base-content shadow-brutal-sm hover:bg-primary hover:text-primary-content"
+			className="btn-doodle touch-target pointer-events-auto h-12 min-h-12 w-12 bg-paper-100/90 text-ink shadow-brutal-sm hover:bg-primary hover:text-primary-content"
 			aria-label={type === "image" ? "预览图片" : "预览视频"}
 			title={type === "image" ? "预览图片" : "预览视频"}
 			onPointerDown={stopCanvasPointer}
@@ -253,7 +253,7 @@ function MediaPreviewButton({
 
 function EmptyMedia({ label }: { label: string }) {
 	return (
-		<div className="flex h-full w-full items-center justify-center bg-base-300 text-xs text-bc-muted">
+		<div className="flex h-full w-full items-center justify-center bg-paper-300 text-xs text-ink-muted">
 			{label}
 		</div>
 	);
@@ -275,14 +275,14 @@ function BriefCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "brief" 
 			{/* 行数上限与固定卡高匹配：超限走省略号，而不是被 overflow-hidden 齐腰裁半个字 */}
 			<div className="mt-4 min-h-0 flex-1 space-y-3 overflow-hidden">
 				{node.project.story ? (
-					<p className="m-0 line-clamp-4 whitespace-pre-wrap text-sm leading-relaxed text-base-content/75">
+					<p className="m-0 line-clamp-4 whitespace-pre-wrap text-sm leading-relaxed text-ink/75">
 						{node.project.story}
 					</p>
 				) : (
-					<p className="m-0 text-sm text-bc-muted">等待故事输入</p>
+					<p className="m-0 text-sm text-ink-muted">等待故事输入</p>
 				)}
 				{node.project.summary ? (
-					<p className="m-0 line-clamp-3 rounded-lg border border-secondary/20 bg-secondary/10 p-2 text-xs leading-relaxed text-bc-muted">
+					<p className="m-0 line-clamp-3 rounded-lg border border-secondary/20 bg-secondary/10 p-2 text-xs leading-relaxed text-ink-muted">
 						{node.project.summary}
 					</p>
 				) : null}
@@ -312,7 +312,7 @@ function CharacterRefStrip({
 
 	return (
 		<div className="mt-1.5 flex items-center gap-1" onPointerDown={stopAll}>
-			<span className="shrink-0 font-mono text-2xs uppercase text-bc-muted">
+			<span className="shrink-0 font-mono text-2xs uppercase text-ink-muted">
 				参考 {refs.length}
 			</span>
 			<div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
@@ -321,7 +321,7 @@ function CharacterRefStrip({
 						<img
 							src={getStaticUrl(url) ?? url}
 							alt={`参考图 ${index + 1}`}
-							className="h-7 w-7 rounded-sm border border-base-content/20 object-cover"
+							className="h-7 w-7 rounded-sm border border-ink/20 object-cover"
 							draggable={false}
 						/>
 						<button
@@ -340,7 +340,7 @@ function CharacterRefStrip({
 							className="absolute -right-1 -top-1 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-error text-error-content group-hover:flex"
 						>
 							{busy === index ? (
-								<span className="loading loading-spinner h-2 w-2" />
+								<span className="inline-block h-2 w-2 animate-spin rounded-full border border-current border-r-transparent" aria-hidden="true" />
 							) : (
 								<SvgIcon name="x" size={8} />
 							)}
@@ -355,10 +355,10 @@ function CharacterRefStrip({
 						stopAll(e);
 						fileRef.current?.click();
 					}}
-					className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-dashed border-base-content/25 text-bc-muted transition-colors hover:border-primary/50 hover:text-primary-ink"
+					className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-dashed border-ink/25 text-ink-muted transition-colors duration-fast hover:border-primary/50 hover:text-primary-ink"
 				>
 					{busy === "upload" ? (
-						<span className="loading loading-spinner loading-xs" />
+						<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" />
 					) : (
 						<SvgIcon name="plus" size={12} />
 					)}
@@ -377,10 +377,10 @@ function CharacterRefStrip({
 							setBusy(null),
 						);
 					}}
-					className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-bc-muted transition-colors hover:bg-base-content/10 hover:text-base-content"
+					className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-muted transition-colors duration-fast hover:bg-ink/10 hover:text-ink"
 				>
 					{busy === "embed" ? (
-						<span className="loading loading-spinner loading-xs" />
+						<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" />
 					) : (
 						<SvgIcon name="refresh-cw" size={11} />
 					)}
@@ -405,7 +405,7 @@ function CharacterCard({
 	const imageUrl = getStaticUrl(node.imageUrl);
 	return (
 		<div className="flex h-full flex-col overflow-hidden">
-			<div className="relative aspect-[4/3] bg-base-300">
+			<div className="relative aspect-[4/3] bg-paper-300">
 				{imageUrl ? (
 					<img
 						src={imageUrl}
@@ -425,17 +425,17 @@ function CharacterCard({
 			<div className="flex min-h-0 flex-1 flex-col p-3">
 				<CardHeader node={node} icon="star" accentClass="bg-secondary" compact />
 				{node.character.description ? (
-					<p className="m-0 mt-1.5 line-clamp-2 text-xs leading-relaxed text-bc-muted">
+					<p className="m-0 mt-1.5 line-clamp-2 text-xs leading-relaxed text-ink-muted">
 						{node.character.description}
 					</p>
 				) : null}
 				<CharacterRefStrip node={node} />
 				<div className="mt-auto flex flex-wrap gap-1 pt-1.5">
 					{node.character.has_embedding ? (
-						<span className="badge badge-primary badge-xs">资产一致性</span>
+							<span className="inline-flex rounded-full border border-primary/30 bg-primary px-1.5 py-0.5 text-2xs text-primary-content">资产一致性</span>
 					) : null}
 					{node.character.visual_notes ? (
-						<span className="badge badge-ghost badge-xs">视觉笔记</span>
+							<span className="inline-flex rounded-full border border-ink/15 bg-paper-100/90 px-1.5 py-0.5 text-2xs text-ink-muted">视觉笔记</span>
 					) : null}
 				</div>
 				{node.status === "review" ? (
@@ -462,7 +462,7 @@ function ShotCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "shot" }>
 
 	return (
 		<div className="flex h-full flex-col overflow-hidden">
-			<div className="relative h-[128px] shrink-0 bg-base-300">
+			<div className="relative h-[128px] shrink-0 bg-paper-300">
 				{imageUrl ? (
 					<img
 						src={imageUrl}
@@ -479,10 +479,10 @@ function ShotCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "shot" }>
 					<EmptyMedia label="等待分镜图" />
 				)}
 				{/* 九宫格 cell index */}
-				<span className="absolute left-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-sm border-2 border-base-content/20 bg-accent px-1 font-mono text-2xs font-bold text-accent-content shadow-brutal-sm">
+				<span className="absolute left-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-sm border-2 border-ink/20 bg-accent px-1 font-mono text-2xs font-bold text-accent-content shadow-brutal-sm">
 					{cell}
 				</span>
-				<span className="absolute bottom-1.5 left-1.5 badge badge-xs bg-base-100/90 tabular-nums">
+				<span className="absolute bottom-1.5 left-1.5 inline-flex rounded-full border border-ink/15 bg-paper-100/90 px-1.5 py-0.5 text-2xs tabular-nums">
 					{node.shot.duration ? `${node.shot.duration}s` : "未定时长"}
 				</span>
 				<div className="absolute right-2 top-2">
@@ -495,7 +495,7 @@ function ShotCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "shot" }>
 			</div>
 			<div className="flex min-h-0 flex-1 flex-col p-3">
 				<CardHeader node={node} icon="clapperboard" accentClass="bg-accent" compact />
-				<p className="m-0 mt-1 font-mono text-2xs uppercase tracking-wide text-bc-muted">
+				<p className="m-0 mt-1 font-mono text-2xs uppercase tracking-wide text-ink-muted">
 					格 {cell}
 				</p>
 				<div className="mt-1.5">
@@ -505,7 +505,7 @@ function ShotCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "shot" }>
 						ariaLabel={`格 ${cell} 画面描述`}
 						rows={3}
 						disabled={editLocked}
-						displayClassName="line-clamp-3 p-0.5 text-xs leading-relaxed text-bc-muted"
+						displayClassName="line-clamp-3 p-0.5 text-xs leading-relaxed text-ink-muted"
 						save={(next) =>
 							saveShotPatch(node.entityId, {
 								expected_revision: node.shot.revision,
@@ -532,12 +532,12 @@ function ShotCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "shot" }>
 				</div>
 				<div className="mt-auto flex flex-wrap gap-1 pt-1.5">
 					{node.characterNames.length > 0 ? (
-						<span className="badge badge-secondary badge-xs max-w-full truncate">
+						<span className="inline-flex max-w-full truncate rounded-full border border-secondary/30 bg-secondary px-1.5 py-0.5 text-2xs text-secondary-content">
 							{node.characterNames.join("、")}
 						</span>
 					) : null}
 					{node.shot.camera ? (
-						<span className="badge badge-ghost badge-xs">{node.shot.camera}</span>
+						<span className="inline-flex rounded-full border border-ink/15 bg-paper-100/80 px-1.5 py-0.5 text-2xs text-ink-muted">{node.shot.camera}</span>
 					) : null}
 				</div>
 				{node.status === "review" ? (
@@ -569,7 +569,7 @@ function OutputCard({
 
 			{/* 内联播放器：交付台上直接看，不用先开弹窗 */}
 			<div
-				className="relative mt-3 aspect-video shrink-0 overflow-hidden rounded-xl bg-base-300"
+				className="relative mt-3 aspect-video shrink-0 overflow-hidden rounded-xl bg-paper-300"
 				onPointerDown={stopAll}
 			>
 				{videoUrl ? (
@@ -592,7 +592,7 @@ function OutputCard({
 							href={videoUrl}
 							download
 							onClick={stopAll}
-							className="btn btn-primary btn-xs h-7 min-h-7 flex-1 gap-1 text-xs"
+							className="btn-doodle touch-target-dense h-7 min-h-7 flex-1 px-2 text-xs bg-primary text-primary-content"
 						>
 							<SvgIcon name="download" size={12} />
 							下载成片
@@ -607,7 +607,7 @@ function OutputCard({
 									source: "output-card",
 								});
 							}}
-							className="btn btn-ghost btn-xs h-7 min-h-7 flex-1 gap-1 border-base-content/20 text-xs"
+							className="btn-doodle touch-target-dense h-7 min-h-7 flex-1 px-2 text-xs bg-transparent text-ink hover:bg-paper-200"
 						>
 							<SvgIcon name="refresh-cw" size={11} />
 							重新合成
@@ -621,7 +621,7 @@ function OutputCard({
 					<p className="m-0 font-mono text-2xs uppercase text-warning">
 						阻塞项 {node.blockingClips.length}
 					</p>
-					<ul className="m-0 mt-1 list-none space-y-0.5 p-0 text-xs leading-relaxed text-base-content">
+					<ul className="m-0 mt-1 list-none space-y-0.5 p-0 text-xs leading-relaxed text-ink">
 						{node.blockingClips.map((clip) => (
 							<li key={clip.shot_id}>
 								格 {clip.order} · {clip.reason}
@@ -630,12 +630,12 @@ function OutputCard({
 					</ul>
 				</div>
 			) : (
-				<p className="m-0 mt-2 text-xs text-bc-muted">{statusText}</p>
+				<p className="m-0 mt-2 text-xs text-ink-muted">{statusText}</p>
 			)}
 
 			{node.exports.length > 0 ? (
 				<div className="mt-auto pt-2" onPointerDown={stopAll}>
-					<p className="m-0 font-mono text-2xs uppercase text-bc-muted">
+					<p className="m-0 font-mono text-2xs uppercase text-ink-muted">
 						导出记录 {node.exports.length}
 					</p>
 					<div className="mt-1 flex flex-col gap-0.5">
@@ -645,7 +645,7 @@ function OutputCard({
 								href={getStaticUrl(url) ?? url}
 								download
 								onClick={stopAll}
-								className="flex items-center gap-1 truncate text-xs text-bc-muted transition-colors hover:text-base-content"
+								className="flex items-center gap-1 truncate text-xs text-ink-muted transition-colors duration-fast hover:text-ink"
 							>
 								<SvgIcon name="arrow-down-to-line" size={11} />
 								<span className="truncate">
@@ -669,8 +669,8 @@ function outputStateLabel(state: Extract<ComicWorkflowNode, { kind: "output" }>[
 
 function Metric({ label, value }: { label: string; value: string | number }) {
 	return (
-		<div className="rounded-lg border border-base-content/10 bg-base-200/50 p-2">
-			<p className="m-0 text-2xs font-mono uppercase text-bc-muted">
+		<div className="rounded-lg border border-ink/10 bg-paper-200/50 p-2">
+			<p className="m-0 text-2xs font-mono uppercase text-ink-muted">
 				{label}
 			</p>
 			<p className="m-0 truncate font-heading text-lg font-bold">{value}</p>
@@ -705,7 +705,7 @@ function CardHeader({
 					</p>
 					{statusBadge(node.status)}
 				</div>
-				<p className="m-0 truncate font-mono text-2xs uppercase text-bc-muted">
+				<p className="m-0 truncate font-mono text-2xs uppercase text-ink-muted">
 					{node.subtitle}
 				</p>
 			</div>
@@ -762,11 +762,11 @@ export class WorkflowFrameShapeUtil extends ShapeUtil<WorkflowFrameShape> {
 		const style = SECTION_STYLE[section];
 		return (
 			<HTMLContainer style={{ width: w, height: h, pointerEvents: "all" }}>
-				{/* text-base-content：阻断 tldraw .tl-html-container 的 --tl-color-text 继承，
+				{/* text-ink：阻断 tldraw .tl-html-container 的 --tl-color-text 继承，
 				    否则暗色主题下未显式着色的文字会停留在 tldraw 的亮色近黑（1.3:1） */}
 				<section
 					aria-label={title}
-					className={`h-full w-full rounded-xl border-3 border-base-content/15 p-3 text-base-content shadow-brutal-sm ${
+					className={`h-full w-full rounded-xl border-3 border-ink/15 p-3 text-ink shadow-brutal-sm ${
 						draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
 					} ${style.surface}`}
 					onPointerDown={draggable ? undefined : stopCanvasPointer}
@@ -774,7 +774,7 @@ export class WorkflowFrameShapeUtil extends ShapeUtil<WorkflowFrameShape> {
 					<div className="flex items-center gap-2">
 						<span className={`h-7 w-1 rounded-full ${style.accent}`} />
 						<div className="min-w-0">
-							<p className="m-0 font-mono text-2xs uppercase text-bc-muted">
+							<p className="m-0 font-mono text-2xs uppercase text-ink-muted">
 								{eyebrow}
 							</p>
 							{/* countLabel 并入标题行尾：头部固定两行，layout 侧 frameHeader=56 才装得下 */}
@@ -783,7 +783,7 @@ export class WorkflowFrameShapeUtil extends ShapeUtil<WorkflowFrameShape> {
 									{title}
 								</p>
 								{countLabel ? (
-									<p className="m-0 shrink-0 font-mono text-2xs uppercase text-bc-muted">
+									<p className="m-0 shrink-0 font-mono text-2xs uppercase text-ink-muted">
 										{countLabel}
 									</p>
 								) : null}
@@ -848,7 +848,7 @@ export class WorkflowCardShapeUtil extends ShapeUtil<WorkflowCardShape> {
 			<HTMLContainer style={{ width: w, height: h, pointerEvents: "all" }}>
 				<article
 					aria-label={node.title}
-					className="card-comic h-full select-none overflow-hidden border-3 border-base-content/25 bg-base-100 text-base-content"
+					className="card-comic h-full select-none overflow-hidden border-3 border-ink/25 bg-paper-100 text-ink"
 					onPointerDown={draggable ? undefined : stopCanvasPointer}
 					onClick={() => selectWorkflowNode(node.id)}
 				>

@@ -1,12 +1,14 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { ChatPanel } from "~/components/chat/ChatPanel";
+import { CreationInterviewPanel } from "~/components/chat/CreationInterviewPanel";
+import { PromptBar } from "~/features/workbench/PromptBar";
 import { Button } from "~/components/ui/Button";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { SvgIcon, type IconName } from "~/components/ui/SvgIcon";
 import { assetsApi, getStaticUrl } from "~/services/api";
-import type { Asset } from "~/types";
+import type { Asset, Project, RunAwaitingConfirmEventData } from "~/types";
 import { toast } from "~/utils/toast";
 import { ApiError } from "~/types/errors";
 import type { ComicWorkflowNode } from "../graph/types";
@@ -21,31 +23,37 @@ interface WorkspaceSidebarProps {
 	projectId: number;
 	selectedNode: ComicWorkflowNode | null;
 	structureLocked: boolean;
-	onSendFeedback: (content: string) => void;
 	onConfirm: (feedback?: string) => void;
 	onCancel: () => void;
 	isGenerating: boolean;
+	project?: Project;
+	creationInterview?: boolean;
+	creationBusy?: boolean;
+	onCreationInterviewStart?: () => void;
+	selectionLabel?: string | null;
+	awaitingConfirm?: boolean;
+	awaitingAgent?: string | null;
+	recoveryGate?: RunAwaitingConfirmEventData | null;
+	onSendFeedback?: (content: string) => void;
 	collapsed?: boolean;
 	onCollapsedChange?: (collapsed: boolean) => void;
-	/** Optional selection label shown above chat (canvas → Agent binding). */
-	selectionLabel?: string | null;
 	/** Multi-select node ids from 九宫格 canvas. */
 	selectedNodeIds?: string[];
 	/** Project IP universe for promote/import actions. */
 	universeId?: number | null;
 	/** OiiOii-style default: agent chat on the left of canvas. */
 	placement?: "left" | "right";
+	/** On desktop the inspector is docked over the canvas instead of tabbed here. */
+	showInspectorTab?: boolean;
 }
 
-const BASE_TABS: Array<{
-	key: WorkspaceSidebarTab;
-	label: string;
-	icon: IconName;
-}> = [
-	{ key: "chat", label: "对话", icon: "book-open" },
-	{ key: "inspector", label: "属性", icon: "layers" },
-	{ key: "assets", label: "资产", icon: "archive" },
-];
+const ACTIVITY_TAB = {
+	key: "chat",
+	label: "活动",
+	icon: "book-open",
+} as const;
+const ASSETS_TAB = { key: "assets", label: "资产", icon: "archive" } as const;
+const INSPECTOR_TAB = { key: "inspector", label: "属性", icon: "layers" } as const;
 
 function errorMessage(error: unknown, fallback: string): string {
 	if (error instanceof ApiError) return error.message;
@@ -67,23 +75,33 @@ export function WorkspaceSidebar({
 	projectId,
 	selectedNode,
 	structureLocked,
-	onSendFeedback,
 	onConfirm,
 	onCancel,
 	isGenerating,
+	project,
+	creationInterview = false,
+	creationBusy = false,
+	onCreationInterviewStart,
+	selectionLabel = null,
+	awaitingConfirm = false,
+	awaitingAgent = null,
+	recoveryGate = null,
+	onSendFeedback,
 	collapsed = false,
 	onCollapsedChange,
-	selectionLabel = null,
 	selectedNodeIds = [],
 	universeId = null,
 	placement = "left",
+	showInspectorTab = true,
 }: WorkspaceSidebarProps) {
-	const TABS = universeId
-		? [
-				...BASE_TABS,
-				{ key: "universe" as const, label: "宇宙", icon: "star" as IconName },
-			]
-		: BASE_TABS;
+	const TABS = creationInterview
+		? [{ ...ACTIVITY_TAB, label: "访谈" }]
+		: [
+				ACTIVITY_TAB,
+				...(showInspectorTab ? [INSPECTOR_TAB] : []),
+				ASSETS_TAB,
+				...(universeId ? [{ key: "universe" as const, label: "宇宙", icon: "star" as IconName }] : []),
+			];
 
 	const tabRefs = useRef<Record<WorkspaceSidebarTab, HTMLButtonElement | null>>({
 		chat: null,
@@ -92,6 +110,11 @@ export function WorkspaceSidebar({
 		universe: null,
 	});
 	const isLeft = placement === "left";
+	const visibleTab = !showInspectorTab && activeTab === "inspector" ? "chat" : activeTab;
+
+	useEffect(() => {
+		if (!showInspectorTab && activeTab === "inspector") onTabChange("chat");
+	}, [activeTab, onTabChange, showInspectorTab]);
 
 	const selectTab = (tab: WorkspaceSidebarTab) => {
 		onTabChange(tab);
@@ -104,7 +127,7 @@ export function WorkspaceSidebar({
 	};
 
 	const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-		const currentIndex = TABS.findIndex((tab) => tab.key === activeTab);
+		const currentIndex = TABS.findIndex((tab) => tab.key === visibleTab);
 		if (currentIndex < 0) return;
 
 		const keyHandlers: Record<string, () => void> = {
@@ -129,20 +152,21 @@ export function WorkspaceSidebar({
 	return (
 		<aside
 			className={clsx(
-				"z-sticky flex shrink-0 flex-col border-base-content/10 bg-base-100 transition-[width] duration-normal",
-				// <lg：参与布局的普通块（与预览区上下分栏），不再是遮住画布的底部浮层；折叠只在 lg+ 生效
-				"relative h-[min(58vh,520px)] w-full border-t-2 lg:h-full lg:border-t-0",
+				"z-corner flex shrink-0 flex-col border-ink/10 bg-paper-100 transition-[width,transform,box-shadow] duration-normal",
+				// Desktop: the rail and its panel float above the fixed-size canvas. Mobile stays in document flow.
+				"relative w-full border-t-2 lg:absolute lg:inset-y-2 lg:left-2 lg:border-2 lg:border-ink/15 lg:bg-paper-100/95 lg:shadow-brutal-sm lg:backdrop-blur-sm",
+				creationInterview ? "h-full lg:h-auto" : "h-[min(58vh,520px)] lg:h-auto",
 				isLeft ? "lg:border-r" : "lg:border-l",
 				collapsed
 					? "lg:w-sidebar-collapsed"
 					: "lg:w-sidebar",
 			)}
-			aria-label="Agent 工作区"
-			data-shell="agent-column"
+			aria-label="工作流活动"
+			data-shell="activity-column"
 		>
 			<div
 				className={clsx(
-					"grid gap-0.5 border-b border-base-content/10 p-0.5",
+					"grid gap-0.5 border-b border-ink/10 p-0.5",
 					// <lg 折叠按钮不渲染，占位列只在 lg+ 存在
 					collapsed
 						? "grid-cols-1"
@@ -150,7 +174,16 @@ export function WorkspaceSidebar({
 				)}
 			>
 				<div
-					className={clsx("grid gap-0.5", collapsed ? "grid-cols-1" : "grid-cols-3")}
+					className={clsx(
+						"grid gap-0.5",
+						collapsed
+							? "grid-cols-1"
+							: TABS.length === 2
+								? "grid-cols-2"
+								: TABS.length === 3
+									? "grid-cols-3"
+									: "grid-cols-4",
+					)}
 					role="tablist"
 					aria-label="工作区面板"
 					aria-orientation={collapsed ? "vertical" : "horizontal"}
@@ -166,17 +199,17 @@ export function WorkspaceSidebar({
 							id={tabId(tab.key)}
 							className={clsx(
 								"touch-target-dense flex items-center justify-center gap-1 rounded-sm text-2xs font-semibold transition-colors duration-fast",
-								activeTab === tab.key
+								visibleTab === tab.key
 									? "bg-primary text-primary-content"
-									: "text-bc-muted hover:bg-base-200",
+									: "text-ink-muted hover:bg-paper-200",
 							)}
 							onClick={() => selectTab(tab.key)}
 							aria-label={tab.label}
 							title={tab.label}
 							role="tab"
-							aria-selected={activeTab === tab.key}
+							aria-selected={visibleTab === tab.key}
 							aria-controls={panelId(tab.key)}
-							tabIndex={activeTab === tab.key ? 0 : -1}
+							tabIndex={visibleTab === tab.key ? 0 : -1}
 						>
 							<SvgIcon name={tab.icon} size={12} />
 							<span className={collapsed ? "sr-only" : ""}>{tab.label}</span>
@@ -186,7 +219,7 @@ export function WorkspaceSidebar({
 				<button
 					type="button"
 					// <lg 收起后没有任何入口能再展开，因此折叠按钮只在 lg+ 出现
-					className="touch-target-dense hidden items-center justify-center rounded-sm text-bc-muted transition-colors duration-fast hover:bg-base-200 lg:flex"
+					className="touch-target-dense hidden items-center justify-center rounded-sm text-ink-muted transition-colors duration-fast hover:bg-paper-200 lg:flex"
 					onClick={() => onCollapsedChange?.(!collapsed)}
 					aria-label={collapsed ? "展开工作区" : "收起工作区"}
 					title={collapsed ? "展开工作区" : "收起工作区"}
@@ -209,36 +242,40 @@ export function WorkspaceSidebar({
 			</div>
 
 			<div
-				id={panelId(activeTab)}
+				id={panelId(visibleTab)}
 				className={clsx("min-h-0 flex-1 overflow-hidden", collapsed && "hidden")}
 				role="tabpanel"
-				aria-labelledby={tabId(activeTab)}
+				aria-labelledby={tabId(visibleTab)}
 				tabIndex={0}
 			>
-				{activeTab === "chat" ? (
+				{visibleTab === "chat" ? (
 					<div className="flex h-full min-h-0 flex-col">
-						{selectionLabel ? (
-							<div className="shrink-0 border-b border-accent/25 bg-accent/10 px-2 py-1">
-								<p className="m-0 truncate text-2xs font-bold text-accent">
-									<span className="font-mono font-normal text-bc-muted">
-										绑定 ·{" "}
-									</span>
-									{selectionLabel}
-								</p>
-							</div>
-						) : null}
-						<div className="min-h-0 flex-1 overscroll-contain">
-							<ChatPanel
-								projectId={projectId}
+						<div className="min-h-0 flex-1 overflow-hidden overscroll-contain">
+							{creationInterview && project ? (
+								<CreationInterviewPanel key={project.id} project={project} onStart={onCreationInterviewStart ?? (() => {})} busy={creationBusy} />
+							) : (
+								<ChatPanel
+									projectId={projectId}
+									onConfirm={onConfirm}
+									onCancel={onCancel}
+									isGenerating={isGenerating}
+								/>
+							)}
+						</div>
+						{!creationInterview && onSendFeedback ? (
+							<PromptBar
+								selectionLabel={selectionLabel}
+								awaitingConfirm={awaitingConfirm}
+								awaitingAgent={awaitingAgent}
+								recoveryGate={recoveryGate}
+								isGenerating={isGenerating}
 								onSendFeedback={onSendFeedback}
 								onConfirm={onConfirm}
-								onCancel={onCancel}
-								isGenerating={isGenerating}
 							/>
-						</div>
+						) : null}
 					</div>
 				) : null}
-				{activeTab === "inspector" ? (
+				{visibleTab === "inspector" ? (
 					<WorkflowInspector
 						projectId={projectId}
 						selectedNode={selectedNode}
@@ -247,10 +284,10 @@ export function WorkspaceSidebar({
 						universeId={universeId}
 					/>
 				) : null}
-				{activeTab === "assets" ? (
-					<AssetsPanel projectId={projectId} active={activeTab === "assets"} />
+				{visibleTab === "assets" ? (
+					<AssetsPanel projectId={projectId} active={visibleTab === "assets"} />
 				) : null}
-				{activeTab === "universe" && universeId ? (
+				{visibleTab === "universe" && universeId ? (
 					<UniverseTimelinePanel
 						universeId={universeId}
 						currentProjectId={projectId}
@@ -304,24 +341,24 @@ function AssetsPanel({ projectId, active }: { projectId: number; active: boolean
 
 	return (
 		<div className="flex h-full min-h-0 flex-col" data-shell="asset-panel">
-			<div className="border-b border-base-content/10 px-2 py-1.5">
+			<div className="border-b border-ink/10 px-2 py-1.5">
 				<div className="mb-1.5 flex items-center justify-between gap-2">
 					<div className="min-w-0">
-						<p className="m-0 font-mono text-2xs uppercase tracking-wide text-bc-muted">
+						<p className="m-0 font-mono text-2xs uppercase tracking-wide text-ink-muted">
 							assets
 						</p>
 						<h2 className="m-0 font-heading text-sm font-bold">
 							资产库
 						</h2>
 					</div>
-					<span className="rounded-full border border-base-content/10 bg-base-200 px-2 py-0.5 font-mono text-2xs tabular-nums text-bc-muted">
+					<span className="rounded-full border border-ink/10 bg-paper-200 px-2 py-0.5 font-mono text-2xs tabular-nums text-ink-muted">
 						{data?.total ?? 0}
 					</span>
 				</div>
 				<input
 					id="workspace-asset-search"
 					name="assetSearch"
-					className="input input-bordered input-sm h-8 min-h-8 w-full bg-base-100 text-xs"
+					className="input-doodle h-8 min-h-8 w-full px-2 text-xs"
 					placeholder="搜索资产"
 					value={search}
 					onChange={(event) => setSearch(event.target.value)}
@@ -335,7 +372,7 @@ function AssetsPanel({ projectId, active }: { projectId: number; active: boolean
 								"touch-target-dense h-8 min-h-8 rounded-sm text-2xs font-semibold transition-colors duration-fast",
 								assetType === type
 									? "bg-primary text-primary-content"
-									: "bg-base-200 text-bc-muted hover:bg-base-300",
+									: "bg-paper-200 text-ink-muted hover:bg-paper-300",
 							)}
 							onClick={() => setAssetType(type)}
 						>
@@ -348,7 +385,7 @@ function AssetsPanel({ projectId, active }: { projectId: number; active: boolean
 			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
 				{isLoading ? (
 					<div className="flex h-28 items-center justify-center">
-						<span className="loading loading-spinner loading-sm text-primary" aria-label="加载中" />
+						<span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-primary border-r-transparent" role="status" aria-label="加载中" />
 					</div>
 				) : items.length === 0 ? (
 					<EmptyState
@@ -388,8 +425,8 @@ function AssetTile({
 }) {
 	const imageUrl = getStaticUrl(asset.image_url);
 	return (
-		<div className="overflow-hidden rounded-md border-2 border-base-content/10 bg-base-100 shadow-brutal-sm">
-			<div className="aspect-[4/3] bg-base-200">
+		<div className="overflow-hidden rounded-md border-2 border-ink/10 bg-paper-100 shadow-brutal-sm">
+			<div className="aspect-[4/3] bg-paper-200">
 				{imageUrl ? (
 					<img
 						src={imageUrl}
@@ -398,14 +435,14 @@ function AssetTile({
 						loading="lazy"
 					/>
 				) : (
-					<div className="flex h-full items-center justify-center text-base-content/25">
+					<div className="flex h-full items-center justify-center text-ink/25">
 						<SvgIcon name="image" size={20} />
 					</div>
 				)}
 			</div>
 			<div className="p-1.5">
 				<div className="flex items-center gap-1">
-					<span className="rounded-full border border-base-content/10 bg-base-200 px-1.5 py-px font-mono text-2xs font-bold text-bc-muted">
+					<span className="rounded-full border border-ink/10 bg-paper-200 px-1.5 py-px font-mono text-2xs font-bold text-ink-muted">
 						{asset.asset_type === "character" ? "角色" : "场景"}
 					</span>
 					<h3 className="m-0 min-w-0 flex-1 truncate font-heading text-2xs font-bold">

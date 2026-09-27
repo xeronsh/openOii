@@ -27,13 +27,13 @@ function statusLabel(status: string) {
 
 function statusCls(status: string) {
 	const map: Record<string, string> = {
-		draft: "badge-ghost",
-		processing: "badge-warning",
-		completed: "badge-success",
-		error: "badge-error",
-		ready: "badge-ghost",
+		draft: "bg-paper-100/80 text-ink-muted border-ink/15",
+		processing: "bg-warning/15 text-warning border-warning/30",
+		completed: "bg-success/15 text-success border-success/30",
+		error: "bg-error/15 text-error border-error/30",
+		ready: "bg-paper-100/80 text-ink-muted border-ink/15",
 	};
-	return map[status] || "badge-ghost";
+	return map[status] || "bg-paper-100/80 text-ink-muted border-ink/15";
 }
 
 function ProjectRow({
@@ -63,8 +63,8 @@ function ProjectRow({
 
 	return (
 		<div
-			className={`flex items-start gap-2 py-2 px-2 rounded transition-colors mb-0.5 ${
-				isSelected ? "bg-primary/10" : "hover:bg-base-200/50"
+			className={`flex items-start gap-2 py-2 px-2 rounded transition-colors duration-fast mb-0.5 ${
+				isSelected ? "bg-primary/10" : "hover:bg-paper-200/50"
 			}`}
 		>
 			<label className="cursor-pointer pt-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -80,7 +80,7 @@ function ProjectRow({
 					<div className="flex items-center gap-1">
 						<input
 							type="text"
-							className="input input-bordered input-xs bg-base-100/80 flex-1 min-w-0 text-xs"
+							className="input-doodle   bg-paper-100/80 flex-1 min-w-0 text-xs"
 							value={renameValue}
 							onChange={(e) => onRenameChange(e.target.value)}
 							onKeyDown={(e) => {
@@ -89,10 +89,10 @@ function ProjectRow({
 							}}
 							autoFocus
 						/>
-						<button type="button" className="btn btn-xs btn-primary btn-sm" onClick={onConfirmRename}>
+						<button type="button" className="btn-doodle h-8 min-h-8 gap-1 px-2 text-xs bg-primary text-primary-content" onClick={onConfirmRename}>
 							<SvgIcon name="check" size={12} />
 						</button>
-						<button type="button" className="btn btn-xs btn-ghost btn-sm" onClick={onCancelRename}>
+						<button type="button" className="btn-doodle h-8 min-h-8 gap-1 px-2 text-xs bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm" onClick={onCancelRename}>
 							<SvgIcon name="x" size={12} />
 						</button>
 					</div>
@@ -104,11 +104,11 @@ function ProjectRow({
 					>
 						<div className="flex items-center gap-1.5 mb-0.5">
 							<span className="text-sm font-bold truncate flex-1">{project.title || "未命名项目"}</span>
-							<span className={`badge badge-xs ${statusCls(project.status)}`}>
+							<span className={`badge-doodle text-2xs px-1.5 py-0.5 ${statusCls(project.status)}`}>
 								{statusLabel(project.status)}
 							</span>
 						</div>
-						<div className="flex items-center gap-2 text-xs text-bc-muted">
+						<div className="flex items-center gap-2 text-xs text-ink-muted">
 							<span>{new Date(project.updated_at).toLocaleDateString("zh-CN")}</span>
 							{project.style && <span>{project.style}</span>}
 							{project.target_shot_count && <span>{project.target_shot_count} 镜头</span>}
@@ -119,7 +119,7 @@ function ProjectRow({
 			{!isRenaming && (
 				<button
 					type="button"
-					className="btn btn-xs btn-ghost btn-sm flex-shrink-0 mt-0.5"
+					className="btn-doodle h-7 min-h-7 gap-1 px-2 text-xs bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm flex-shrink-0 mt-0.5"
 					title="重命名"
 					onClick={onStartRename}
 				>
@@ -223,15 +223,15 @@ export function HistoryDrawer({ open, onClose, onNavigate }: HistoryDrawerProps)
 				/>
 			)}
 			<div
-				className={`fixed right-0 top-0 z-modal h-full w-72 transform border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm transition-transform duration-normal ${open ? "translate-x-0" : "translate-x-full"}`}
+				className={`fixed right-0 top-0 z-modal h-full w-72 transform border-l-2 border-ink/15 bg-paper-100 shadow-brutal-sm transition-transform duration-normal ${open ? "translate-x-0" : "translate-x-full"}`}
 			>
-				<div className="flex items-center justify-between border-b-2 border-base-content/10 px-2.5 py-2">
+				<div className="flex items-center justify-between border-b-2 border-ink/10 px-2.5 py-2">
 					<div className="flex items-center gap-1.5">
 						<SvgIcon name="clock-3" size={14} className="text-primary" />
 						<h3 className="m-0 font-heading text-sm font-bold">
 							项目历史
 						</h3>
-						<span className="badge badge-xs badge-ghost tabular-nums">
+						<span className="badge-doodle text-2xs px-1.5 py-0.5 bg-paper-100/80 text-ink-muted border-ink/15 tabular-nums">
 							{projects?.length ?? 0}
 						</span>
 					</div>
@@ -247,7 +247,7 @@ export function HistoryDrawer({ open, onClose, onNavigate }: HistoryDrawerProps)
 				</div>
 
 				{projects && projects.length > 0 && (
-					<div className="flex items-center gap-2 border-b border-base-content/10 px-2.5 py-1.5 text-2xs">
+					<div className="flex items-center gap-2 border-b border-ink/10 px-2.5 py-1.5 text-2xs">
 						<label className="flex cursor-pointer select-none items-center gap-1">
 							<input
 								type="checkbox"
@@ -255,7 +255,7 @@ export function HistoryDrawer({ open, onClose, onNavigate }: HistoryDrawerProps)
 								onChange={(e) => handleToggleSelectAll(e.target.checked)}
 								className="checkbox checkbox-xs"
 							/>
-							<span className="text-bc-muted">全选</span>
+							<span className="text-ink-muted">全选</span>
 						</label>
 						{hasSelection && (
 							<Button
@@ -278,14 +278,14 @@ export function HistoryDrawer({ open, onClose, onNavigate }: HistoryDrawerProps)
 					}}
 				>
 					{!projects || projects.length === 0 ? (
-						<div className="py-8 text-center text-xs text-bc-muted">
+						<div className="py-8 text-center text-xs text-ink-muted">
 							<SvgIcon
 								name="clapperboard"
 								size={22}
-								className="mx-auto mb-2 text-base-content/15"
+								className="mx-auto mb-2 text-ink/15"
 							/>
 							<p className="m-0">还没有项目</p>
-							<p className="m-0 mt-1 text-bc-muted">
+							<p className="m-0 mt-1 text-ink-muted">
 								创建新项目后会出现在这里
 							</p>
 						</div>

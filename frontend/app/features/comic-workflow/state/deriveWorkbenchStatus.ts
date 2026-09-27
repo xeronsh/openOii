@@ -98,11 +98,7 @@ export function deriveWorkbenchStatus(
 	if (
 		input.recoveryControl?.state === "active" ||
 		input.isGenerating ||
-		Boolean(input.currentRunId) ||
-		projectStatus === "processing" ||
-		projectStatus === "planning" ||
-		projectStatus === "generating" ||
-		projectStatus === "running"
+		Boolean(input.currentRunId)
 	) {
 		return getWorkbenchStatusMeta("generating");
 	}

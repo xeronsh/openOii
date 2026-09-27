@@ -9,6 +9,7 @@ import { DeskSection } from "~/components/layout/DeskSection";
 import { Button } from "~/components/ui/Button";
 import { Input } from "~/components/ui/Input";
 import { Modal } from "~/components/ui/Modal";
+import { Select } from "~/components/ui/Select";
 import {
 	PlusIcon,
 	BookOpenIcon,
@@ -131,7 +132,7 @@ export function UniverseDetailPage() {
 			<PageShell data-shell="universe-detail-loading">
 				<TopBar />
 				<div className="flex flex-1 items-center justify-center">
-					<span className="loading loading-spinner loading-md text-primary" aria-label="加载中" />
+					<span className=" spinner-doodle h-5 w-5 text-primary" aria-label="加载中" />
 				</div>
 			</PageShell>
 		);
@@ -146,7 +147,7 @@ export function UniverseDetailPage() {
 			<PageShell data-shell="universe-detail-missing">
 				<TopBar />
 				<div className="flex flex-1 flex-col items-center justify-center gap-3">
-					<p className="m-0 text-sm text-bc-muted">宇宙不存在</p>
+					<p className="m-0 text-sm text-ink-muted">宇宙不存在</p>
 					<Link to="/universes">
 						<Button size="sm" variant="secondary">返回宇宙列表</Button>
 					</Link>
@@ -165,7 +166,7 @@ export function UniverseDetailPage() {
 							<p className="m-0 font-heading text-md font-bold text-error">
 								宇宙加载失败
 							</p>
-							<p className="m-0 mt-0.5 text-xs text-bc-muted">
+							<p className="m-0 mt-0.5 text-xs text-ink-muted">
 								服务暂时不可用，数据还在，稍后重试
 							</p>
 						</div>
@@ -228,7 +229,7 @@ export function UniverseDetailPage() {
 		<PageShell data-shell="universe-detail">
 			<TopBar />
 
-			<PageBody>
+			<PageBody className="workbench-surface">
 				<PageContent>
 				<PageHeader
 					eyebrow="universe detail"
@@ -242,7 +243,7 @@ export function UniverseDetailPage() {
 						<>
 							<Link
 								to="/universes"
-								className="btn btn-ghost btn-sm touch-target-dense h-8 min-h-8"
+								className="btn-doodle bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm touch-target-dense h-8 min-h-8 gap-1.5 px-2.5 text-sm"
 							>
 								← 列表
 							</Link>
@@ -274,7 +275,7 @@ export function UniverseDetailPage() {
 								title="世界观设定"
 								icon={<GlobeAltIcon className="h-4 w-4" aria-hidden="true" />}
 							>
-								<p className="m-0 whitespace-pre-wrap text-sm text-bc-muted">
+								<p className="m-0 whitespace-pre-wrap text-sm text-ink-muted">
 									{u.world_setting}
 								</p>
 							</DeskSection>
@@ -285,7 +286,7 @@ export function UniverseDetailPage() {
 								title="统一风格规则"
 								icon={<PaintBrushIcon className="h-4 w-4" aria-hidden="true" />}
 							>
-								<p className="m-0 whitespace-pre-wrap text-sm text-bc-muted">
+								<p className="m-0 whitespace-pre-wrap text-sm text-ink-muted">
 									{u.style_rules}
 								</p>
 							</DeskSection>
@@ -321,36 +322,36 @@ export function UniverseDetailPage() {
 									.map((ch) => (
 										<div
 											key={ch.id}
-											className="flex min-h-10 items-center justify-between gap-2 rounded-md border border-base-content/10 bg-base-200/50 px-2 py-1.5 transition-colors duration-fast hover:bg-base-200"
+											className="flex min-h-10 items-center justify-between gap-2 rounded-md border border-ink/10 bg-paper-200/50 px-2 py-1.5 transition-colors duration-fast hover:bg-paper-200"
 										>
 											<div className="flex min-w-0 items-center gap-2">
 												{ch.chapter_number != null ? (
-													<span className="badge badge-primary badge-sm shrink-0 font-bold tabular-nums">
+													<span className="badge-doodle bg-primary text-primary-content border-primary/30 text-xs px-2 py-0.5 shrink-0 font-bold tabular-nums">
 														第{ch.chapter_number}章
 													</span>
 												) : (
-													<span className="badge badge-ghost badge-sm shrink-0">
+													<span className="badge-doodle bg-paper-100/80 text-ink-muted border-ink/15 text-xs px-2 py-0.5 shrink-0">
 														未编号
 													</span>
 												)}
 												<Link
 													to={`/project/${ch.project_id}`}
-													className="truncate font-heading text-sm font-bold transition-colors hover:text-primary-ink"
+													className="truncate font-heading text-sm font-bold transition-colors duration-fast hover:text-primary-ink"
 												>
 													{ch.chapter_title || ch.project_title || "未命名"}
 												</Link>
-												<span className="font-mono text-2xs text-bc-muted">
+												<span className="font-mono text-2xs text-ink-muted">
 													#{ch.project_id}
 												</span>
 												{!ch.is_main_story ? (
-													<span className="badge badge-ghost badge-xs shrink-0">
+													<span className="badge-doodle bg-paper-100/80 text-ink-muted border-ink/15 text-2xs px-1.5 py-0.5 shrink-0">
 														外传
 													</span>
 												) : null}
 											</div>
 											<button
 												type="button"
-												className="btn btn-ghost btn-xs h-7 min-h-7 text-error/50 hover:text-error"
+								className="btn-doodle bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm h-7 min-h-7 gap-1 px-2 text-xs text-error/50 hover:text-error"
 												aria-label={`从宇宙移除${ch.chapter_title || ch.project_title || "未命名项目"}`}
 												title="从宇宙移除"
 												onClick={() =>
@@ -371,10 +372,12 @@ export function UniverseDetailPage() {
 						meta={`${u.shared_characters.length} 个`}
 						actions={
 							<>
-								<label className="flex items-center gap-1 text-2xs text-bc-muted">
+								<label className="flex items-center gap-1 text-2xs text-ink-muted">
 									导入到
-									<select
-										className="select select-bordered select-xs h-7 max-w-40 bg-base-200"
+									<Select
+										density="compact"
+										containerClassName="max-w-40"
+										className="bg-paper-200"
 										value={importProjectId || defaultImportProjectId}
 										onChange={(e) => setImportProjectId(e.target.value)}
 										disabled={u.chapters.length === 0}
@@ -394,7 +397,7 @@ export function UniverseDetailPage() {
 												</option>
 											))
 										)}
-									</select>
+									</Select>
 								</label>
 								<Button size="sm" onClick={() => setCreateCharOpen(true)}>
 									+ 手动创建
@@ -463,30 +466,30 @@ export function UniverseDetailPage() {
 							setEditForm((s) => ({ ...s, name: e.target.value }))
 						}
 					/>
-					<label className="form-control">
-						<span className="label-text text-xs font-medium">简介</span>
+					<label className="flex flex-col">
+						<span className="font-heading text-xs font-medium text-xs font-medium">简介</span>
 						<textarea
-							className="textarea textarea-bordered textarea-sm min-h-16"
+							className="input-doodle   min-h-16"
 							value={editForm.description}
 							onChange={(e) =>
 								setEditForm((s) => ({ ...s, description: e.target.value }))
 							}
 						/>
 					</label>
-					<label className="form-control">
-						<span className="label-text text-xs font-medium">世界观</span>
+					<label className="flex flex-col">
+						<span className="font-heading text-xs font-medium text-xs font-medium">世界观</span>
 						<textarea
-							className="textarea textarea-bordered textarea-sm min-h-20"
+							className="input-doodle   min-h-20"
 							value={editForm.world_setting}
 							onChange={(e) =>
 								setEditForm((s) => ({ ...s, world_setting: e.target.value }))
 							}
 						/>
 					</label>
-					<label className="form-control">
-						<span className="label-text text-xs font-medium">风格规则</span>
+					<label className="flex flex-col">
+						<span className="font-heading text-xs font-medium text-xs font-medium">风格规则</span>
 						<textarea
-							className="textarea textarea-bordered textarea-sm min-h-16"
+							className="input-doodle   min-h-16"
 							value={editForm.style_rules}
 							onChange={(e) =>
 								setEditForm((s) => ({ ...s, style_rules: e.target.value }))
@@ -528,20 +531,20 @@ export function UniverseDetailPage() {
 							setCharForm((s) => ({ ...s, name: e.target.value }))
 						}
 					/>
-					<label className="form-control">
-						<span className="label-text text-xs font-medium">描述</span>
+					<label className="flex flex-col">
+						<span className="font-heading text-xs font-medium text-xs font-medium">描述</span>
 						<textarea
-							className="textarea textarea-bordered textarea-sm min-h-16"
+							className="input-doodle   min-h-16"
 							value={charForm.description}
 							onChange={(e) =>
 								setCharForm((s) => ({ ...s, description: e.target.value }))
 							}
 						/>
 					</label>
-					<label className="form-control">
-						<span className="label-text text-xs font-medium">视觉笔记</span>
+					<label className="flex flex-col">
+						<span className="font-heading text-xs font-medium text-xs font-medium">视觉笔记</span>
 						<textarea
-							className="textarea textarea-bordered textarea-sm min-h-16"
+							className="input-doodle   min-h-16"
 							value={charForm.visual_notes}
 							onChange={(e) =>
 								setCharForm((s) => ({ ...s, visual_notes: e.target.value }))

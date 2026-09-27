@@ -364,6 +364,8 @@ export interface RunFailedEventData {
 	run_id?: number;
 	project_id?: number;
 	error?: string | null;
+	error_code?: string | null;
+	retryable?: boolean | null;
 	agent?: string | null;
 	current_stage?: string | null;
 }

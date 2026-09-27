@@ -288,7 +288,7 @@ describe("ConfigInput", () => {
 		// 验证加载指示器
 		await waitFor(() => {
 			expect(
-				screen.getByRole("button").querySelector(".loading-spinner"),
+				screen.getByRole("button").querySelector(".spinner-doodle"),
 			).toBeInTheDocument();
 		});
 

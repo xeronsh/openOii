@@ -14,6 +14,7 @@ import type { WorkflowStage } from "~/types";
 import { STAGE_PIPELINE, getPipelineStageIndex } from "~/utils/pipeline";
 import { Button } from "~/components/ui/Button";
 import type { WorkbenchStatus } from "~/features/comic-workflow/state/deriveWorkbenchStatus";
+import { useEffect, useRef, useState } from "react";
 
 interface StagePipelineProps {
 	currentStage: WorkflowStage;
@@ -37,11 +38,11 @@ interface StagePipelineProps {
 }
 
 const STATUS_DOT: Record<WorkbenchStatus["state"], string> = {
-	idle: "bg-base-content/35",
+	idle: "bg-ink/35",
 	generating: "bg-warning animate-pulse",
 	awaitingConfirm: "bg-info",
 	recoverable: "bg-warning",
-	cancelled: "bg-base-content/35",
+	cancelled: "bg-ink/35",
 	ready: "bg-success",
 	superseded: "bg-warning",
 	failed: "bg-error",
@@ -51,7 +52,7 @@ const STATUS_DOT: Record<WorkbenchStatus["state"], string> = {
 const chromeBtn =
 	"touch-target-dense !h-8 !min-h-8 gap-1 !px-2 text-xs transition-colors duration-fast";
 
-// daisyUI dropdown 靠 focus 展开，执行动作后主动收起菜单
+// 执行动作后收起 focus 展开的菜单。
 function runMenuAction(action: () => void) {
 	if (document.activeElement instanceof HTMLElement) {
 		document.activeElement.blur();
@@ -76,6 +77,16 @@ export function StagePipeline({
 	onExport,
 	exportBusy = false,
 }: StagePipelineProps) {
+	const [toolsOpen, setToolsOpen] = useState(false);
+	const toolsRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		if (!toolsOpen) return;
+		const closeOnOutsideClick = (event: PointerEvent) => {
+			if (!toolsRef.current?.contains(event.target as Node)) setToolsOpen(false);
+		};
+		document.addEventListener("pointerdown", closeOnOutsideClick);
+		return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+	}, [toolsOpen]);
 	const currentIndex = getPipelineStageIndex(currentStage);
 	const progressPercent = Math.max(0, Math.min(100, Math.round(progress * 100)));
 	const generateLabel =
@@ -89,7 +100,7 @@ export function StagePipeline({
 
 	return (
 		<div
-			className="chrome-toolbar z-sticky gap-2 border-b border-base-content/10 bg-base-200/80 px-2 sm:gap-3 sm:px-3"
+			className="chrome-toolbar z-sticky gap-2 border-b border-ink/10 bg-paper-200/80 px-2 sm:gap-3 sm:px-3"
 			data-shell="stage-pipeline"
 		>
 			<span className="sr-only" aria-live="polite">
@@ -105,11 +116,11 @@ export function StagePipeline({
 					aria-hidden="true"
 				/>
 				{/* 状态文案在所有视口可见：<sm 只剩色点时色盲无法区分状态 */}
-				<span className="inline-block max-w-[4.5rem] truncate font-mono text-2xs font-semibold tabular-nums text-bc-muted sm:max-w-[5.5rem]">
+				<span className="inline-block max-w-[4.5rem] truncate font-mono text-2xs font-semibold tabular-nums text-ink-muted sm:max-w-[5.5rem]">
 					{workbenchStatus.label}
 				</span>
 				<div
-					className="h-1 w-14 overflow-hidden rounded-full bg-base-content/10 sm:w-20"
+					className="h-1 w-14 overflow-hidden rounded-full bg-ink/10 sm:w-20"
 					role="progressbar"
 					aria-label="生成进度"
 					aria-valuemin={0}
@@ -121,7 +132,7 @@ export function StagePipeline({
 						style={{ width: `${progressPercent}%` }}
 					/>
 				</div>
-				<span className="w-8 font-mono text-2xs tabular-nums text-bc-muted">
+				<span className="w-8 font-mono text-2xs tabular-nums text-ink-muted">
 					{progressPercent}%
 				</span>
 			</div>
@@ -141,8 +152,8 @@ export function StagePipeline({
 									current
 										? "bg-primary text-primary-content"
 										: past
-											? "text-bc-muted"
-											: "text-bc-muted"
+											? "text-ink-muted"
+											: "text-ink-muted"
 								}`}
 								aria-current={current ? "step" : undefined}
 							>
@@ -159,7 +170,7 @@ export function StagePipeline({
 							</span>
 							{index < STAGE_PIPELINE.length - 1 ? (
 								<span
-									className={`mx-0.5 h-px w-3 ${past ? "bg-success/60" : "bg-base-content/15"}`}
+									className={`mx-0.5 h-px w-3 ${past ? "bg-success/60" : "bg-ink/15"}`}
 									aria-hidden="true"
 								/>
 							) : null}
@@ -171,23 +182,24 @@ export function StagePipeline({
 			<div className="flex shrink-0 items-center gap-1">
 				{hasTools ? (
 					// 版本/一致性/导出收进溢出菜单：所有视口可达（<sm 原先整组消失，导出无入口）
-					<div className="dropdown dropdown-end mr-0.5 border-r border-base-content/10 pr-1">
+					<div ref={toolsRef} className="relative mr-0.5 border-r border-ink/10 pr-1" onKeyDown={(event) => event.key === "Escape" && setToolsOpen(false)}>
 						<button
 							type="button"
-							tabIndex={0}
-							className={`btn btn-ghost btn-sm ${chromeBtn}`}
+							className={`btn-doodle bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm h-8 min-h-8 gap-1.5 px-2.5 text-sm ${chromeBtn}`}
 							aria-label="工作台工具"
 							aria-haspopup="menu"
+							aria-expanded={toolsOpen}
 							title="版本 / 一致性 / 导出"
+							onClick={() => setToolsOpen((open) => !open)}
 						>
 							<EllipsisHorizontalIcon className="h-4 w-4" aria-hidden="true" />
 							<span className="hidden lg:inline">工具</span>
 						</button>
-						<ul
+						{toolsOpen ? <ul
 							tabIndex={0}
 							role="menu"
 							aria-label="工作台工具菜单"
-							className="dropdown-content menu z-dropdown mt-1 w-44 rounded-md border-2 border-base-content/10 bg-base-100 p-1 shadow-brutal-sm"
+							className="absolute right-0 top-full z-dropdown mt-1 w-44 list-none border-2 border-ink/10 bg-paper-100 p-1 shadow-brutal-sm"
 						>
 							{onOpenVersions ? (
 								<li role="none">
@@ -195,7 +207,7 @@ export function StagePipeline({
 										type="button"
 										role="menuitem"
 										className="gap-2 text-xs"
-										onClick={() => runMenuAction(onOpenVersions)}
+										onClick={() => { setToolsOpen(false); runMenuAction(onOpenVersions); }}
 										aria-label="打开版本对比"
 									>
 										<ClockIcon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -209,7 +221,7 @@ export function StagePipeline({
 										type="button"
 										role="menuitem"
 										className="gap-2 text-xs"
-										onClick={() => runMenuAction(onOpenConsistency)}
+										onClick={() => { setToolsOpen(false); runMenuAction(onOpenConsistency); }}
 										aria-label="打开一致性报告"
 									>
 										<ShieldCheckIcon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -223,7 +235,7 @@ export function StagePipeline({
 										type="button"
 										role="menuitem"
 										className="gap-2 text-xs"
-										onClick={() => runMenuAction(onExport)}
+										onClick={() => { setToolsOpen(false); runMenuAction(onExport); }}
 										disabled={exportBusy || isGenerating}
 										aria-label="导出 Webtoon 长图"
 									>
@@ -232,7 +244,7 @@ export function StagePipeline({
 									</button>
 								</li>
 							) : null}
-						</ul>
+						</ul> : null}
 					</div>
 				) : null}
 

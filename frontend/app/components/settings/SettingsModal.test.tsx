@@ -129,7 +129,7 @@ describe("SettingsModal", () => {
 		renderComponent();
 
 		// 验证标题
-		expect(screen.getByText("环境变量配置管理")).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: /系统设置/ })).toBeInTheDocument();
 
 		// 等待数据加载完成
 		await waitFor(
@@ -778,7 +778,7 @@ describe("SettingsModal", () => {
 		renderComponent();
 
 		// 验证加载指示器存在
-		const loadingSpinner = document.querySelector(".loading-spinner");
+		const loadingSpinner = document.querySelector(".spinner-doodle");
 		expect(loadingSpinner).toBeInTheDocument();
 
 		// 清理：resolve promise

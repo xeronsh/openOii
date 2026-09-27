@@ -37,9 +37,9 @@ describe("Modal", () => {
         content
       </Modal>
     );
-    // The X close button is inside modal-action
+    // The close button is inside the dialog actions.
     const closeButtons = screen.getAllByText("关闭");
-    fireEvent.click(closeButtons[0]); // modal-action close button
+    fireEvent.click(closeButtons[0]);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -50,7 +50,7 @@ describe("Modal", () => {
         content
       </Modal>
     );
-    fireEvent.click(screen.getByLabelText("关闭对话框"));
+    fireEvent.click(screen.getByRole("dialog").parentElement!);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

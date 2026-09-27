@@ -133,15 +133,15 @@ export function ProjectsPage() {
 	};
 
 	return (
-		<PageShell className="text-base-content" data-shell="projects-list">
+		<PageShell className="text-ink" data-shell="projects-list">
 			<TopBar />
 
-			<PageBody>
-				<PageContent width="wide">
+			<PageBody className="workbench-surface">
+				<PageContent width="wide" className="gap-4 sm:gap-5 sm:py-5">
 				<PageHeader
-					eyebrow="project browser"
-					title="项目"
-					description="回到工作台，或清理草稿"
+					eyebrow="openoii / library / projects"
+					title="项目库"
+					description="继续制作中的故事，或从新想法开始一部漫剧。"
 					actions={
 						<>
 							<div className="grid grid-cols-3 gap-1.5">
@@ -160,11 +160,11 @@ export function ProjectsPage() {
 				/>
 
 				<section
-					className="rounded-lg border-2 border-base-content/15 bg-base-200/45"
+					className="border-y-2 border-ink/15 bg-paper-100/85 shadow-brutal-sm"
 					aria-label="项目批量操作"
 				>
 					<div className="flex flex-col gap-2 p-2 sm:flex-row sm:items-center sm:justify-between">
-						<label className="touch-target-dense flex cursor-pointer select-none items-center gap-2 rounded-md px-1.5 text-xs font-semibold text-bc-muted">
+						<label className="touch-target-dense flex cursor-pointer select-none items-center gap-2 px-1.5 text-xs font-semibold text-ink-muted">
 							<input
 								type="checkbox"
 								checked={allSelected}
@@ -175,14 +175,14 @@ export function ProjectsPage() {
 							<span>全选</span>
 						</label>
 						<div className="flex flex-wrap items-center gap-1.5">
-							<span className="rounded-full border border-base-content/15 bg-base-100 px-2 py-0.5 text-2xs font-semibold tabular-nums text-bc-muted">
+							<span className="border border-ink/15 bg-paper-100 px-2 py-0.5 text-2xs font-semibold tabular-nums text-ink-muted">
 								{selectedCount > 0
 									? `已选 ${selectedCount}`
 									: "未选择"}
 							</span>
 							<button
 								type="button"
-								className="btn btn-sm btn-error touch-target-dense h-8 gap-1 px-2"
+								className="btn-doodle bg-error text-error-content touch-target-dense h-8 gap-1 px-2 text-sm"
 								onClick={handleBatchDeleteClick}
 								disabled={selectedCount === 0 || deleteMutation.isPending}
 							>
@@ -201,16 +201,16 @@ export function ProjectsPage() {
 					) : visibleProjects.length === 0 ? (
 						<EmptyState />
 					) : (
-						<div className="overflow-hidden rounded-lg border-2 border-base-content/15 bg-base-100 shadow-brutal-sm">
+						<div className="overflow-hidden border-y-2 border-ink/15 bg-paper-100 shadow-brutal-sm">
 							{/* 表头只服务 sm+ 的表格网格；<sm 是卡片式行，表头隐藏 */}
-							<div className="hidden border-b border-base-content/10 bg-base-200/70 py-1.5 font-mono text-2xs uppercase text-bc-muted sm:grid sm:grid-cols-[2.75rem_minmax(0,1fr)_7rem_7rem_2.75rem] sm:gap-3 sm:px-3">
+							<div className="hidden border-b border-ink/10 bg-paper-200/70 py-1.5 font-mono text-2xs uppercase text-ink-muted sm:grid sm:grid-cols-[2.75rem_minmax(0,1fr)_7rem_7rem_2.75rem] sm:gap-3 sm:px-3">
 								<span />
 								<span>项目</span>
 								<span>状态</span>
 								<span>更新</span>
 								<span className="text-right">操作</span>
 							</div>
-							<div className="divide-y divide-base-content/10">
+							<div className="divide-y divide-ink/10">
 								{visibleProjects.map((project) => (
 									<ProjectRow
 										key={project.id}
@@ -246,8 +246,8 @@ export function ProjectsPage() {
 
 function Metric({ label, value }: { label: string; value: number }) {
 	return (
-		<div className="rounded-md border border-base-content/10 bg-base-200 px-2 py-1.5">
-			<p className="m-0 font-mono text-2xs uppercase text-bc-muted">
+		<div className="border-l-2 border-primary bg-paper-200 px-2 py-1.5">
+			<p className="m-0 font-mono text-2xs uppercase text-ink-muted">
 				{label}
 			</p>
 			<p className="m-0 font-heading text-md font-bold leading-none tabular-nums">
@@ -273,8 +273,8 @@ function ProjectRow({
 
 	return (
 		// <sm 卡片式三列（勾选｜内容｜删除，状态行落到第二行）；sm+ 维持五列表格网格
-		<article className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 px-2 py-2 transition-colors duration-fast hover:bg-base-200/45 sm:grid-cols-[2.75rem_minmax(0,1fr)_7rem_7rem_2.75rem] sm:items-center sm:gap-3 sm:px-3">
-			<label className="touch-target-dense flex cursor-pointer items-center justify-center rounded-md hover:bg-base-200">
+		<article className="grid min-h-20 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 px-2 py-3 transition-colors duration-fast hover:bg-paper-200/55 sm:grid-cols-[2.75rem_minmax(0,1fr)_7rem_7rem_2.75rem] sm:items-center sm:gap-3 sm:px-3 sm:py-4">
+			<label className="touch-target-dense flex cursor-pointer items-center justify-center rounded-md hover:bg-paper-200">
 				<input
 					type="checkbox"
 					aria-label={`选择项目 ${project.title}`}
@@ -286,7 +286,7 @@ function ProjectRow({
 
 			<Link
 				to={`/project/${project.id}`}
-				className="min-w-0 rounded-md py-0.5 pr-2"
+				className="min-w-0 py-0.5 pr-2"
 			>
 				<div className="flex min-w-0 items-center gap-1.5">
 					<FolderOpenIcon
@@ -298,15 +298,17 @@ function ProjectRow({
 						{project.title}
 					</h2>
 				</div>
-				<p className="m-0 mt-0.5 truncate text-xs text-bc-muted">
+				<p className="m-0 mt-0.5 truncate text-xs text-ink-muted">
 					{story || "尚未填写故事内容"}
 				</p>
-				<div className="mt-1 flex flex-wrap gap-1.5 text-2xs font-semibold text-bc-muted">
+				<div className="mt-1 flex flex-wrap gap-1.5 text-2xs font-semibold text-ink-muted">
 					<span>{project.style || "未设风格"}</span>
 					<span className="tabular-nums">
 						{project.target_shot_count ?? "自动"} 镜头
 					</span>
-					{project.creation_mode ? <span>{project.creation_mode}</span> : null}
+					{project.creation_mode ? (
+						<span>{project.creation_mode === "quick" ? "YOLO 模式" : project.creation_mode === "review" ? "交互模式" : project.creation_mode}</span>
+					) : null}
 				</div>
 			</Link>
 
@@ -318,14 +320,14 @@ function ProjectRow({
 					{status.label}
 				</span>
 
-				<span className="font-mono text-2xs tabular-nums text-bc-muted">
+				<span className="font-mono text-2xs tabular-nums text-ink-muted">
 					{formatDate(project.updated_at)}
 				</span>
 			</div>
 
 			<button
 				type="button"
-				className="btn btn-ghost btn-sm btn-square touch-target-dense col-start-3 row-start-1 h-8 justify-self-end text-error hover:bg-error/10 sm:col-auto sm:row-auto"
+				className="btn-doodle bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm touch-target-dense col-start-3 row-start-1 h-8 min-h-8 w-8 justify-self-end p-0 text-error hover:bg-error/10 sm:col-auto sm:row-auto"
 				onClick={onDelete}
 				aria-label={`删除项目 ${project.title}`}
 				title="删除"
@@ -338,12 +340,12 @@ function ProjectRow({
 
 function LoadingState() {
 	return (
-		<div className="flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-base-content/15 bg-base-200/35">
+		<div className="flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-ink/15 bg-paper-200/35">
 			<ArrowPathIcon
 				className="h-5 w-5 animate-spin text-primary"
 				aria-hidden="true"
 			/>
-			<p className="m-0 text-sm font-semibold text-bc-muted">
+			<p className="m-0 text-sm font-semibold text-ink-muted">
 				正在加载项目…
 			</p>
 		</div>
@@ -358,7 +360,7 @@ function ErrorState() {
 				<p className="m-0 font-heading text-md font-bold text-error">
 					加载失败，请重试
 				</p>
-				<p className="m-0 mt-0.5 text-xs text-bc-muted">
+				<p className="m-0 mt-0.5 text-xs text-ink-muted">
 					刷新页面或检查后端是否可用
 				</p>
 			</div>
@@ -368,7 +370,7 @@ function ErrorState() {
 
 function EmptyState() {
 	return (
-		<div className="min-h-[10rem] rounded-lg border-2 border-dashed border-base-content/15 bg-base-200/35">
+		<div className="min-h-[10rem] rounded-lg border-2 border-dashed border-ink/15 bg-paper-200/35">
 			<SharedEmptyState
 				icon={<DocumentTextIcon className="h-5 w-5" aria-hidden="true" />}
 				title="暂无项目"

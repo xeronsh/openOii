@@ -36,7 +36,7 @@ export function App() {
         <BrowserRouter>
           {/* Viewport host: pages fill this; no document scroll */}
           <div
-            className="relative h-full max-h-dvh overflow-hidden bg-base-100"
+            className="relative h-full max-h-dvh overflow-hidden bg-paper-100"
             data-shell="app-root"
           >
             <Suspense

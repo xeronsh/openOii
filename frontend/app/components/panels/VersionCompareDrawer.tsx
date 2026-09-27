@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "~/components/ui/Button";
+import { Select } from "~/components/ui/Select";
 import { SvgIcon } from "~/components/ui/SvgIcon";
 import { projectQueryKeys } from "~/query/queryKeys";
 import { getStaticUrl, projectsApi, versionsApi } from "~/services/api";
@@ -59,13 +60,13 @@ function versionLabel(version: ArtifactVersion): string {
 function VersionColumn({ title, version }: { title: string; version?: ArtifactVersion }) {
 	const imageUrl = getStaticUrl(version?.snapshot.image_url as string | null | undefined);
 	return (
-		<section className="min-w-0 rounded-md border-2 border-base-content/15 bg-base-200/60 p-2.5">
+		<section className="min-w-0 rounded-md border-2 border-ink/15 bg-paper-200/60 p-2.5">
 			<h3 className="m-0 font-heading text-xs font-bold">{title}</h3>
-			<div className="mt-1.5 aspect-video overflow-hidden rounded-sm border border-base-content/10 bg-base-300">
+			<div className="mt-1.5 aspect-video overflow-hidden rounded-sm border border-ink/10 bg-paper-300">
 				{imageUrl ? (
 					<img src={imageUrl} alt={title} className="h-full w-full object-cover" />
 				) : (
-					<div className="flex h-full items-center justify-center text-2xs text-bc-muted">
+					<div className="flex h-full items-center justify-center text-2xs text-ink-muted">
 						图片不存在或未生成
 					</div>
 				)}
@@ -76,7 +77,7 @@ function VersionColumn({ title, version }: { title: string; version?: ArtifactVe
 					if (value === undefined || value === null || value === "") return null;
 					return (
 						<div key={field} className="text-2xs">
-							<div className="font-semibold text-bc-muted">{LABELS[field] || field}</div>
+							<div className="font-semibold text-ink-muted">{LABELS[field] || field}</div>
 							<div className="whitespace-pre-wrap break-words">{valueToText(value)}</div>
 						</div>
 					);
@@ -88,7 +89,7 @@ function VersionColumn({ title, version }: { title: string; version?: ArtifactVe
 
 function DiffRow({ diff }: { diff: VersionDiff }) {
 	return (
-		<li className="rounded border border-base-content/10 bg-base-100 p-2 text-xs">
+		<li className="rounded border border-ink/10 bg-paper-100 p-2 text-xs">
 			<div className="mb-1 font-semibold">{LABELS[diff.field_name] || diff.field_name}</div>
 			<div className="grid gap-2 md:grid-cols-2">
 				<div className="rounded bg-error/10 p-2">
@@ -188,16 +189,16 @@ export function VersionCompareDrawer({
 
 	return (
 		<aside
-			className={`fixed right-0 top-0 z-modal h-full w-full max-w-5xl transform overflow-y-auto border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm transition-transform duration-normal ${
+			className={`fixed right-0 top-0 z-modal h-full w-full max-w-5xl transform overflow-y-auto border-l-2 border-ink/15 bg-paper-100 shadow-brutal-sm transition-transform duration-normal ${
 				open ? "translate-x-0" : "translate-x-full"
 			}`}
 		>
-			<div className="sticky top-0 z-sticky flex items-center gap-2 border-b-2 border-base-content/10 bg-base-100 px-3 py-2">
+			<div className="sticky top-0 z-sticky flex items-center gap-2 border-b-2 border-ink/10 bg-paper-100 px-3 py-2">
 				<SvgIcon name="clock-3" size={16} />
 				<h2 className="m-0 font-heading text-md font-bold">版本对比</h2>
 				<button
 					type="button"
-					className="btn btn-ghost btn-circle touch-target-dense ml-auto h-8 min-h-8 w-8"
+					className="btn-doodle bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm rounded-full touch-target-dense ml-auto h-8 min-h-8 w-8"
 					onClick={onClose}
 					aria-label="关闭版本对比"
 					title="关闭版本对比"
@@ -208,16 +209,19 @@ export function VersionCompareDrawer({
 
 			<div className="space-y-3 p-3">
 				<div className="grid gap-2 md:grid-cols-4">
-					<select
-						className="select select-bordered select-sm h-8 min-h-8"
+					<Select
+						density="compact"
+						aria-label="比较对象类型"
 						value={entityType}
 						onChange={(e) => handleEntityTypeChange(e.currentTarget.value as VersionEntityType)}
 					>
 						<option value="character">角色</option>
 						<option value="shot">分镜</option>
-					</select>
-					<select
-						className="select select-bordered select-sm h-8 min-h-8 md:col-span-3"
+					</Select>
+					<Select
+						density="compact"
+						containerClassName="md:col-span-3"
+						aria-label="选择要比较的实体"
 						value={selectedEntityId ?? ""}
 						onChange={(e) => setEntityId(Number(e.currentTarget.value))}
 					>
@@ -228,12 +232,12 @@ export function VersionCompareDrawer({
 							: shotEntities.map((entity) => (
 								<option key={entity.id} value={entity.id}>{`镜头 ${entity.order}`}</option>
 							))}
-					</select>
+					</Select>
 				</div>
 
-				{versionsQuery.isLoading && <div className="text-xs text-bc-muted">加载版本中...</div>}
+				{versionsQuery.isLoading && <div className="text-xs text-ink-muted">加载版本中...</div>}
 				{!versionsQuery.isLoading && versions.length === 0 && (
-					<div className="rounded-md border border-base-content/10 p-4 text-xs text-bc-muted">
+					<div className="rounded-md border border-ink/10 p-4 text-xs text-ink-muted">
 						暂无版本快照。生成或重新生成后会自动记录。
 					</div>
 				)}
@@ -241,24 +245,26 @@ export function VersionCompareDrawer({
 				{versions.length > 0 && (
 					<>
 						<div className="grid gap-2 md:grid-cols-2">
-							<select
-								className="select select-bordered select-sm h-8 min-h-8"
+							<Select
+								density="compact"
+								aria-label="旧版本"
 								value={effectiveLeft ?? ""}
 								onChange={(e) => setLeftVersion(Number(e.currentTarget.value))}
 							>
 								{versions.map((version) => (
 									<option key={version.id} value={version.version}>{versionLabel(version)}</option>
 								))}
-							</select>
-							<select
-								className="select select-bordered select-sm h-8 min-h-8"
+							</Select>
+							<Select
+								density="compact"
+								aria-label="新版本"
 								value={effectiveRight ?? ""}
 								onChange={(e) => setRightVersion(Number(e.currentTarget.value))}
 							>
 								{versions.map((version) => (
 									<option key={version.id} value={version.version}>{versionLabel(version)}</option>
 								))}
-							</select>
+							</Select>
 						</div>
 
 						<div className="grid gap-3 lg:grid-cols-2">
@@ -266,11 +272,11 @@ export function VersionCompareDrawer({
 							<VersionColumn title={`新版本 v${effectiveRight ?? "—"}`} version={effectiveRight ? versionByNumber.get(effectiveRight) : undefined} />
 						</div>
 
-						<section className="rounded-md border-2 border-base-content/10 bg-base-200/40 p-2.5">
+						<section className="rounded-md border-2 border-ink/10 bg-paper-200/40 p-2.5">
 							<h3 className="mb-1.5 font-heading text-xs font-bold">差异</h3>
-							{compareQuery.isLoading && <div className="text-2xs text-bc-muted">计算差异中...</div>}
+							{compareQuery.isLoading && <div className="text-2xs text-ink-muted">计算差异中...</div>}
 							{!compareQuery.isLoading && (compareQuery.data?.diffs.length ?? 0) === 0 && (
-								<div className="text-2xs text-bc-muted">两个版本内容相同。</div>
+								<div className="text-2xs text-ink-muted">两个版本内容相同。</div>
 							)}
 							<ul className="space-y-1.5">
 								{compareQuery.data?.diffs.map((diff) => (

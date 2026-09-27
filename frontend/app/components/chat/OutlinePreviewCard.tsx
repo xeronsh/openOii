@@ -34,20 +34,20 @@ export function OutlinePreviewCard({
 	};
 
 	return (
-		<div className="card-comic bg-base-100 p-3 space-y-2 text-sm">
+		<div className="card-comic bg-paper-100 p-3 space-y-2 text-sm">
 			<div>
-				<p className="text-2xs uppercase tracking-widest text-bc-muted font-bold">
+				<p className="text-2xs uppercase tracking-widest text-ink-muted font-bold">
 					Story Outline
 				</p>
 				<h3 className="font-heading font-bold text-base">故事大纲待确认</h3>
 			</div>
 
-			<p className="leading-relaxed text-base-content/80">{outline.logline}</p>
+			<p className="leading-relaxed text-ink/80">{outline.logline}</p>
 
 			{outline.genre.length > 0 && (
 				<div className="flex flex-wrap gap-1">
 					{outline.genre.map((genre) => (
-						<span key={genre} className="badge badge-outline badge-sm">
+						<span key={genre} className="rounded-md border border-ink/20 px-2 py-0.5 text-2xs text-ink-muted">
 							{genre}
 						</span>
 					))}
@@ -60,37 +60,39 @@ export function OutlinePreviewCard({
 						<p className="font-bold text-xs">
 							第 {act.act} 幕 · {act.title}
 						</p>
-						<p className="text-xs text-bc-muted">{act.summary}</p>
+						<p className="text-xs text-ink-muted">{act.summary}</p>
 					</div>
 				))}
 			</div>
 
 			{visualBible && (
-				<p className="text-xs text-bc-muted bg-base-200/60 rounded-md p-2">
+				<p className="text-xs text-ink-muted bg-paper-200/60 rounded-md p-2">
 					<span className="font-bold">视觉指南：</span>
 					{visualBible.slice(0, 120)}{visualBible.length > 120 ? "..." : ""}
 				</p>
 			)}
 
-			<button
+			<Button
 				type="button"
-				className="btn btn-ghost btn-xs gap-1 px-0 min-h-0 h-auto"
+				variant="ghost"
+				size="sm"
+				className="gap-1 px-0"
 				onClick={() => setExpanded((v) => !v)}
 			>
 				{expanded ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
 				{expanded ? "收起编辑" : "展开详细大纲"}
-			</button>
+			</Button>
 
 			{expanded && (
 				<div className="space-y-2">
 					<textarea
-						className="textarea textarea-bordered w-full text-xs font-mono min-h-40"
+						className="min-h-40 w-full resize-y rounded-md border-2 border-ink/20 bg-paper-200 p-2 font-mono text-xs focus:border-primary focus:outline-none"
 						value={draft}
 						onChange={(e) => setDraft(e.currentTarget.value)}
 						aria-label="编辑故事大纲 JSON"
 					/>
 					<textarea
-						className="textarea textarea-bordered w-full text-xs min-h-16"
+						className="min-h-16 w-full resize-y rounded-md border-2 border-ink/20 bg-paper-200 p-2 text-xs focus:border-primary focus:outline-none"
 						value={feedback}
 						onChange={(e) => setFeedback(e.currentTarget.value)}
 						placeholder="重新生成要求（可选）"

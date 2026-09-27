@@ -95,20 +95,20 @@ export function WorkflowInspector({
 	if (!selectedNode) return null;
 
 	return (
-		<div className="flex h-full min-h-0 flex-col bg-base-100" data-shell="inspector">
-			<div className="border-b border-base-content/10 px-2 py-1.5">
-				<p className="m-0 font-mono text-2xs uppercase text-bc-muted">
+		<div className="flex h-full min-h-0 flex-col bg-paper-100" data-shell="inspector">
+			<div className="border-b border-ink/10 px-2 py-1.5">
+				<p className="m-0 font-mono text-2xs uppercase text-ink-muted">
 					{selectedNode.kind}
 				</p>
 				<h2 className="m-0 truncate font-heading text-sm font-bold">
 					{selectedNode.title}
 				</h2>
-				<p className="m-0 truncate text-2xs text-bc-muted">
+				<p className="m-0 truncate text-2xs text-ink-muted">
 					{selectedNode.subtitle}
 				</p>
 			</div>
 
-			<div className="flex gap-0.5 border-b border-base-content/10 p-0.5">
+			<div className="flex gap-0.5 border-b border-ink/10 p-0.5">
 				{(Object.keys(TAB_LABELS) as InspectorTab[]).map((tab) => (
 					<button
 						key={tab}
@@ -116,7 +116,7 @@ export function WorkflowInspector({
 						className={`touch-target-dense flex-1 rounded-sm text-2xs font-semibold transition-colors duration-fast ${
 							activeTab === tab
 								? "bg-primary text-primary-content"
-								: "text-bc-muted hover:bg-base-200"
+								: "text-ink-muted hover:bg-paper-200"
 						}`}
 						onClick={() => setActiveTab(tab)}
 					>
@@ -213,12 +213,12 @@ function FieldList({ items }: { items: Array<[string, string | number]> }) {
 			{items.map(([label, value]) => (
 				<div
 					key={label}
-					className="flex items-start justify-between gap-3 border-b border-base-content/10 pb-1.5 text-sm"
+					className="flex items-start justify-between gap-3 border-b border-ink/10 pb-1.5 text-sm"
 				>
-					<span className="font-mono text-2xs uppercase text-bc-muted">
+					<span className="font-mono text-2xs uppercase text-ink-muted">
 						{label}
 					</span>
-					<span className="min-w-0 text-right text-base-content/75">{value}</span>
+					<span className="min-w-0 text-right text-ink/75">{value}</span>
 				</div>
 			))}
 		</div>
@@ -252,7 +252,7 @@ function ContentTab({
 		return <ShotDraftForm shot={node.shot} disabled={structureLocked} />;
 	}
 	return (
-		<div className="space-y-3 text-sm text-bc-muted">
+		<div className="space-y-3 text-sm text-ink-muted">
 			<p className="m-0">输出节点不直接编辑内容。</p>
 			{node.blockingClips.length > 0 ? (
 				<div className="rounded-lg border border-warning/25 bg-warning/10 p-3 text-warning">
@@ -546,14 +546,14 @@ function MultiShotActions({
 		})();
 
 	return (
-		<div className="flex h-full min-h-0 flex-col bg-base-100 p-2" data-shell="inspector-multi">
-			<p className="m-0 font-mono text-2xs uppercase tracking-wide text-bc-muted">
+		<div className="flex h-full min-h-0 flex-col bg-paper-100 p-2" data-shell="inspector-multi">
+			<p className="m-0 font-mono text-2xs uppercase tracking-wide text-ink-muted">
 				multi-shot
 			</p>
 			<h2 className="m-0 font-heading text-sm font-bold">
 				已选 {shotIds.length} 格
 			</h2>
-			<p className="m-0 mt-1 text-2xs text-bc-muted">
+			<p className="m-0 mt-1 text-2xs text-ink-muted">
 				批量只动选中格 · 不改其他分镜
 			</p>
 			<div className="mt-2 space-y-1.5">
@@ -631,7 +631,7 @@ function ActionsTab({
 	if (node.kind === "brief") {
 		return (
 			<ActionStack>
-				<p className="m-0 text-sm text-bc-muted">
+				<p className="m-0 text-sm text-ink-muted">
 					Brief 只在内容页编辑。生成、恢复和停止由对话面板控制。
 				</p>
 			</ActionStack>
@@ -654,7 +654,7 @@ function ActionsTab({
 						});
 					}}
 				/>
-				<p className="m-0 text-xs text-bc-muted">
+				<p className="m-0 text-xs text-ink-muted">
 					输出节点状态由镜头和合成结果决定，不在画布里手动改写。
 				</p>
 			</ActionStack>
@@ -755,7 +755,7 @@ function ActionsTab({
 				</div>
 			) : null}
 			{shotCellLabel ? (
-				<div className="rounded-md border border-accent/30 bg-accent/10 px-2 py-1.5 text-2xs leading-relaxed text-bc-muted">
+				<div className="rounded-md border border-accent/30 bg-accent/10 px-2 py-1.5 text-2xs leading-relaxed text-ink-muted">
 					<strong className="text-accent">{shotCellLabel}</strong>
 					{" · "}
 					重做只刷新这一格，不影响其他分镜与角色资产。也可在对话里绑定本格发反馈；可多选多格批量重做。
@@ -829,7 +829,7 @@ function ActionsTab({
 					canvasEvents.emit("version-history", { entityType, entityId })
 				}
 			/>
-			<div className="border-t border-base-content/10 pt-3">
+			<div className="border-t border-ink/10 pt-3">
 				<ActionButton
 					icon="trash-2"
 					label="删除"
@@ -919,11 +919,11 @@ function TextInput({
 }) {
 	return (
 		<label className="block">
-			<span className="mb-1 block text-xs font-mono uppercase text-bc-muted">
+			<span className="mb-1 block text-xs font-mono uppercase text-ink-muted">
 				{label}
 			</span>
 			<input
-				className="input input-bordered input-sm w-full bg-base-100"
+				className="input-doodle w-full px-2 py-1 text-sm"
 				value={value}
 				onChange={(event) => onChange(event.target.value)}
 			/>
@@ -942,14 +942,14 @@ function NumberInput({
 }) {
 	return (
 		<label className="block">
-			<span className="mb-1 block text-xs font-mono uppercase text-bc-muted">
+			<span className="mb-1 block text-xs font-mono uppercase text-ink-muted">
 				{label}
 			</span>
 			<input
 				type="number"
 				min="0"
 				step="1"
-				className="input input-bordered input-sm w-full bg-base-100"
+				className="input-doodle w-full px-2 py-1 text-sm"
 				value={value ?? ""}
 				onChange={(event) =>
 					onChange(event.target.value ? Number(event.target.value) : null)
@@ -972,11 +972,11 @@ function TextArea({
 }) {
 	return (
 		<label className="block">
-			<span className="mb-1 block text-xs font-mono uppercase text-bc-muted">
+			<span className="mb-1 block text-xs font-mono uppercase text-ink-muted">
 				{label}
 			</span>
 			<textarea
-				className="textarea textarea-bordered w-full resize-none bg-base-100 text-sm"
+				className="input-doodle w-full resize-none px-2 py-1 text-sm"
 				rows={rows}
 				value={value}
 				onChange={(event) => onChange(event.target.value)}

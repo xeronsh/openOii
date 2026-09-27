@@ -42,7 +42,7 @@ export function ConfigInput({ item, value, onChange }: ConfigInputProps) {
 	};
 
 	const fieldClass =
-		"input input-bordered h-9 min-h-9 w-full border-2 border-base-content/25 bg-base-100 px-2.5 font-mono text-xs";
+		"input-doodle  h-9 min-h-9 w-full border-2 border-ink/25 bg-paper-100 px-2.5 font-mono text-xs";
 
 	if (isSensitive) {
 		const displayValue = isRevealed ? value : isMasked ? value : "••••••••";
@@ -64,11 +64,11 @@ export function ConfigInput({ item, value, onChange }: ConfigInputProps) {
 						type="button"
 						onClick={handleToggleReveal}
 						disabled={isRevealing}
-						className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-bc-muted transition-colors hover:text-accent"
+						className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-ink-muted transition-colors duration-fast hover:text-accent"
 						title={isRevealed ? "隐藏真实值" : "显示真实值"}
 					>
 						{isRevealing ? (
-							<span className="loading loading-spinner loading-xs" />
+							<span className=" spinner-doodle h-3 w-3" />
 						) : isRevealed ? (
 							<EyeSlashIcon className="h-4 w-4" />
 						) : (
@@ -77,7 +77,7 @@ export function ConfigInput({ item, value, onChange }: ConfigInputProps) {
 					</button>
 				</div>
 				{!isRevealed && isMasked && (
-					<p className="m-0 text-2xs text-bc-muted">
+					<p className="m-0 text-2xs text-ink-muted">
 						已配置（显示脱敏值），点击眼睛图标可查看真实值
 					</p>
 				)}

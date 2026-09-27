@@ -141,8 +141,8 @@ function CreateAssetForm({ isOpen, onClose, onCreated }: CreateAssetFormProps) {
 				className="fixed inset-0 z-modal-backdrop bg-neutral/45"
 				onClick={handleClose}
 			/>
-			<div className="fixed right-0 top-0 z-modal flex h-full w-72 flex-col border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm">
-				<div className="flex items-center justify-between border-b-2 border-base-content/10 px-2.5 py-2">
+			<div className="fixed right-0 top-0 z-modal flex h-full w-72 flex-col border-l-2 border-ink/15 bg-paper-100 shadow-brutal-sm">
+				<div className="flex items-center justify-between border-b-2 border-ink/10 px-2.5 py-2">
 					<div className="flex items-center gap-1.5">
 						<SvgIcon name="plus" size={14} className="text-primary" />
 						<h3 className="m-0 font-heading text-sm font-bold">
@@ -162,16 +162,16 @@ function CreateAssetForm({ isOpen, onClose, onCreated }: CreateAssetFormProps) {
 
 				<div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-2.5">
 					{/* Name */}
-					<div className="form-control">
-						<label className="label py-1">
-							<span className="label-text text-xs font-medium">
+					<div className="flex flex-col">
+						<label className="block py-1">
+							<span className="font-heading text-xs font-medium text-xs font-medium">
 								名称 <span className="text-error">*</span>
 							</span>
 						</label>
 						<input
 							type="text"
 							placeholder="输入资产名称"
-							className="input input-xs input-bordered w-full text-xs"
+							className="input-doodle   w-full text-xs"
 							value={name}
 							onChange={(e) => setName(e.target.value)}
 							maxLength={100}
@@ -179,19 +179,19 @@ function CreateAssetForm({ isOpen, onClose, onCreated }: CreateAssetFormProps) {
 					</div>
 
 					{/* Type */}
-					<div className="form-control">
-						<label className="label py-1">
-							<span className="label-text text-xs font-medium">
+					<div className="flex flex-col">
+						<label className="block py-1">
+							<span className="font-heading text-xs font-medium text-xs font-medium">
 								类型 <span className="text-error">*</span>
 							</span>
 						</label>
 						<div className="flex gap-2">
 							<button
 								type="button"
-								className={`flex-1 btn btn-xs ${
+								className={`flex-1 btn-doodle h-7 min-h-7 gap-1 px-2 text-xs ${
 									assetType === "character"
-										? "btn-primary"
-										: "btn-outline btn-ghost"
+										? "bg-primary text-primary-content"
+										: "bg-transparent bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm"
 								}`}
 								onClick={() => setAssetType("character")}
 							>
@@ -200,10 +200,10 @@ function CreateAssetForm({ isOpen, onClose, onCreated }: CreateAssetFormProps) {
 							</button>
 							<button
 								type="button"
-								className={`flex-1 btn btn-xs ${
+								className={`flex-1 btn-doodle h-7 min-h-7 gap-1 px-2 text-xs ${
 									assetType === "scene"
-										? "btn-primary"
-										: "btn-outline btn-ghost"
+										? "bg-primary text-primary-content"
+										: "bg-transparent bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm"
 								}`}
 								onClick={() => setAssetType("scene")}
 							>
@@ -214,33 +214,33 @@ function CreateAssetForm({ isOpen, onClose, onCreated }: CreateAssetFormProps) {
 					</div>
 
 					{/* Description */}
-					<div className="form-control">
-						<label className="label py-1">
-							<span className="label-text text-xs font-medium">描述</span>
+					<div className="flex flex-col">
+						<label className="block py-1">
+							<span className="font-heading text-xs font-medium text-xs font-medium">描述</span>
 						</label>
 						<textarea
 							placeholder="输入资产描述（可选）"
-							className="textarea textarea-xs textarea-bordered w-full text-xs h-16"
+							className="input-doodle   w-full text-xs h-16"
 							value={description}
 							onChange={(e) => setDescription(e.target.value)}
 						/>
 					</div>
 
 					{/* Image upload */}
-					<div className="form-control">
-						<label className="label py-1">
-							<span className="label-text text-xs font-medium">图片</span>
+					<div className="flex flex-col">
+						<label className="block py-1">
+							<span className="font-heading text-xs font-medium text-xs font-medium">图片</span>
 						</label>
 						{imagePreview ? (
 							<div className="relative group">
 								<img
 									src={imagePreview}
 									alt="预览"
-									className="w-full h-28 object-cover rounded-lg border-2 border-base-content/10"
+									className="w-full h-28 object-cover rounded-lg border-2 border-ink/10"
 								/>
 								<button
 									type="button"
-									className="absolute top-1 right-1 btn btn-xs btn-circle btn-ghost bg-base-300/80 hover:bg-error/80 hover:text-error-content"
+									className="absolute top-1 right-1 btn-doodle h-7 min-h-7 w-7 rounded-full bg-paper-300/80 p-0 text-error-content shadow-none hover:bg-error/80 hover:shadow-brutal-sm"
 									onClick={() => {
 										setImageFile(null);
 										setImagePreview(null);
@@ -254,7 +254,7 @@ function CreateAssetForm({ isOpen, onClose, onCreated }: CreateAssetFormProps) {
 							</div>
 						) : (
 							<div
-								className="flex flex-col items-center justify-center h-20 border-2 border-dashed border-base-content/20 rounded-lg cursor-pointer hover:border-primary/40 transition-colors"
+								className="flex flex-col items-center justify-center h-20 border-2 border-dashed border-ink/20 rounded-lg cursor-pointer hover:border-primary/40 transition-colors duration-fast"
 								onClick={() => fileInputRef.current?.click()}
 								onDragOver={(e) => e.preventDefault()}
 								onDrop={handleDrop}
@@ -262,9 +262,9 @@ function CreateAssetForm({ isOpen, onClose, onCreated }: CreateAssetFormProps) {
 								<SvgIcon
 									name="image"
 									size={20}
-									className="text-base-content/25 mb-1"
+									className="text-ink/25 mb-1"
 								/>
-								<span className="text-xs text-bc-muted">
+								<span className="text-xs text-ink-muted">
 									点击上传或拖拽图片
 								</span>
 							</div>
@@ -330,8 +330,8 @@ function AssetCard({
 	isUsing: boolean;
 }) {
 	return (
-		<div className="card card-compact bg-base-200 border-2 border-base-content/10 hover:border-primary/40 transition-colors">
-			<figure className="h-32 bg-base-300 overflow-hidden">
+		<div className="card-doodle p-2 bg-paper-200 border-2 border-ink/10 hover:border-primary/40 transition-colors duration-fast">
+			<figure className="h-32 bg-paper-300 overflow-hidden">
 				{asset.image_url ? (
 					<img
 						src={getStaticUrl(asset.image_url) ?? undefined}
@@ -340,14 +340,14 @@ function AssetCard({
 						loading="lazy"
 					/>
 				) : (
-					<div className="flex items-center justify-center w-full h-full text-base-content/20">
+					<div className="flex items-center justify-center w-full h-full text-ink/20">
 						<SvgIcon name="image" size={32} />
 					</div>
 				)}
 			</figure>
-			<div className="card-body p-2 gap-1">
+			<div className="flex flex-col gap-2 p-4 p-2 gap-1">
 				<div className="flex items-center gap-1">
-					<span className="badge badge-xs badge-outline shrink-0">
+					<span className="badge-doodle text-2xs px-1.5 py-0.5 bg-transparent text-ink border-ink/20 shrink-0">
 						{asset.asset_type === "character"
 							? "角色"
 							: asset.asset_type === "scene"
@@ -357,7 +357,7 @@ function AssetCard({
 					<h4 className="text-xs font-bold flex-1 truncate">{asset.name}</h4>
 				</div>
 				{asset.description && (
-					<p className="text-xs text-bc-muted line-clamp-2">
+					<p className="text-xs text-ink-muted line-clamp-2">
 						{asset.description}
 					</p>
 				)}
@@ -439,15 +439,15 @@ export function AssetDrawer({ open, onClose, projectId }: AssetDrawerProps) {
 				/>
 			)}
 			<div
-				className={`fixed right-0 top-0 z-modal h-full w-72 transform border-l-2 border-base-content/15 bg-base-100 shadow-brutal-sm transition-transform duration-normal ${open ? "translate-x-0" : "translate-x-full"}`}
+				className={`fixed right-0 top-0 z-modal h-full w-72 transform border-l-2 border-ink/15 bg-paper-100 shadow-brutal-sm transition-transform duration-normal ${open ? "translate-x-0" : "translate-x-full"}`}
 			>
-				<div className="flex items-center justify-between border-b-2 border-base-content/10 px-2.5 py-2">
+				<div className="flex items-center justify-between border-b-2 border-ink/10 px-2.5 py-2">
 					<div className="flex items-center gap-1.5">
 						<SvgIcon name="archive" size={14} className="text-primary" />
 						<h3 className="m-0 font-heading text-sm font-bold">
 							资产库
 						</h3>
-						<span className="badge badge-xs badge-ghost tabular-nums">
+						<span className="badge-doodle text-2xs px-1.5 py-0.5 bg-paper-100/80 text-ink-muted border-ink/15 tabular-nums">
 							{data?.total ?? 0}
 						</span>
 					</div>
@@ -474,14 +474,14 @@ export function AssetDrawer({ open, onClose, projectId }: AssetDrawerProps) {
 					</div>
 				</div>
 
-				<div className="flex border-b-2 border-base-content/10">
+				<div className="flex border-b-2 border-ink/10">
 					{ASSET_TABS.map((tab) => (
 						<button
 							key={tab.key}
-							className={`flex-1 flex items-center justify-center gap-1 py-2 text-xs font-medium transition-colors border-b-2 -mb-[2px] ${
+							className={`flex-1 flex items-center justify-center gap-1 py-2 text-xs font-medium transition-colors duration-fast border-b-2 -mb-[2px] ${
 								activeTab === tab.key
 									? "border-primary text-primary-ink"
-									: "border-transparent text-bc-muted hover:text-base-content/80"
+									: "border-transparent text-ink-muted hover:text-ink/80"
 							}`}
 							onClick={() => setActiveTab(tab.key)}
 						>
@@ -496,7 +496,7 @@ export function AssetDrawer({ open, onClose, projectId }: AssetDrawerProps) {
 					<input
 						type="text"
 						placeholder="搜索资产名称…"
-						className="input input-xs input-bordered w-full text-xs"
+						className="input-doodle   w-full text-xs"
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
 					/>
@@ -509,21 +509,21 @@ export function AssetDrawer({ open, onClose, projectId }: AssetDrawerProps) {
 				>
 					{isLoading ? (
 						<div className="flex items-center justify-center py-8">
-							<span className="loading loading-spinner loading-sm text-primary" />
+							<span className=" spinner-doodle h-4 w-4 text-primary" />
 						</div>
 					) : items.length === 0 ? (
-						<div className="text-center text-xs text-bc-muted py-8">
+						<div className="text-center text-xs text-ink-muted py-8">
 							<SvgIcon
 								name="layers"
 								size={24}
-								className="mx-auto mb-2 text-base-content/15"
+								className="mx-auto mb-2 text-ink/15"
 							/>
 							{search ? (
 								<p>没有匹配的资产</p>
 							) : (
 								<>
 									<p>还没有保存的资产</p>
-									<p className="text-bc-subtle mt-1">
+									<p className="text-ink-subtle mt-1">
 										点击{" "}
 										<SvgIcon name="plus" size={10} className="inline" />{" "}
 										新建，或在画布角色卡片点击{" "}

@@ -15,7 +15,7 @@ export function PageShell({
 } & HTMLAttributes<HTMLDivElement>) {
 	return (
 		<div
-			className={clsx("page-shell bg-base-100 font-sans", className)}
+			className={clsx("page-shell bg-paper-100 font-sans", className)}
 			{...rest}
 		>
 			{children}

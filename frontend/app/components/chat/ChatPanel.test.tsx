@@ -8,9 +8,10 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useEditorStore } from "~/stores/editorStore";
-import { patchRunState, resetRunState } from "~/query/runState";
+import { patchRunState, readRunState, resetRunState } from "~/query/runState";
 import type { WorkflowStage } from "~/types";
 import { ChatPanel } from "./ChatPanel";
+import { PromptBar } from "~/features/workbench/PromptBar";
 
 function setChatFeed(messages: AgentMessage[]): void {
 	appQueryClient.setQueryData(projectQueryKeys.messageFeed(1), messages);
@@ -43,14 +44,25 @@ function renderChatPanel(isGenerating = false) {
 	const wrapper = ({ children }: { children: ReactNode }) => (
 		<QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
 	);
+	const runState = readRunState(1);
 	return render(
-		<ChatPanel
-			projectId={1}
-			onSendFeedback={onSendFeedback}
-			onConfirm={onConfirm}
-			onCancel={onCancel}
-			isGenerating={isGenerating}
-		/>,
+		<>
+			<ChatPanel
+				projectId={1}
+				onConfirm={onConfirm}
+				onCancel={onCancel}
+				isGenerating={isGenerating}
+			/>
+			<PromptBar
+				selectionLabel={null}
+				awaitingConfirm={runState.awaitingConfirm}
+				awaitingAgent={runState.awaitingAgent}
+				recoveryGate={runState.recoveryGate}
+				isGenerating={isGenerating}
+				onSendFeedback={onSendFeedback}
+				onConfirm={onConfirm}
+			/>
+		</>,
 		{ wrapper },
 	);
 }
@@ -70,7 +82,7 @@ describe("ChatPanel", () => {
 	it("keeps global generation out of the empty chat state", () => {
 		renderChatPanel(false);
 
-		expect(screen.getByText("当前阶段暂无对话")).toBeInTheDocument();
+		expect(screen.getByText("暂无活动记录")).toBeInTheDocument();
 		expect(
 			screen.queryByRole("button", { name: "开始生成漫剧" }),
 		).not.toBeInTheDocument();
@@ -114,7 +126,7 @@ describe("ChatPanel", () => {
 
 		renderChatPanel(false);
 
-		await user.click(screen.getByRole("button", { name: "切换快速生成模式" }));
+		await user.click(screen.getByRole("button", { name: "切换 YOLO 模式" }));
 
 		expect(useEditorStore.getState().runMode).toBe("yolo");
 	});
@@ -134,7 +146,7 @@ describe("ChatPanel", () => {
 
 		renderChatPanel(true);
 
-		await user.click(screen.getByRole("button", { name: "切换快速生成模式" }));
+		await user.click(screen.getByRole("button", { name: "切换 YOLO 模式" }));
 
 		expect(useEditorStore.getState().runMode).toBe("yolo");
 		expect(onConfirm).toHaveBeenLastCalledWith(undefined);

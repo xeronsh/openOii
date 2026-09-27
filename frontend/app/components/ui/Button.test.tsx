@@ -53,7 +53,7 @@ describe('Button', () => {
     
     const button = screen.getByRole('button');
     expect(button).toBeDisabled();
-    expect(button.querySelector('.loading-spinner')).toBeInTheDocument();
+    expect(button.querySelector('.spinner-doodle')).toBeInTheDocument();
     expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
   });
 

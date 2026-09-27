@@ -60,16 +60,19 @@ export function Modal({ isOpen, onClose, title, children, actions }: ModalProps)
   if (!isOpen) return null;
 
   return (
-    <dialog
-      className="modal modal-open"
-      aria-modal="true"
-      role="dialog"
-      aria-labelledby={title ? "modal-title" : undefined}
+    <div
+      className="dialog-overlay"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
       <div
         ref={modalRef}
-        className="modal-box max-w-lg border-2 border-base-content/20 bg-base-100 p-4 shadow-brutal-sm"
+        className="dialog-panel w-full max-w-lg p-4"
         tabIndex={-1}
+        aria-modal="true"
+        role="dialog"
+        aria-labelledby={title ? "modal-title" : undefined}
       >
         {title && (
           <h3
@@ -80,18 +83,13 @@ export function Modal({ isOpen, onClose, title, children, actions }: ModalProps)
           </h3>
         )}
         <div className="py-2 text-base">{children}</div>
-        <div className="modal-action mt-3 gap-2">
+        <div className="dialog-actions">
           {actions}
           <Button variant="ghost" size="sm" onClick={onClose}>
             关闭
           </Button>
         </div>
       </div>
-      <form method="dialog" className="modal-backdrop bg-neutral/45">
-        <button type="button" onClick={onClose} aria-label="关闭对话框">
-          关闭
-        </button>
-      </form>
-    </dialog>
+    </div>
   );
 }

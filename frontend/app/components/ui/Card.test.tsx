@@ -29,7 +29,7 @@ describe('Card', () => {
   it('applies custom style', () => {
     const { container } = render(<Card style={{ color: 'red', backgroundColor: 'blue' }}>Content</Card>);
     const card = container.firstChild as HTMLElement;
-    // 验证 style 属性已应用（不检查具体值，因为 DaisyUI 基础样式可能覆盖）
+    // 验证调用方的内联样式原样应用。
     expect(card.style.color).toBe('red');
     expect(card.style.backgroundColor).toBe('blue');
   });
@@ -49,6 +49,6 @@ describe('Card', () => {
   it('uses default variant when none is provided', () => {
     const { container } = render(<Card>Default</Card>);
     const card = container.firstChild as HTMLElement;
-    expect(card).toHaveClass('bg-base-100');
+    expect(card).toHaveClass('bg-paper-100');
   });
 });

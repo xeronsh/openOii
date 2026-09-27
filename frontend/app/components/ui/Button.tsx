@@ -27,7 +27,7 @@ export function Button({
     secondary: "bg-secondary text-secondary-content hover:bg-secondary/90",
     accent: "bg-accent text-accent-content hover:bg-accent/90",
     ghost:
-      "bg-transparent border-transparent shadow-none hover:bg-base-200 hover:shadow-brutal-sm",
+      "bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm",
     error: "bg-error text-error-content hover:bg-error/90",
   };
 
@@ -52,7 +52,6 @@ export function Button({
         baseStyles,
         variantStyles[variant],
         sizeStyles[size],
-        loading && "loading",
         isDisabled && "opacity-50 cursor-not-allowed",
         className,
       )}
@@ -62,7 +61,7 @@ export function Button({
       {...props}
     >
       {loading ? (
-        <span className="loading loading-spinner loading-sm" />
+        <span className="spinner-doodle h-3.5 w-3.5" aria-hidden="true" />
       ) : (
         children
       )}

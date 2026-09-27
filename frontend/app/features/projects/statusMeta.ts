@@ -15,34 +15,34 @@ export interface ProjectStatusMeta {
 
 const FALLBACK: ProjectStatusMeta = {
 	label: "未知状态",
-	badgeCls: "border-base-content/20 bg-base-200 text-base-content",
-	textCls: "text-bc-muted",
+	badgeCls: "border-ink/20 bg-paper-200 text-ink",
+	textCls: "text-ink-muted",
 };
 
 const META: Record<string, ProjectStatusMeta> = {
 	draft: {
 		label: "草稿",
-		badgeCls: "border-base-content/20 bg-base-200 text-base-content",
-		textCls: "text-bc-muted",
+		badgeCls: "border-ink/20 bg-paper-200 text-ink",
+		textCls: "text-ink-muted",
 	},
 	planning: {
 		label: "规划中",
-		badgeCls: "border-warning/35 bg-warning/10 text-base-content",
-		textCls: "text-base-content",
+		badgeCls: "border-warning/35 bg-warning/10 text-ink",
+		textCls: "text-ink",
 	},
 	ready: {
 		label: "成片可用",
-		badgeCls: "border-success/35 bg-success/10 text-base-content",
-		textCls: "text-base-content",
+		badgeCls: "border-success/35 bg-success/10 text-ink",
+		textCls: "text-ink",
 	},
 	superseded: {
 		label: "需重合成",
-		badgeCls: "border-warning/35 bg-warning/10 text-base-content",
-		textCls: "text-bc-muted",
+		badgeCls: "border-warning/35 bg-warning/10 text-ink",
+		textCls: "text-ink-muted",
 	},
 	failed: {
 		label: "生成失败",
-		badgeCls: "border-error/35 bg-error/10 text-base-content",
+		badgeCls: "border-error/35 bg-error/10 text-ink",
 		textCls: "text-error",
 	},
 };

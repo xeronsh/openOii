@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="flex min-h-screen items-center justify-center bg-base-100 p-3">
+        <div className="flex min-h-screen items-center justify-center bg-paper-100 p-3">
           <div className="card-doodle max-w-md p-4 text-center shadow-brutal-sm sm:p-5">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-error/10">
               <svg
@@ -57,11 +57,11 @@ export class ErrorBoundary extends Component<Props, State> {
             <h2 className="mb-1 font-heading text-lg font-bold">
               出错了
             </h2>
-            <p className="mb-3 text-sm text-base-content/75">
+            <p className="mb-3 text-sm text-ink/75">
               应用遇到了意外错误，请尝试刷新页面。
             </p>
             {this.state.error && (
-              <details className="mb-3 rounded-md bg-base-200 p-2 text-left text-2xs">
+              <details className="mb-3 rounded-md bg-paper-200 p-2 text-left text-2xs">
                 <summary className="mb-1 cursor-pointer font-medium">
                   错误详情
                 </summary>

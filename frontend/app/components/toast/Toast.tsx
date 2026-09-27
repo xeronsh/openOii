@@ -29,7 +29,7 @@ export function Toast({ toast }: ToastProps) {
   return (
     <div
       className={`
-        relative min-w-[16rem] max-w-[22rem] border-2 bg-base-100 p-3
+        relative min-w-[16rem] max-w-[22rem] border-2 bg-paper-100 p-3
         shadow-brutal-sm ${typeStyles[toast.type]}
         animate-slide-in-right
       `}
@@ -42,14 +42,14 @@ export function Toast({ toast }: ToastProps) {
         <button
           type="button"
           onClick={() => removeToast(toast.id)}
-          className="btn btn-ghost btn-circle touch-target-dense h-7 min-h-7 w-7 hover:bg-base-200"
+          className="btn-doodle bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm rounded-full touch-target-dense h-7 min-h-7 w-7 hover:bg-paper-200"
           aria-label="关闭"
         >
           <XMarkIcon className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      <p className="m-0 text-xs leading-snug text-base-content/75">
+      <p className="m-0 text-xs leading-snug text-ink/75">
         {toast.message}
       </p>
 
@@ -63,10 +63,10 @@ export function Toast({ toast }: ToastProps) {
                 action.onClick();
                 removeToast(toast.id);
               }}
-              className={`btn btn-xs h-7 min-h-7 border-2 border-base-content/30 px-2 ${
+              className={`btn-doodle h-7 min-h-7 gap-1 px-2 text-xs h-7 min-h-7 border-2 border-ink/30 px-2 ${
                 action.variant === "primary"
-                  ? "btn-primary"
-                  : "btn-ghost hover:bg-base-200"
+                  ? "bg-primary text-primary-content"
+                  : "bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm hover:bg-paper-200"
               }`}
             >
               {action.label}

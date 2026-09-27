@@ -82,12 +82,12 @@ export function UniversesPage() {
 		<PageShell data-shell="universes-list">
 			<TopBar />
 
-			<PageBody>
-				<PageContent>
+			<PageBody className="workbench-surface">
+				<PageContent className="gap-4 sm:gap-5 sm:py-5">
 				<PageHeader
-					eyebrow="universe browser"
-					title="IP 宇宙"
-					description="跨项目世界观与角色库"
+					eyebrow="openoii / library / universes"
+					title="故事宇宙"
+					description="把章节、角色和世界观放在同一条创作脉络里。"
 					meta={isLoading ? "…" : `${universes.length} 个`}
 					actions={
 						<Button size="sm" onClick={() => setShowCreate(true)}>
@@ -106,7 +106,7 @@ export function UniversesPage() {
 					{isLoading && (
 						<div className="flex items-center justify-center py-8">
 							<span
-								className="loading loading-spinner loading-md text-primary"
+								className=" spinner-doodle h-5 w-5 text-primary"
 								aria-label="加载中"
 							/>
 						</div>
@@ -119,7 +119,7 @@ export function UniversesPage() {
 								<p className="m-0 font-heading text-md font-bold text-error">
 									宇宙列表加载失败
 								</p>
-								<p className="m-0 mt-0.5 text-xs text-bc-muted">
+								<p className="m-0 mt-0.5 text-xs text-ink-muted">
 									服务暂时不可用，数据还在，稍后重试
 								</p>
 							</div>
@@ -150,7 +150,7 @@ export function UniversesPage() {
 					)}
 
 					{!isLoading && !isError && universes.length > 0 && (
-						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+						<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
 							{universes.map((u) => (
 								<UniverseCard key={u.id} universe={u} onDelete={setDeleteTarget} />
 							))}
@@ -179,13 +179,13 @@ export function UniversesPage() {
 						/>
 
 						<div>
-							<label htmlFor="universe-description" className="label text-xs font-bold">
+							<label htmlFor="universe-description" className="block text-xs font-bold">
 								简介
 							</label>
 							<textarea
 								id="universe-description"
 								name="universe-description"
-								className="textarea textarea-bordered bg-base-200 w-full h-20 text-sm"
+								className="input-doodle  bg-paper-200 w-full h-20 text-sm"
 								placeholder="宇宙的简要描述..."
 								value={createForm.description}
 								onChange={(e) =>
@@ -195,13 +195,13 @@ export function UniversesPage() {
 						</div>
 
 						<div>
-							<label htmlFor="universe-world-setting" className="label text-xs font-bold">
+							<label htmlFor="universe-world-setting" className="block text-xs font-bold">
 								世界观设定
 							</label>
 							<textarea
 								id="universe-world-setting"
 								name="universe-world-setting"
-								className="textarea textarea-bordered bg-base-200 w-full h-24 text-sm"
+								className="input-doodle  bg-paper-200 w-full h-24 text-sm"
 								placeholder="统一的世界观设定，所有章节必须遵循..."
 								value={createForm.world_setting}
 								onChange={(e) =>
@@ -211,13 +211,13 @@ export function UniversesPage() {
 						</div>
 
 						<div>
-							<label htmlFor="universe-style-rules" className="label text-xs font-bold">
+							<label htmlFor="universe-style-rules" className="block text-xs font-bold">
 								统一风格规则
 							</label>
 							<textarea
 								id="universe-style-rules"
 								name="universe-style-rules"
-								className="textarea textarea-bordered bg-base-200 w-full h-16 text-sm"
+								className="input-doodle  bg-paper-200 w-full h-16 text-sm"
 								placeholder="角色设计、场景风格等统一规则..."
 								value={createForm.style_rules}
 								onChange={(e) =>

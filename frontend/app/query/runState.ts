@@ -17,7 +17,9 @@ import { projectQueryKeys } from "./queryKeys";
  * event to be written twice.
  */
 export interface RunState {
-  isGenerating: boolean;
+	/** Local projection revision; prevents slow HTTP hydration from replacing newer WS state. */
+	revision: number;
+	isGenerating: boolean;
   currentStage: WorkflowStage;
   currentAgent: string | null;
   progress: number;
@@ -31,7 +33,8 @@ export interface RunState {
 }
 
 export const INITIAL_RUN_STATE: RunState = {
-  isGenerating: false,
+	revision: 0,
+	isGenerating: false,
   currentStage: "plan",
   currentAgent: null,
   progress: 0,
@@ -65,9 +68,13 @@ export function patchRunState(projectId: number, patch: Partial<RunState>): void
   appQueryClient.setQueryData<RunState>(projectQueryKeys.runState(projectId), {
     ...current,
     ...patch,
+    revision: current.revision + 1,
   });
 }
 
 export function resetRunState(projectId: number): void {
-  appQueryClient.setQueryData<RunState>(projectQueryKeys.runState(projectId), INITIAL_RUN_STATE);
+	appQueryClient.setQueryData<RunState>(projectQueryKeys.runState(projectId), {
+		...INITIAL_RUN_STATE,
+		revision: readRunState(projectId).revision + 1,
+	});
 }

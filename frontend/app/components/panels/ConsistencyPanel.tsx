@@ -25,10 +25,9 @@ import type {
 } from "~/types";
 
 /**
- * Recharts 只接受具体颜色字符串，无法用 Tailwind class。
- * 走 daisyUI 主题变量，使图表随 doodle / doodle-dark 主题一起切换。
+ * Recharts 只接受具体颜色字符串，直接读取项目主题 token。
  */
-const CHART_ACCENT = "oklch(var(--p))";
+const CHART_ACCENT = "rgb(var(--color-primary))";
 
 interface ConsistencyPanelProps {
 	projectId: number;
@@ -67,7 +66,7 @@ function warnInDev(message: string, error: unknown) {
 function GradeBadge({ grade }: { grade: string }) {
 	return (
 		<span
-			className={`badge badge-lg font-bold ${GRADE_BG[grade] || ""} ${GRADE_COLORS[grade] || ""}`}
+			className={`badge-doodle text-base px-3 py-1 font-bold ${GRADE_BG[grade] || ""} ${GRADE_COLORS[grade] || ""}`}
 		>
 			{grade}
 		</span>
@@ -91,9 +90,9 @@ function CharacterCard({
 	];
 
 	return (
-		<div className="card bg-base-200 shadow-md">
+		<div className="card-doodle bg-paper-200 shadow-md">
 			<div
-				className="card-body p-4 cursor-pointer"
+				className="flex flex-col gap-2 p-4 p-4 cursor-pointer"
 				onClick={onToggle}
 				role="button"
 				tabIndex={0}
@@ -104,7 +103,7 @@ function CharacterCard({
 				}}
 			>
 				<div className="flex items-center justify-between">
-					<h3 className="card-title text-base">{report.character_name}</h3>
+					<h3 className="font-heading font-bold text-base">{report.character_name}</h3>
 					<GradeBadge grade={report.grade} />
 				</div>
 				<div className="flex gap-4 text-sm mt-1">
@@ -136,7 +135,7 @@ function CharacterCard({
 						{/* 分镜匹配详情 */}
 						{report.face_matches.length > 0 && (
 							<div className="overflow-x-auto">
-								<table className="table table-sm">
+								<table className="table-doodle text-xs">
 									<thead>
 										<tr>
 											<th>分镜序号</th>
@@ -322,24 +321,24 @@ export function ConsistencyPanel({ projectId, onClose }: ConsistencyPanelProps) 
 
 	return (
 		<div className="fixed inset-0 z-modal flex items-center justify-center bg-neutral/70">
-			<div className="bg-base-100 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+			<div className="bg-paper-100 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
 				{/* Header */}
-				<div className="sticky top-0 z-sticky flex items-center justify-between border-b border-base-content/10 bg-base-100 p-6">
+				<div className="sticky top-0 z-sticky flex items-center justify-between border-b border-ink/10 bg-paper-100 p-6">
 					<div>
 						<h2 className="text-xl font-bold">角色一致性评估</h2>
-						<p className="text-sm text-bc-muted mt-1">
+						<p className="text-sm text-ink-muted mt-1">
 							基于 InsightFace 人脸特征自动计算跨分镜一致性
 						</p>
 					</div>
 					<div className="flex gap-2">
 						<button
-							className={`btn btn-primary btn-sm ${evaluating ? "loading" : ""}`}
+							className="btn-doodle bg-primary text-primary-content h-8 min-h-8 gap-1.5 px-2.5 text-sm"
 							onClick={handleEval}
 							disabled={evaluating}
 						>
 							{evaluating ? "评估中..." : "开始评估"}
 						</button>
-						<button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="关闭">
+						<button className="btn-doodle bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm h-8 min-h-8 gap-1.5 px-2.5 text-sm" onClick={onClose} aria-label="关闭">
 							<XMarkIcon className="w-4 h-4" aria-hidden="true" />
 						</button>
 					</div>
@@ -348,12 +347,12 @@ export function ConsistencyPanel({ projectId, onClose }: ConsistencyPanelProps) 
 				<div className="p-6 space-y-6">
 					{loading && !report && (
 						<div className="flex justify-center py-12">
-							<span className="loading loading-spinner loading-lg" />
+							<span className=" spinner-doodle h-6 w-6" />
 						</div>
 					)}
 
 					{!loading && !report && (
-						<div className="text-center py-12 text-bc-muted">
+						<div className="text-center py-12 text-ink-muted">
 							<p className="text-lg">尚未进行一致性评估</p>
 							<p className="text-sm mt-2">点击"开始评估"按钮来评估角色在分镜中的一致性</p>
 						</div>
@@ -384,9 +383,9 @@ export function ConsistencyPanel({ projectId, onClose }: ConsistencyPanelProps) 
 
 							{/* 趋势图 */}
 							{trendData.length > 1 && (
-								<div className="card bg-base-200 shadow-md">
-									<div className="card-body p-4">
-										<h3 className="card-title text-base">评分趋势</h3>
+								<div className="card-doodle bg-paper-200 shadow-md">
+									<div className="flex flex-col gap-2 p-4 p-4">
+										<h3 className="font-heading font-bold text-base">评分趋势</h3>
 										<div className="w-full h-48">
 											<ResponsiveContainer width="100%" height="100%">
 												<LineChart data={trendData}>

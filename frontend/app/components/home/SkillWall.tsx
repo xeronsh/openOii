@@ -63,7 +63,7 @@ export function SkillWall({
 								"",
 								active
 									? "halftone-bg-accent border-primary bg-primary/5"
-									: "border-base-content/10 bg-base-100 hover:border-primary/40",
+									: "border-ink/10 bg-paper-100 hover:border-primary/40",
 							)}
 						>
 							<span className="flex items-center justify-between gap-1">
@@ -78,7 +78,7 @@ export function SkillWall({
 										</span>
 									) : null}
 									{lastUsedId === skill.id ? (
-										<span className="shrink-0 rounded bg-base-content/10 px-1 text-2xs leading-tight text-bc-muted">
+										<span className="shrink-0 rounded bg-ink/10 px-1 text-2xs leading-tight text-ink-muted">
 											上次使用
 										</span>
 									) : null}
@@ -91,13 +91,13 @@ export function SkillWall({
 									/>
 								) : null}
 							</span>
-							<span className="block truncate text-2xs leading-snug text-bc-muted">
+							<span className="block truncate text-2xs leading-snug text-ink-muted">
 								{skill.description}
 							</span>
 							{/* 旅程线：选这条路会经过哪些阶段、停几次——选择前就该知道 */}
-							<span className="mt-0.5 block truncate font-mono text-2xs leading-snug text-bc-muted">
+							<span className="mt-0.5 block truncate font-mono text-2xs leading-snug text-ink-muted">
 								{journey.stages.join(" → ")}
-								<span className="text-bc-subtle"> · </span>
+								<span className="text-ink-subtle"> · </span>
 								{journey.pace}
 							</span>
 						</button>

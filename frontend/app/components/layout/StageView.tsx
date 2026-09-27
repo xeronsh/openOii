@@ -20,7 +20,7 @@ export function StageView({
   return (
     <Suspense
       fallback={
-        <div className="flex h-full w-full items-center justify-center bg-base-100 text-sm text-bc-muted">
+        <div className="flex h-full w-full items-center justify-center bg-paper-100 text-sm text-ink-muted">
           正在加载画布...
         </div>
       }

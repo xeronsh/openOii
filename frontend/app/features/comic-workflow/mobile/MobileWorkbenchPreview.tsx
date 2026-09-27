@@ -18,11 +18,11 @@ interface MobileWorkbenchPreviewProps {
 }
 
 const STATUS_DOT: Record<WorkbenchStatus["state"], string> = {
-	idle: "bg-base-content/35",
+	idle: "bg-ink/35",
 	generating: "bg-warning animate-pulse",
 	awaitingConfirm: "bg-info",
 	recoverable: "bg-warning",
-	cancelled: "bg-base-content/35",
+	cancelled: "bg-ink/35",
 	ready: "bg-success",
 	superseded: "bg-warning",
 	failed: "bg-error",
@@ -57,11 +57,11 @@ export function MobileWorkbenchPreview({
 			aria-label="项目预览"
 			data-shell="mobile-workbench-preview"
 		>
-			<p className="m-0 text-2xs text-bc-muted">
+			<p className="m-0 text-2xs text-ink-muted">
 				完整画布编辑请用桌面端打开
 			</p>
 
-			<div className="rounded-lg border-2 border-base-content/10 bg-base-100 p-3 shadow-brutal-sm">
+			<div className="rounded-lg border-2 border-ink/10 bg-paper-100 p-3 shadow-brutal-sm">
 				<div className="flex items-center gap-2">
 					<span
 						className={`h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_DOT[workbenchStatus.state]}`}
@@ -71,7 +71,7 @@ export function MobileWorkbenchPreview({
 						{workbenchStatus.label}
 					</h2>
 				</div>
-				<p className="m-0 mt-1 text-xs text-bc-muted">
+				<p className="m-0 mt-1 text-xs text-ink-muted">
 					{workbenchStatus.description}
 				</p>
 				{canRetry ? (
@@ -89,7 +89,7 @@ export function MobileWorkbenchPreview({
 			</div>
 
 			{videoSrc ? (
-				<div className="overflow-hidden rounded-lg border-2 border-base-content/10 bg-base-100 shadow-brutal-sm">
+				<div className="overflow-hidden rounded-lg border-2 border-ink/10 bg-paper-100 shadow-brutal-sm">
 					{/* eslint-disable-next-line jsx-a11y/media-has-caption -- 成片无字幕轨 */}
 					<video
 						controls
@@ -100,13 +100,13 @@ export function MobileWorkbenchPreview({
 						data-testid="mobile-final-video"
 					/>
 					<div className="flex items-center justify-between gap-2 p-2">
-						<span className="font-mono text-2xs uppercase tracking-wide text-bc-muted">
+						<span className="font-mono text-2xs uppercase tracking-wide text-ink-muted">
 							final cut
 						</span>
 						<a
 							href={downloadUrl ?? undefined}
 							download
-							className="btn btn-sm btn-primary gap-1"
+							className="btn-doodle inline-flex items-center justify-center gap-1 bg-primary px-2.5 py-1 text-sm text-primary-content"
 						>
 							<ArrowDownTrayIcon className="h-3.5 w-3.5" aria-hidden="true" />
 							下载成片
@@ -118,12 +118,12 @@ export function MobileWorkbenchPreview({
 			<div>
 				<h2 className="m-0 mb-1.5 font-heading text-sm font-bold">
 					分镜
-					<span className="ml-1 font-mono text-2xs font-normal tabular-nums text-bc-muted">
+					<span className="ml-1 font-mono text-2xs font-normal tabular-nums text-ink-muted">
 						{orderedShots.length}
 					</span>
 				</h2>
 				{orderedShots.length === 0 ? (
-					<p className="m-0 text-xs text-bc-muted">
+					<p className="m-0 text-xs text-ink-muted">
 						还没有分镜，开始生成后会出现在这里
 					</p>
 				) : (
@@ -133,7 +133,7 @@ export function MobileWorkbenchPreview({
 							return (
 								<li
 									key={shot.id}
-									className="relative aspect-square overflow-hidden rounded-md border-2 border-base-content/10 bg-base-200"
+									className="relative aspect-square overflow-hidden rounded-md border-2 border-ink/10 bg-paper-200"
 								>
 									{imageUrl ? (
 										<img
@@ -143,7 +143,7 @@ export function MobileWorkbenchPreview({
 											loading="lazy"
 										/>
 									) : (
-										<span className="flex h-full items-center justify-center text-2xs text-bc-muted">
+										<span className="flex h-full items-center justify-center text-2xs text-ink-muted">
 											待生成
 										</span>
 									)}
@@ -175,7 +175,7 @@ export function MobileWorkbenchPreview({
 									key={character.id}
 									className="flex w-14 shrink-0 flex-col items-center gap-1"
 								>
-									<span className="h-12 w-12 overflow-hidden rounded-full border-2 border-base-content/10 bg-base-200">
+									<span className="h-12 w-12 overflow-hidden rounded-full border-2 border-ink/10 bg-paper-200">
 										{avatarUrl ? (
 											<img
 												src={avatarUrl}
@@ -185,7 +185,7 @@ export function MobileWorkbenchPreview({
 											/>
 										) : (
 											<span
-												className="flex h-full items-center justify-center font-heading text-sm font-bold text-bc-muted"
+												className="flex h-full items-center justify-center font-heading text-sm font-bold text-ink-muted"
 												aria-hidden="true"
 											>
 												{character.name?.slice(0, 1) || "?"}

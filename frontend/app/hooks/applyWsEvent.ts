@@ -252,9 +252,17 @@ export function applyWsEvent(
 				agent: "system",
 				role: "error",
 				content: `生成失败: ${d.error}`,
+				details: d.error_code
+					? `${d.error_code}${d.retryable ? " · 可重试" : ""}`
+					: undefined,
 				timestamp: new Date().toISOString(),
 			});
-			toast.error({ title: "生成失败", message: d.error || "未知错误", duration: 5000 });
+			toast.error({
+				title: "生成失败",
+				message: d.error || "未知错误",
+				details: d.error_code ?? undefined,
+				duration: 5000,
+			});
 			break;
 		}
 
@@ -289,7 +297,7 @@ export function applyWsEvent(
 			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "critic",
-				role: "assistant",
+				role: "result",
 				content: `${entityLabel}审查结果：总分 ${scoreStr}/10\n${dimStr}\n问题: ${issuesStr}\n建议: ${sugStr}\n${statusText}`,
 				timestamp: new Date().toISOString(),
 			});

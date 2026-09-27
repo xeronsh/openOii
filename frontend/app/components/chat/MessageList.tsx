@@ -22,7 +22,7 @@ const agentColors: Record<string, string> = {
   render: "text-info",
   compose: "text-warning",
   review: "text-accent",
-  system: "text-bc-subtle",
+  system: "text-ink-subtle",
   user: "text-primary",
   audio: "text-secondary",
 };
@@ -42,79 +42,26 @@ const MIN_TYPEWRITER_LENGTH = 50;
 const agentNameMap = AGENT_NAME_MAP;
 
 const phaseLabelMap: Record<string, string> = {
-  reasoning: "REASONING",
-  decision: "DECISION",
-  planning: "PLANNING",
-  reviewing: "REVIEWING",
-};
-
-const phaseColorMap: Record<string, string> = {
-  reasoning: "badge-info",
-  decision: "badge-warning",
-  planning: "badge-primary",
-  reviewing: "badge-accent",
+	reasoning: "分析步骤",
+	decision: "决策步骤",
+	planning: "规划步骤",
+	reviewing: "检查步骤",
 };
 
 function ThinkingMessage({ msg }: { msg: AgentMessage }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const phaseLabel = msg.phase ? phaseLabelMap[msg.phase] || msg.phase.toUpperCase() : "";
-  const phaseBadge = msg.phase ? phaseColorMap[msg.phase] || "badge-ghost" : "badge-ghost";
-  const AgentIcon = agentIcons[msg.agent] || SparklesIcon;
-  const firstLine = msg.content.split("\n")[0] || msg.content;
+	const phaseLabel = msg.phase ? phaseLabelMap[msg.phase] || "处理中" : "处理中";
+	const AgentIcon = agentIcons[msg.agent] || SparklesIcon;
 
-  return (
-    <div className="group">
-      <div className="flex items-center gap-1 mb-0.5">
-        <AgentIcon className={`w-3 h-3 ${agentColors[msg.agent] || "text-base-content/30"}`} aria-hidden="true" />
-        <span className="text-xs font-comic uppercase tracking-wide text-bc-muted">{agentNameMap[msg.agent] || msg.agent}</span>
-        {phaseLabel && (
-          <span className={`badge ${phaseBadge} badge-xs ml-1 font-mono text-2xs`}>{phaseLabel}</span>
-        )}
-      </div>
-      <div
-        className="ml-1 mr-3 rounded-lg px-3 py-2 bg-info/5 border border-info/10 select-text cursor-pointer hover:bg-info/10 transition-colors"
-        onClick={() => setIsExpanded((prev) => !prev)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setIsExpanded((prev) => !prev);
-          }
-        }}
-        aria-label="查看思考过程"
-      >
-        <div className="flex items-start gap-1.5">
-          <LightBulbIcon className="w-4 h-4 flex-shrink-0 text-info/70" aria-hidden="true" />
-          <div className="flex-1 min-w-0">
-            {isExpanded ? (
-              <div className="whitespace-pre-wrap break-words text-xs text-bc-muted leading-relaxed">
-                {msg.content}
-                {msg.details && (
-                  <div className="mt-1 text-bc-muted border-t border-info/10 pt-1">
-                    {msg.details}
-                  </div>
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); setIsExpanded(false); }}
-                  className="mt-1 text-xs text-bc-muted hover:text-bc-muted transition-colors"
-                >
-                  收起思考
-                </button>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xs text-bc-muted leading-relaxed truncate">{firstLine}</p>
-                <span className="text-2xs text-bc-muted hover:text-base-content transition-colors">
-                  查看思考过程
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+	return (
+		<div className="flex items-center gap-2 rounded-md border border-info/15 bg-info/5 px-2 py-1.5" data-activity="thinking">
+			<div className="flex shrink-0 items-center gap-1">
+				<AgentIcon className={`w-3 h-3 ${agentColors[msg.agent] || "text-ink/30"}`} aria-hidden="true" />
+				<span className="text-2xs font-semibold text-ink-muted">{agentNameMap[msg.agent] || msg.agent}</span>
+			</div>
+			<LightBulbIcon className="h-3.5 w-3.5 shrink-0 text-info/70" aria-hidden="true" />
+			<span className="min-w-0 truncate text-xs text-ink-muted">{phaseLabel}</span>
+		</div>
+	);
 }
 
 function shouldFilterOut(msg: AgentMessage): boolean {
@@ -187,7 +134,7 @@ export function MessageList({ messages }: MessageListProps) {
 
   if (filtered.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-bc-muted">
+      <div className="flex flex-col items-center justify-center h-full text-ink-muted">
         <p className="text-xs">暂无消息</p>
       </div>
     );
@@ -202,7 +149,7 @@ export function MessageList({ messages }: MessageListProps) {
         if (msg.role === "separator") {
           return (
             <div key={key} className="flex justify-center my-1">
-              <div className="w-full border-t-2 border-dashed border-base-content/10" />
+              <div className="w-full border-t-2 border-dashed border-ink/10" />
             </div>
           );
         }
@@ -210,7 +157,7 @@ export function MessageList({ messages }: MessageListProps) {
         if (msg.role === "handoff") {
           return (
             <div key={key} className="flex justify-center my-1">
-              <div className="badge badge-outline badge-sm gap-0.5 text-bc-muted border-dashed">
+              <div className="inline-flex items-center gap-1 rounded-full border border-dashed border-ink/20 px-2 py-0.5 text-ink-muted">
                 <HandRaisedIcon className="w-3 h-3" aria-hidden="true" />
                 <span className="text-xs">{msg.content}</span>
               </div>
@@ -224,6 +171,33 @@ export function MessageList({ messages }: MessageListProps) {
           );
         }
 
+		if (["step", "step_result", "tool", "tool_call", "tool_result", "result"].includes(msg.role)) {
+			const activityLabel = msg.role === "tool_call"
+				? "调用中"
+				: msg.role === "tool_result"
+					? "工具结果"
+					: msg.role === "step"
+						? "执行中"
+						: msg.role === "step_result"
+							? "步骤结果"
+							: msg.role === "result"
+								? "审查结果"
+								: "活动记录";
+			return (
+				<div
+					key={key}
+					className="rounded-md border border-ink/10 bg-paper-200/70 px-2 py-1.5 text-xs"
+					data-activity={msg.role.startsWith("step") ? "step" : msg.role === "result" ? "result" : "tool"}
+				>
+					<div className="mb-0.5 flex items-center justify-between gap-2 font-mono text-2xs font-semibold text-ink-muted">
+						<span>{activityLabel} · {agentNameMap[msg.agent] || msg.agent}</span>
+						{msg.summary && <span className="shrink-0 tabular-nums">{msg.summary}</span>}
+					</div>
+					<p className="m-0 whitespace-pre-wrap break-words text-ink/80">{msg.content}</p>
+				</div>
+			);
+        }
+
         const isUserMessage = msg.role === "user";
         const enableTypewriter = shouldEnableTypewriter(msg, isLastMessage);
         const AgentIcon = agentIcons[msg.agent] || CpuChipIcon;
@@ -235,8 +209,8 @@ export function MessageList({ messages }: MessageListProps) {
           <>
             {!sameAgentAsPrev && (
               <div className="flex items-center gap-1 mb-0.5">
-                <AgentIcon className={`w-3 h-3 ${agentColors[msg.agent] || "text-base-content/30"}`} aria-hidden="true" />
-                <span className="text-xs font-comic uppercase tracking-wide text-bc-muted">{agentNameMap[msg.agent] || msg.agent}</span>
+                <AgentIcon className={`w-3 h-3 ${agentColors[msg.agent] || "text-ink/30"}`} aria-hidden="true" />
+                <span className="text-xs font-comic uppercase tracking-wide text-ink-muted">{agentNameMap[msg.agent] || msg.agent}</span>
               </div>
             )}
             <div
@@ -250,7 +224,7 @@ export function MessageList({ messages }: MessageListProps) {
                 <button
                   type="button"
                   onClick={() => toggleCollapse(msg.id || "")}
-                  className="text-bc-muted hover:text-bc-muted transition-colors text-xs italic w-full text-left"
+                  className="text-ink-muted hover:text-ink-muted transition-colors duration-fast text-xs italic w-full text-left"
                 >
                   {msg.summary}
                 </button>
@@ -272,7 +246,7 @@ export function MessageList({ messages }: MessageListProps) {
                     <button
                       type="button"
                       onClick={() => { if (msg.id) toggleCollapse(msg.id); }}
-                      className="text-xs text-bc-subtle hover:text-bc-muted transition-colors mt-0.5"
+                      className="text-xs text-ink-subtle hover:text-ink-muted transition-colors duration-fast mt-0.5"
                     >
                       收起
                     </button>
@@ -280,11 +254,14 @@ export function MessageList({ messages }: MessageListProps) {
                 </>
               )}
               {msg.isLoading && (
-                <div className="flex items-center gap-1 mt-1 text-bc-muted text-xs">
-                  <span className="loading loading-dots loading-xs text-primary" />
+                <div className="flex items-center gap-1 mt-1 text-ink-muted text-xs">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
                   处理中
                 </div>
               )}
+              {msg.role === "error" && msg.details ? (
+                <p className="m-0 mt-1 font-mono text-2xs text-ink-muted">{msg.details}</p>
+              ) : null}
             </div>
           </>
         );

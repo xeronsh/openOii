@@ -65,8 +65,7 @@ describe('ConfirmModal', () => {
     const user = userEvent.setup();
     render(<ConfirmModal {...defaultProps} />);
 
-    // The backdrop has a button with "close" text for accessibility
-    await user.click(screen.getByRole('button', { name: 'close' }));
+    await user.click(screen.getByRole('dialog').parentElement!);
     expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -79,7 +78,7 @@ describe('ConfirmModal', () => {
 
     expect(confirmButton).toBeDisabled();
     expect(cancelButton).toBeDisabled();
-    expect(confirmButton.querySelector('.loading-spinner')).toBeInTheDocument();
+    expect(confirmButton.querySelector('.spinner-doodle')).toBeInTheDocument();
 
     await user.click(confirmButton);
     await user.click(cancelButton);
@@ -90,12 +89,12 @@ describe('ConfirmModal', () => {
 
   it('applies variant styles', () => {
     const { rerender } = render(<ConfirmModal {...defaultProps} variant="warning" />);
-    expect(screen.getByRole('button', { name: '确认' })).toHaveClass('btn-warning');
+    expect(screen.getByRole('button', { name: '确认' })).toHaveClass('bg-warning');
 
     rerender(<ConfirmModal {...defaultProps} variant="info" />);
-    expect(screen.getByRole('button', { name: '确认' })).toHaveClass('btn-info');
+    expect(screen.getByRole('button', { name: '确认' })).toHaveClass('bg-info');
     
     rerender(<ConfirmModal {...defaultProps} variant="danger" />);
-    expect(screen.getByRole('button', { name: '确认' })).toHaveClass('btn-error');
+    expect(screen.getByRole('button', { name: '确认' })).toHaveClass('bg-error');
   });
 });

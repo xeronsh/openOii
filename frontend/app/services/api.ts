@@ -56,19 +56,42 @@ async function parseApiResponse<T>(
 	}
 
 	if (!res.ok) {
-		const errorObj = data as unknown as {
-			error?: {
-				code?: string;
-				message?: string;
-				details?: Record<string, unknown>;
-			};
-		};
-		const errorData = errorObj.error || {};
+		const body =
+			typeof data === "object" && data !== null && !Array.isArray(data)
+				? (data as Record<string, unknown>)
+				: {};
+		const recoveryControl =
+			(body.state === "active" || body.state === "recoverable") &&
+			"recovery_summary" in body;
+		const errorData =
+			typeof body.error === "object" && body.error !== null && !Array.isArray(body.error)
+				? (body.error as Record<string, unknown>)
+				: {};
+		const errorCode = typeof errorData.code === "string" ? errorData.code : undefined;
+		const errorMessage =
+			typeof errorData.message === "string" ? errorData.message : undefined;
+		const details =
+			typeof errorData.details === "object" &&
+			errorData.details !== null &&
+			!Array.isArray(errorData.details)
+				? (errorData.details as Record<string, unknown>)
+				: undefined;
 		throw new ApiError({
-			code: errorData.code || "API_ERROR",
-			message: errorData.message || res.statusText || "请求失败",
+			code:
+				errorCode ||
+				(recoveryControl
+					? body.state === "active"
+						? "RUN_ALREADY_ACTIVE"
+						: "RUN_RECOVERABLE"
+					: "API_ERROR"),
+			message:
+				errorMessage ||
+				(typeof body.detail === "string"
+					? body.detail
+					: res.statusText || "请求失败"),
+			retryable: typeof errorData.retryable === "boolean" ? errorData.retryable : undefined,
 			status: res.status,
-			details: errorData.details as Record<string, unknown> | undefined,
+			details,
 			request: { method, url: endpoint },
 			response: data as Record<string, unknown>,
 		});
@@ -151,6 +174,7 @@ async function fetchApi<T>(
 		throw new ApiError({
 			code: "NETWORK_ERROR",
 			message: "网络连接失败，请检查您的网络设置",
+			retryable: true,
 			details: { originalError: String(error) },
 			request: {
 				method: options?.method || "GET",
@@ -503,6 +527,20 @@ export type SkillApiRow = {
 
 export const skillsApi = {
 	list: () => fetchApi<SkillApiRow[]>("/api/v1/skills"),
+};
+
+export const textApi = {
+	nextInterviewQuestion: (data: {
+		story: string;
+		answers: Array<{ question: string; answer: string }>;
+	}) =>
+		fetchApi<{
+			ready: boolean;
+			question: { label: string; question: string; placeholder: string; suggestions: string[] } | null;
+		}>("/api/v1/text/interview/next", {
+			method: "POST",
+			body: JSON.stringify(data),
+		}),
 };
 
 export const configApi = {

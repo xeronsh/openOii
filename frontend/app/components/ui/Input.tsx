@@ -11,10 +11,10 @@ export function Input({ label, error, className, ...props }: InputProps) {
   const id = useId();
 
   return (
-    <div className="form-control w-full gap-1">
+    <div className="flex flex-col w-full gap-1">
       {label && (
-        <label htmlFor={id} className="label min-h-0 p-0">
-          <span className="label-text font-heading text-xs font-medium">
+        <label htmlFor={id} className="block min-h-0 p-0">
+          <span className="font-heading text-xs font-medium">
             {label}
           </span>
         </label>
@@ -29,8 +29,8 @@ export function Input({ label, error, className, ...props }: InputProps) {
         {...props}
       />
       {error && (
-        <label className="label min-h-0 p-0">
-          <span className="label-text-alt text-2xs text-error">
+        <label className="block min-h-0 p-0">
+          <span className="text-2xs text-error">
             {error}
           </span>
         </label>

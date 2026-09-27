@@ -38,19 +38,19 @@ export function SharedCharacterCard({
 						/>
 					</div>
 				) : (
-					<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border-2 border-base-content/10 bg-base-200">
-						<UserIcon className="h-4 w-4 text-base-content/30" aria-hidden="true" />
+					<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border-2 border-ink/10 bg-paper-200">
+						<UserIcon className="h-4 w-4 text-ink/30" aria-hidden="true" />
 					</div>
 				)}
 				<div className="min-w-0 flex-1">
-					<p className="m-0 font-mono text-2xs uppercase tracking-wide text-bc-muted">
+					<p className="m-0 font-mono text-2xs uppercase tracking-wide text-ink-muted">
 						cast
 					</p>
 					<h3 className="m-0 truncate font-heading text-sm font-bold">
 						{character.name}
 					</h3>
 				</div>
-				<span className="shrink-0 font-mono text-2xs tabular-nums text-bc-muted">
+				<span className="shrink-0 font-mono text-2xs tabular-nums text-ink-muted">
 					v{character.version}
 				</span>
 			</div>
@@ -69,11 +69,11 @@ export function SharedCharacterCard({
 			) : null}
 
 			{character.description ? (
-				<p className="m-0 line-clamp-2 flex-1 text-2xs text-bc-muted">
+				<p className="m-0 line-clamp-2 flex-1 text-2xs text-ink-muted">
 					{character.description}
 				</p>
 			) : (
-				<p className="m-0 flex-1 text-2xs text-bc-muted">
+				<p className="m-0 flex-1 text-2xs text-ink-muted">
 					无描述
 				</p>
 			)}

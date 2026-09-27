@@ -28,10 +28,10 @@ const renderCard = (universe: Universe) =>
 	);
 
 describe("UniverseCard", () => {
-	it("无封面时不渲染装饰占位与 IP COSMOS 标签，改为显示更新时间", () => {
+	it("无封面时显示宇宙编号和更新时间，不渲染旧装饰标签", () => {
 		renderCard(buildUniverse());
 
-		expect(screen.queryByText(/universe/i)).toBeNull();
+		expect(screen.getByText(/universe\s*\/\s*1/i)).toBeInTheDocument();
 		expect(screen.queryByText(/ip cosmos/i)).toBeNull();
 		expect(screen.getByText(/^更新 /)).toBeInTheDocument();
 	});

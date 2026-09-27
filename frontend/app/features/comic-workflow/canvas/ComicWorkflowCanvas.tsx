@@ -15,6 +15,7 @@ import { projectsApi } from "~/services/api";
 import { useRunState } from "~/hooks/useRunState";
 import { useThemeStore } from "~/stores/themeStore";
 import { toast } from "~/utils/toast";
+import { motionDuration } from "~/utils/motion";
 import type { ComicWorkflowGraph } from "../graph/types";
 import { buildComicWorkflow } from "../graph/buildComicWorkflow";
 import { layoutComicWorkflow } from "../graph/layoutComicWorkflow";
@@ -160,7 +161,7 @@ export function ComicWorkflowCanvas({
 				syncTldrawProjection({ editor, graph, layout, interactionMode });
 				lastSignatureRef.current = `${graphSignature}:${interactionMode}`;
 				setTimeout(() => {
-					editor.zoomToFit({ animation: { duration: 300 } });
+					editor.zoomToFit({ animation: { duration: motionDuration("slow") } });
 				}, 100);
 			}
 			setIsInitialized(true);
@@ -187,14 +188,14 @@ export function ComicWorkflowCanvas({
 		const editor = editorRef.current;
 		if (editor) {
 			setTimeout(() => {
-				editor.zoomToFit({ animation: { duration: 260 } });
+					editor.zoomToFit({ animation: { duration: motionDuration("normal") } });
 			}, 80);
 		}
 	}, [syncProjection]);
 
 	if (projectLoading || charactersLoading || shotsLoading || !graph || !layout) {
 		return (
-			<div className="flex h-full w-full items-center justify-center bg-base-100 text-sm text-bc-muted">
+			<div className="flex h-full w-full items-center justify-center bg-paper-100 text-sm text-ink-muted">
 				正在加载工作流...
 			</div>
 		);

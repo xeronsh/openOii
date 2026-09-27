@@ -310,17 +310,17 @@ export function SettingsModal() {
 	const renderConfigItem = (item: ConfigItem) => (
 		<div
 			key={item.key}
-			className="rounded-md border-2 border-base-content/15 bg-base-200/70 p-2.5"
+			className="rounded-md border-2 border-ink/15 bg-paper-200/70 p-2.5"
 		>
 			<div className="mb-1.5 flex flex-wrap items-center gap-1.5">
 				<span className="font-mono text-xs font-bold">
 					{item.key.toUpperCase()}
 				</span>
 				{item.is_sensitive && (
-					<span className="badge badge-warning badge-xs">敏感</span>
+					<span className="badge-doodle bg-warning/15 text-warning border-warning/30 text-2xs px-1.5 py-0.5">敏感</span>
 				)}
 				{item.source === "env" && (
-					<span className="badge badge-info badge-xs">仅.env</span>
+					<span className="badge-doodle bg-info/15 text-info border-info/30 text-2xs px-1.5 py-0.5">仅.env</span>
 				)}
 			</div>
 			<ConfigInput
@@ -328,7 +328,7 @@ export function SettingsModal() {
 				value={String(formState[item.key] ?? "")}
 				onChange={handleInputChange}
 			/>
-			<p className="mt-1.5 text-2xs text-bc-muted">
+			<p className="mt-1.5 text-2xs text-ink-muted">
 				{getConfigDescription(item.key)}
 			</p>
 		</div>
@@ -356,11 +356,11 @@ export function SettingsModal() {
 		const providerCard = (value: string, title: string, desc: string) => (
 			<label
 				className={`
-          flex flex-1 cursor-pointer items-center gap-2 rounded-md border-2 p-2.5 transition-all
+						  flex flex-1 cursor-pointer items-center gap-2 rounded-md border-2 p-2.5 transition-colors duration-fast
           ${
 						textProvider === value
 							? "border-accent bg-accent/10"
-							: "border-base-content/20 hover:bg-base-300"
+							: "border-ink/20 hover:bg-paper-300"
 					}
         `}
 			>
@@ -374,7 +374,7 @@ export function SettingsModal() {
 				/>
 				<div className="min-w-0">
 					<div className="text-sm font-bold">{title}</div>
-					<div className="text-2xs text-bc-muted">
+					<div className="text-2xs text-ink-muted">
 						{desc}
 					</div>
 				</div>
@@ -389,12 +389,12 @@ export function SettingsModal() {
 				</div>
 
 				{providerItem && (
-					<div className="rounded-md border-2 border-base-content/15 bg-base-200/70 p-2.5">
+					<div className="rounded-md border-2 border-ink/15 bg-paper-200/70 p-2.5">
 						<div className="mb-2 flex items-center gap-1.5">
 							<span className="font-mono text-xs font-bold">
 								TEXT_PROVIDER
 							</span>
-							<span className="badge badge-primary badge-xs">必选</span>
+							<span className="badge-doodle bg-primary text-primary-content border-primary/30 text-2xs px-1.5 py-0.5">必选</span>
 						</div>
 						<div className="flex flex-col gap-2 lg:flex-row">
 							{providerCard("anthropic", "Anthropic Claude", "Anthropic 兼容接口，推荐使用")}
@@ -438,7 +438,7 @@ export function SettingsModal() {
 							{activeSection.items
 								.filter((i) => i.key.toLowerCase().startsWith("fake_text_"))
 								.map(renderConfigItem)}
-							<p className="m-0 px-1 text-2xs text-bc-muted">
+							<p className="m-0 px-1 text-2xs text-ink-muted">
 								启用后生成链路不会调用外部文本生成 API。
 							</p>
 						</div>
@@ -471,11 +471,11 @@ export function SettingsModal() {
 		const providerCard = (value: string, title: string, desc: string) => (
 			<label
 				className={`
-          flex cursor-pointer items-center gap-2 rounded-md border-2 p-2.5 transition-all
+						  flex cursor-pointer items-center gap-2 rounded-md border-2 p-2.5 transition-colors duration-fast
           ${
 						imageProvider === value
 							? "border-accent bg-accent/10"
-							: "border-base-content/20 hover:bg-base-300"
+							: "border-ink/20 hover:bg-paper-300"
 					}
         `}
 			>
@@ -489,7 +489,7 @@ export function SettingsModal() {
 				/>
 				<div className="min-w-0">
 					<div className="text-sm font-bold">{title}</div>
-					<div className="text-2xs text-bc-muted">
+					<div className="text-2xs text-ink-muted">
 						{desc}
 					</div>
 				</div>
@@ -504,12 +504,12 @@ export function SettingsModal() {
 				</div>
 
 				{providerItem && (
-					<div className="rounded-md border-2 border-base-content/15 bg-base-200/70 p-2.5">
+					<div className="rounded-md border-2 border-ink/15 bg-paper-200/70 p-2.5">
 						<div className="mb-2 flex items-center gap-1.5">
 							<span className="font-mono text-xs font-bold">
 								IMAGE_PROVIDER
 							</span>
-							<span className="badge badge-primary badge-xs">必选</span>
+							<span className="badge-doodle bg-primary text-primary-content border-primary/30 text-2xs px-1.5 py-0.5">必选</span>
 						</div>
 						<div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
 							{providerCard("openai", "OpenAI 兼容", "可用于 gpt-image-2 等兼容接口")}
@@ -542,7 +542,7 @@ export function SettingsModal() {
 						</h4>
 						<div className="space-y-2 rounded-r-md bg-accent/5 py-1.5 pl-2.5">
 							{fakeItems.map(renderConfigItem)}
-							<p className="m-0 px-1 text-2xs text-bc-muted">
+							<p className="m-0 px-1 text-2xs text-ink-muted">
 								未配置固定 URL 时会返回内置 SVG 占位图。
 							</p>
 						</div>
@@ -551,11 +551,11 @@ export function SettingsModal() {
 
 				{commonItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-bc-muted">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-ink-muted">
 							<WrenchScrewdriverIcon className="h-3.5 w-3.5" />
 							通用配置
 						</h4>
-						<div className="space-y-2 rounded-r-md bg-base-300/30 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-paper-300/30 py-1.5 pl-2.5">
 							{commonItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -601,11 +601,11 @@ export function SettingsModal() {
 		const providerCard = (value: string, title: string, desc: string) => (
 			<label
 				className={`
-          flex flex-1 cursor-pointer items-center gap-2 rounded-md border-2 p-2.5 transition-all
+						  flex flex-1 cursor-pointer items-center gap-2 rounded-md border-2 p-2.5 transition-colors duration-fast
           ${
 						videoProvider === value
 							? "border-accent bg-accent/10"
-							: "border-base-content/20 hover:bg-base-300"
+							: "border-ink/20 hover:bg-paper-300"
 					}
         `}
 			>
@@ -619,7 +619,7 @@ export function SettingsModal() {
 				/>
 				<div className="min-w-0">
 					<div className="text-sm font-bold">{title}</div>
-					<div className="text-2xs text-bc-muted">
+					<div className="text-2xs text-ink-muted">
 						{desc}
 					</div>
 				</div>
@@ -634,12 +634,12 @@ export function SettingsModal() {
 				</div>
 
 				{providerItem && (
-					<div className="rounded-md border-2 border-base-content/15 bg-base-200/70 p-2.5">
+					<div className="rounded-md border-2 border-ink/15 bg-paper-200/70 p-2.5">
 						<div className="mb-2 flex items-center gap-1.5">
 							<span className="font-mono text-xs font-bold">
 								VIDEO_PROVIDER
 							</span>
-							<span className="badge badge-primary badge-xs">必选</span>
+							<span className="badge-doodle bg-primary text-primary-content border-primary/30 text-2xs px-1.5 py-0.5">必选</span>
 						</div>
 						<div className="flex flex-col gap-2 lg:flex-row">
 							{providerCard("doubao", "豆包视频", "火山引擎 Ark API，国内推荐")}
@@ -687,11 +687,11 @@ export function SettingsModal() {
 
 				{commonItems.length > 0 && (
 					<div className="space-y-2">
-						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-bc-muted">
+						<h4 className="m-0 flex items-center gap-1.5 text-xs font-bold text-ink-muted">
 							<WrenchScrewdriverIcon className="h-3.5 w-3.5" />
 							通用配置
 						</h4>
-						<div className="space-y-2 rounded-r-md bg-base-300/30 py-1.5 pl-2.5">
+						<div className="space-y-2 rounded-r-md bg-paper-300/30 py-1.5 pl-2.5">
 							{commonItems.map(renderConfigItem)}
 						</div>
 					</div>
@@ -722,7 +722,7 @@ export function SettingsModal() {
 				</div>
 
 				{activeSection.items.length === 0 && (
-					<div className="py-8 text-center text-xs text-bc-muted">
+					<div className="py-8 text-center text-xs text-ink-muted">
 						<InformationCircleIcon className="mx-auto mb-1.5 h-8 w-8 opacity-50" />
 						<p className="m-0">此分类暂无配置项</p>
 					</div>
@@ -732,25 +732,26 @@ export function SettingsModal() {
 	};
 
 	return (
-		<div
-			className="modal modal-open"
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="settings-modal-title"
-		>
-			<div className="modal-box flex max-h-[88vh] w-11/12 max-w-5xl flex-col border-2 border-base-content/20 bg-base-100 p-0 shadow-brutal-sm">
-				<div className="flex shrink-0 items-center justify-between border-b-2 border-base-content/15 bg-base-200 px-3 py-2 sm:px-4">
+		<div className="dialog-overlay">
+			<div
+				className="dialog-panel flex max-h-[92dvh] w-[min(96vw,76rem)] flex-col p-0"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="settings-modal-title"
+			>
+				<div className="flex shrink-0 items-center justify-between border-b-2 border-ink/15 bg-paper-200 px-3 py-2 sm:px-4">
 					<h3
 						id="settings-modal-title"
 						className="flex items-center gap-1.5 font-heading text-md font-bold"
 					>
 						<Cog6ToothIcon className="h-5 w-5 text-accent" />
-						环境变量配置管理
+						<span>系统设置</span>
+						<span className="hidden font-mono text-2xs font-normal uppercase text-ink-muted sm:inline">providers / storage / runtime</span>
 					</h3>
 					<button
 						type="button"
 						onClick={handleCancel}
-						className="btn btn-ghost btn-circle touch-target-dense h-8 min-h-8 w-8"
+						className="btn-doodle bg-transparent border-transparent shadow-none hover:bg-paper-200 hover:shadow-brutal-sm touch-target-dense h-8 min-h-8 w-8"
 						aria-label="关闭设置"
 						title="关闭设置"
 					>
@@ -760,7 +761,7 @@ export function SettingsModal() {
 
 				{isLoading && (
 					<div className="flex items-center justify-center p-8">
-						<span className="loading loading-spinner loading-md" />
+						<span className=" spinner-doodle h-5 w-5" />
 					</div>
 				)}
 
@@ -768,7 +769,7 @@ export function SettingsModal() {
 					<div className="p-3">
 						<div
 							role="alert"
-							className="alert alert-error border-2 border-base-content/20 py-2 text-sm"
+							className="alert-doodle bg-error/10 text-error border-error border-2 border-ink/20 py-2 text-sm"
 						>
 							<ExclamationCircleIcon className="h-5 w-5" />
 							<span>加载配置失败，请检查后端服务是否正常运行。</span>
@@ -781,8 +782,9 @@ export function SettingsModal() {
 						onSubmit={handleSubmit}
 						className="flex min-h-0 flex-1 flex-col"
 					>
-						<div className="shrink-0 border-b-2 border-base-content/15 bg-base-100 px-3 py-2">
-							<div role="tablist" className="flex flex-wrap gap-1.5">
+						<div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+							<nav className="shrink-0 border-b-2 border-ink/15 bg-paper-200/45 p-2 lg:w-56 lg:border-b-0 lg:border-r-2" aria-label="设置分类">
+							<div role="tablist" className="flex gap-1.5 overflow-x-auto lg:flex-col">
 								{sections.map((section) => {
 									const cfg = tabConfig[section.key];
 									const isActive = activeTab === section.key;
@@ -794,13 +796,13 @@ export function SettingsModal() {
 											aria-selected={isActive}
 											onClick={() => handleTabChange(section.key)}
 											className={`
-                        flex h-8 items-center gap-1.5 rounded-md px-2.5
-                        text-xs font-medium
-                        border-2 border-base-content/20 transition-all
+                        flex min-h-9 shrink-0 items-center justify-between gap-2 border-2 px-2.5
+                        text-xs font-semibold lg:w-full
+												border-2 border-ink/20 transition-colors duration-fast
                         ${
 													isActive
 														? "bg-accent text-accent-content shadow-brutal-sm"
-														: "bg-base-200 hover:bg-base-300"
+														: "bg-paper-200 hover:bg-paper-300"
 												}
                       `}
 										>
@@ -809,18 +811,18 @@ export function SettingsModal() {
 											<span
 												className={`
                         rounded px-1 py-0.5 text-2xs tabular-nums
-                        ${isActive ? "bg-accent-content/20" : "bg-base-300"}
+                        ${isActive ? "bg-accent-content/20" : "bg-paper-300"}
                       `}
 											>
 												{section.items.length}
 											</span>
-										</button>
+									</button>
 									);
 								})}
 							</div>
-						</div>
+							</nav>
 
-						<div className="flex-1 overflow-y-auto p-3 sm:p-4">
+						<div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
 							{activeTab === "text"
 								? renderTextSection()
 								: activeTab === "image"
@@ -828,9 +830,10 @@ export function SettingsModal() {
 									: activeTab === "video"
 										? renderVideoSection()
 										: renderNormalSection()}
+							</div>
 						</div>
 
-						<div className="flex shrink-0 flex-wrap items-center gap-2 border-t-2 border-base-content/15 bg-base-200 px-3 py-2 sm:px-4">
+						<div className="flex shrink-0 flex-wrap items-center gap-2 border-t-2 border-ink/15 bg-paper-200 px-3 py-2 sm:px-4">
 							<div className="flex min-w-0 flex-1 items-center gap-1.5 text-2xs text-info">
 								<InformationCircleIcon className="h-4 w-4 shrink-0" />
 								<span className="truncate">
@@ -841,24 +844,24 @@ export function SettingsModal() {
 							<button
 								type="button"
 								onClick={handleCancel}
-								className="btn h-8 min-h-8 border-2 border-base-content/20 px-3 text-xs"
+								className="btn-doodle h-8 min-h-8 border-2 border-ink/20 px-3 text-xs"
 							>
 								取消
 							</button>
 
 							<button
 								type="submit"
-								className="btn btn-primary h-8 min-h-8 border-2 border-base-content/20 px-3 text-xs"
+								className="btn-doodle bg-primary text-primary-content h-8 min-h-8 border-2 border-ink/20 px-3 text-xs"
 								disabled={updateMutation.isPending}
 							>
 								{updateMutation.isPending && (
-									<span className="loading loading-spinner loading-xs" />
+									<span className=" spinner-doodle h-3 w-3" />
 								)}
 								保存配置
 							</button>
 							<button
 								type="button"
-								className="btn btn-outline h-8 min-h-8 border-2 border-base-content/20 px-3 text-xs"
+								className="btn-doodle bg-transparent h-8 min-h-8 border-2 border-ink/20 px-3 text-xs"
 								onClick={handleTestConnection}
 								disabled={
 									updateMutation.isPending ||
@@ -867,7 +870,7 @@ export function SettingsModal() {
 								}
 							>
 								{isTestingConnection && (
-									<span className="loading loading-spinner loading-xs" />
+									<span className=" spinner-doodle h-3 w-3" />
 								)}
 								测试连接
 							</button>
@@ -877,8 +880,8 @@ export function SettingsModal() {
 			</div>
 
 			{alertState.show && (
-				<div className="modal modal-open">
-					<div className="modal-box max-w-md border-2 border-base-content/20 p-4 shadow-brutal-sm">
+				<div className="dialog-overlay z-popover">
+					<div className="dialog-panel max-w-md p-4" role="dialog" aria-modal="true" aria-labelledby="settings-alert-title">
 						<div className="flex items-start gap-2.5">
 							<div
 								className={`shrink-0 ${
@@ -897,14 +900,14 @@ export function SettingsModal() {
 							</div>
 
 							<div className="min-w-0 flex-1">
-								<h3 className="mb-1 font-heading text-md font-bold">
+								<h3 id="settings-alert-title" className="mb-1 font-heading text-md font-bold">
 									{alertState.title}
 								</h3>
-								<p className="m-0 text-sm text-base-content/80">
+								<p className="m-0 text-sm text-ink/80">
 									{alertState.message}
 								</p>
 								{alertState.details && (
-									<div className="mt-2 rounded-md border-2 border-base-content/15 bg-base-200 p-2">
+									<div className="mt-2 rounded-md border-2 border-ink/15 bg-paper-200 p-2">
 										<p className="m-0 whitespace-pre-line text-xs">
 											{alertState.details}
 										</p>
@@ -913,14 +916,14 @@ export function SettingsModal() {
 							</div>
 						</div>
 
-						<div className="modal-action mt-3">
+						<div className="dialog-actions">
 							<button
 								type="button"
 								onClick={() => {
 									setAlertState({ ...alertState, show: false });
 									closeModal();
 								}}
-								className="btn btn-primary h-8 min-h-8 border-2 border-base-content/20 px-3 text-xs"
+								className="btn-doodle bg-primary text-primary-content h-8 min-h-8 border-2 border-ink/20 px-3 text-xs"
 							>
 								确定
 							</button>
@@ -962,6 +965,8 @@ function getConfigDescription(key: string): string {
 		TEXT_ENDPOINT: "文本生成 API 端点路径（OpenAI 兼容）",
 		TEXT_ENABLE_THINKING:
 			"是否向支持推理开关的文本模型显式传递 thinking 配置；留空表示由模型/服务默认决定。",
+		TEXT_REASONING_EFFORT:
+			"推理强度档位，支持 reasoning_effort 的 OpenAI 兼容模型可设为 low / medium / high。",
 
 		// 图像服务
 		IMAGE_PROVIDER:
