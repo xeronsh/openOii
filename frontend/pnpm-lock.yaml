@@ -81,9 +81,6 @@ importers:
       autoprefixer:
         specifier: ^10.4.20
         version: 10.4.23(postcss@8.5.6)
-      daisyui:
-        specifier: ^4.12.14
-        version: 4.12.24(postcss@8.5.6)
       jsdom:
         specifier: ^27.4.0
         version: 27.4.0
@@ -1866,9 +1863,6 @@ packages:
   crelt@1.0.6:
     resolution: {integrity: sha512-VQ2MBenTq1fWZUH9DJNGti7kKv6EeAuYr3cLwxUWhIu1baTaXh4Ib5W2CqHVqib4/MqbYGJqiL3Zb8GJZr3l4g==}
 
-  css-selector-tokenizer@0.8.0:
-    resolution: {integrity: sha512-Jd6Ig3/pe62/qe5SBPTN8h8LeUg/pT4lLgtavPf7updwwHpvFzxvOQBHYj2LZDMjUnBzgvIUSjRcf6oT5HzHFg==}
-
   css-tree@3.1.0:
     resolution: {integrity: sha512-0eW44TGN5SQXU1mWSkKwFstI/22X2bG1nYzZTYMAWjylYURhse752YgbE4Cx46AC+bAvI+/dYTPRk1LqSUnu6w==}
     engines: {node: ^10 || ^12.20.0 || ^14.13.0 || >=15.0.0}
@@ -1887,10 +1881,6 @@ packages:
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
-
-  culori@3.3.0:
-    resolution: {integrity: sha512-pHJg+jbuFsCjz9iclQBqyL3B2HLCBF71BwVNujUYEvCeQMvV97R59MNK3R2+jgJ3a1fcZgI9B3vYgz8lzr/BFQ==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   d3-array@3.2.4:
     resolution: {integrity: sha512-tdQAmyA18i4J7wprpYq8ClcxZy3SC31QMeByyCFyRt7BVHdREQZ5lpzoe5mFEYZUWe+oq8HBvk9JjpibyEV4Jg==}
@@ -1935,10 +1925,6 @@ packages:
   d3-timer@3.0.1:
     resolution: {integrity: sha512-ndfJ/JxxMd3nw31uyKoY2naivF+r29V+Lc0svZxe1JvvIRmi8hUsrMvdOwgS1o6uBHmiz91geQ0ylPP0aj1VUA==}
     engines: {node: '>=12'}
-
-  daisyui@4.12.24:
-    resolution: {integrity: sha512-JYg9fhQHOfXyLadrBrEqCDM6D5dWCSSiM6eTNCRrBRzx/VlOCrLS8eDfIw9RVvs64v2mJdLooKXY8EwQzoszAA==}
-    engines: {node: '>=16.9.0'}
 
   data-urls@6.0.1:
     resolution: {integrity: sha512-euIQENZg6x8mj3fO6o9+fOW8MimUI4PpD/fZBhJfeioZVy9TUpM4UY7KjQNVZFlqwJ0UdzRDzkycB997HEq1BQ==}
@@ -2031,9 +2017,6 @@ packages:
   fast-glob@3.3.3:
     resolution: {integrity: sha512-7MptL8U0cqcFdzIzwOTHoilX9x5BrNqye7Z/LuC7kCMRio1EMSyqRK3BEAUD7sXRq4iT4AzTVuZdhgQ2TCvYLg==}
     engines: {node: '>=8.6.0'}
-
-  fastparse@1.1.2:
-    resolution: {integrity: sha512-483XLLxTVIwWK3QTrMGRqUfUpoOs/0hbQrl2oz4J0pAcm3A3bu84wxTFqGqkJzewCLdME38xJLJAxBABfQT8sQ==}
 
   fastq@1.20.1:
     resolution: {integrity: sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw==}
@@ -4822,11 +4805,6 @@ snapshots:
 
   crelt@1.0.6: {}
 
-  css-selector-tokenizer@0.8.0:
-    dependencies:
-      cssesc: 3.0.0
-      fastparse: 1.1.2
-
   css-tree@3.1.0:
     dependencies:
       mdn-data: 2.12.2
@@ -4844,8 +4822,6 @@ snapshots:
       lru-cache: 11.2.4
 
   csstype@3.2.3: {}
-
-  culori@3.3.0: {}
 
   d3-array@3.2.4:
     dependencies:
@@ -4884,15 +4860,6 @@ snapshots:
       d3-array: 3.2.4
 
   d3-timer@3.0.1: {}
-
-  daisyui@4.12.24(postcss@8.5.6):
-    dependencies:
-      css-selector-tokenizer: 0.8.0
-      culori: 3.3.0
-      picocolors: 1.1.1
-      postcss-js: 4.1.0(postcss@8.5.6)
-    transitivePeerDependencies:
-      - postcss
 
   data-urls@6.0.1:
     dependencies:
@@ -4984,8 +4951,6 @@ snapshots:
       glob-parent: 5.1.2
       merge2: 1.4.1
       micromatch: 4.0.8
-
-  fastparse@1.1.2: {}
 
   fastq@1.20.1:
     dependencies:

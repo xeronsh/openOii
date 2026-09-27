@@ -38,7 +38,7 @@ const BANNED: Array<[RegExp, string]> = [
 	[/\bz-\[\d{3,}\]/, "脱离 z scale：tokens.css 的 --z-* 才是唯一分层来源"],
 	[/\bz-[1-9]\d\b/, "脱离 z scale：用 z-dropdown / z-sticky / z-modal 等命名层"],
 	[/\brounded-(?:2xl|3xl|none)\b/, "超出 --radius-* 四档：用 rounded-sm/md/lg/xl"],
-	[/#[0-9a-fA-F]{6}\b/, "裸 hex：颜色只能来自 daisyUI 主题或 tokens.css 的语义令牌"],
+	[/#[0-9a-fA-F]{6}\b/, "裸 hex：颜色只能来自 tokens.css 的语义令牌"],
 	[/gap-\[var\(--rhythm-/, "用裸类 gap-2/3/5（= --rhythm-item/block/zone）"],
 	[/\b(?:p|m|gap|space)-\[var\(--space-/, "用裸类 p-2 / gap-3（已在 tailwind.config.ts 映射）"],
 	[/\bleading-(?:[0-9]|\[)/, "脱离 leading 三档：leading-tight(1.15) / snug(1.35) / normal(1.5)"],

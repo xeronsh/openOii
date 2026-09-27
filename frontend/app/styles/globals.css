@@ -5,6 +5,17 @@
 @tailwind utilities;
 
 @layer base {
+  *,
+  *::before,
+  *::after {
+    border-radius: 0 !important;
+  }
+
+  svg rect {
+    rx: 0 !important;
+    ry: 0 !important;
+  }
+
   /* App shell: lock document scroll; pages own internal scroll panes */
   html {
     height: 100%;
@@ -12,7 +23,7 @@
   }
 
   body {
-    @apply bg-base-100 text-base-content h-full overflow-hidden font-sans;
+    @apply bg-paper-100 text-ink h-full overflow-hidden font-sans;
     /* iOS safe area without growing past viewport */
     min-height: 100dvh;
     max-height: 100dvh;
@@ -34,7 +45,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid oklch(var(--p));
+    outline: 2px solid rgb(var(--color-primary));
     outline-offset: 2px;
   }
 
@@ -43,7 +54,6 @@
   }
 
   [data-theme],
-  .btn,
   .card-doodle,
   .card-comic,
   .btn-doodle,
@@ -95,16 +105,20 @@
 
 @layer components {
   .card-doodle {
-    @apply bg-base-100 border-3 border-base-content/30 rounded-xl transition-all duration-normal;
-    box-shadow: 4px 4px 0px 0px oklch(var(--bc) / 0.3);
+    @apply bg-paper-100 border-3 border-ink/30 rounded-xl duration-normal;
+    transition-property: background-color, border-color, color, box-shadow, transform;
+    transition-timing-function: ease-in-out;
+    box-shadow: 4px 4px 0px 0px rgb(var(--color-ink) / 0.3);
   }
   .card-doodle:hover {
     @apply -translate-x-0.5 -translate-y-0.5;
-    box-shadow: 6px 6px 0px 0px oklch(var(--bc) / 0.3);
+    box-shadow: 6px 6px 0px 0px rgb(var(--color-ink) / 0.3);
   }
 
   .card-comic {
-    @apply bg-base-100 border-3 border-base-content/40 rounded-lg transition-all duration-fast;
+    @apply bg-paper-100 border-3 border-ink/40 rounded-lg duration-fast;
+    transition-property: background-color, border-color, color, box-shadow, transform;
+    transition-timing-function: ease-in-out;
     box-shadow: 4px 4px 0px 0px oklch(var(--cmyk-cyan) / 0.7), 7px 7px 0px 0px oklch(var(--cmyk-magenta) / 0.5);
   }
   .card-comic:hover {
@@ -112,17 +126,19 @@
     box-shadow: 5px 5px 0px 0px oklch(var(--cmyk-cyan) / 0.8), 9px 9px 0px 0px oklch(var(--cmyk-magenta) / 0.6);
   }
   [data-theme="doodle-dark"] .card-comic:hover {
-    border-color: oklch(var(--bc) / 0.5);
+    border-color: rgb(var(--color-ink) / 0.5);
     box-shadow: 5px 5px 0px 0px oklch(var(--cmyk-cyan) / 0.7), 9px 9px 0px 0px oklch(var(--cmyk-magenta) / 0.5);
   }
 
   .btn-doodle {
-    @apply border-3 border-base-content/30 rounded-lg font-bold uppercase tracking-wide transition-all duration-fast flex items-center whitespace-nowrap gap-1;
-    box-shadow: 4px 4px 0px 0px oklch(var(--bc) / 0.3);
+    @apply border-3 border-ink/30 rounded-lg font-bold uppercase tracking-wide duration-fast flex items-center whitespace-nowrap gap-1;
+    transition-property: background-color, border-color, color, box-shadow, transform;
+    transition-timing-function: ease-in-out;
+    box-shadow: 4px 4px 0px 0px rgb(var(--color-ink) / 0.3);
   }
   .btn-doodle:hover:not(:disabled) {
     @apply -translate-x-0.5 -translate-y-0.5;
-    box-shadow: 6px 6px 0px 0px oklch(var(--bc) / 0.3);
+    box-shadow: 6px 6px 0px 0px rgb(var(--color-ink) / 0.3);
   }
   .btn-doodle:active:not(:disabled) {
     @apply translate-x-1 translate-y-1;
@@ -133,51 +149,95 @@
   }
 
   .input-doodle {
-    @apply border-3 border-base-content/30 rounded-lg bg-base-100 outline-none focus:border-primary transition-colors;
+    @apply border-3 border-ink/30 rounded-lg bg-paper-100 outline-none focus:border-primary transition-colors duration-fast;
+  }
+
+  .badge-doodle {
+    @apply inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border font-medium leading-none;
+  }
+
+  .alert-doodle {
+    @apply flex items-center gap-2 rounded-md border-2 px-3 py-2;
+  }
+
+  .spinner-doodle {
+    @apply inline-block animate-spin rounded-full border-2 border-current border-r-transparent;
+  }
+
+  .table-doodle {
+    @apply w-full border-collapse text-left;
+  }
+
+  .table-doodle th,
+  .table-doodle td {
+    @apply border-b border-ink/10 px-2 py-1.5;
+  }
+
+  .dialog-overlay {
+    @apply fixed inset-0 z-modal flex items-center justify-center bg-neutral/45 p-4;
+  }
+
+  .dialog-panel {
+    @apply relative z-10 max-h-[90dvh] overflow-y-auto rounded-lg border-2 border-ink/20 bg-paper-100 shadow-brutal-sm;
+  }
+
+  .dialog-actions {
+    @apply mt-3 flex justify-end gap-2;
   }
 
   .halftone-bg {
-    background-image: radial-gradient(circle, oklch(var(--bc) / 0.08) 1.2px, transparent 1.2px);
+    background-image: radial-gradient(circle, rgb(var(--color-ink) / 0.08) 1.2px, transparent 1.2px);
     background-size: 7px 7px;
   }
 
   .halftone-bg-accent {
-    background-image: radial-gradient(circle, oklch(var(--p) / 0.16) 1.2px, transparent 1.2px);
+    background-image: radial-gradient(circle, rgb(var(--color-primary) / 0.16) 1.2px, transparent 1.2px);
     background-size: 7px 7px;
   }
 
   [data-theme="doodle-dark"] .halftone-bg {
-    background-image: radial-gradient(circle, oklch(var(--bc) / 0.2) 1.2px, transparent 1.2px);
+    background-image: radial-gradient(circle, rgb(var(--color-ink) / 0.2) 1.2px, transparent 1.2px);
   }
   [data-theme="doodle-dark"] .halftone-bg-accent {
-    background-image: radial-gradient(circle, oklch(var(--p) / 0.3) 1.2px, transparent 1.2px);
+    background-image: radial-gradient(circle, rgb(var(--color-primary) / 0.3) 1.2px, transparent 1.2px);
   }
 
   /* Comic Workbench: paper surface for director desk pages */
   .workbench-surface {
-    background-color: oklch(var(--b1));
+    background-color: rgb(var(--color-paper-100));
     background-image:
-      radial-gradient(circle, oklch(var(--p) / 0.12) 1.1px, transparent 1.1px),
-      linear-gradient(180deg, oklch(var(--b2) / 0.35) 0%, transparent 28%);
+      radial-gradient(circle, rgb(var(--color-primary) / 0.12) 1.1px, transparent 1.1px),
+      linear-gradient(180deg, rgb(var(--color-paper-200) / 0.35) 0%, transparent 28%);
     background-size: 7px 7px, 100% 100%;
   }
   [data-theme="doodle-dark"] .workbench-surface {
     background-image:
-      radial-gradient(circle, oklch(var(--p) / 0.22) 1.1px, transparent 1.1px),
-      linear-gradient(180deg, oklch(var(--b2) / 0.45) 0%, transparent 32%);
+      radial-gradient(circle, rgb(var(--color-primary) / 0.22) 1.1px, transparent 1.1px),
+      linear-gradient(180deg, rgb(var(--color-paper-200) / 0.45) 0%, transparent 32%);
     background-size: 7px 7px, 100% 100%;
   }
 
   .workbench-canvas-frame {
-    background-image: radial-gradient(circle, oklch(var(--bc) / 0.05) 1.2px, transparent 1.2px);
+    background-image: radial-gradient(circle, rgb(var(--color-ink) / 0.05) 1.2px, transparent 1.2px);
     background-size: 7px 7px;
   }
+
+  [data-shell="creation-settings"] > summary {
+    list-style: none;
+  }
+  [data-shell="creation-settings"] > summary::-webkit-details-marker {
+    display: none;
+  }
+  [data-shell="creation-settings"][open] .creation-settings-chevron {
+    transform: rotate(180deg);
+  }
+
   [data-theme="doodle-dark"] .workbench-canvas-frame {
-    background-image: radial-gradient(circle, oklch(var(--bc) / 0.15) 1.2px, transparent 1.2px);
+    background-image: radial-gradient(circle, rgb(var(--color-ink) / 0.15) 1.2px, transparent 1.2px);
   }
 
   .speech-bubble {
-    @apply relative bg-base-300/50 rounded-xl px-3 py-2;
+    @apply relative bg-paper-300/50 rounded-xl px-3 py-2;
     font-family: "Bangers", "Impact", sans-serif;
   }
   .speech-bubble::after {
@@ -187,10 +247,10 @@
     height: 0;
     border-top: 5px solid transparent;
     border-bottom: 5px solid transparent;
-    border-right: 6px solid oklch(var(--b3) / 0.5);
+    border-right: 6px solid rgb(var(--color-paper-300) / 0.5);
   }
   [data-theme="doodle-dark"] .speech-bubble::after {
-    border-right: 6px solid oklch(var(--b3) / 0.7);
+    border-right: 6px solid rgb(var(--color-paper-300) / 0.7);
   }
 
   .speech-bubble-user {
@@ -203,10 +263,10 @@
     height: 0;
     border-top: 5px solid transparent;
     border-bottom: 5px solid transparent;
-    border-left: 6px solid oklch(var(--p) / 0.1);
+    border-left: 6px solid rgb(var(--color-primary) / 0.1);
   }
   [data-theme="doodle-dark"] .speech-bubble-user::after {
-    border-left: 6px solid oklch(var(--p) / 0.3);
+    border-left: 6px solid rgb(var(--color-primary) / 0.3);
   }
 
   .underline-sketch {
@@ -222,7 +282,7 @@
 @layer utilities {
 
  .animate-slide-in-right {
-    animation: slide-in-right 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    animation: slide-in-right var(--duration-slow) cubic-bezier(0.25, 0.46, 0.45, 0.94);
     will-change: opacity, transform;
   }
 
@@ -237,7 +297,6 @@
 @media (prefers-reduced-motion: reduce) {
 
  [data-theme],
- .btn,
  .card-doodle,
  a,
  nav,
@@ -262,7 +321,7 @@
 
 /* tldraw 背景层 - 使用主题色 */
 .infinite-canvas-container .tl-background {
-  background: oklch(var(--b1)) !important;
+  background: rgb(var(--color-paper-100)) !important;
 }
 
 /* 隐藏 tldraw 默认 UI */
