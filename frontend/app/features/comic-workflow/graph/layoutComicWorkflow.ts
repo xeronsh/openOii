@@ -28,8 +28,12 @@ export interface ComicWorkflowLayout {
 
 /**
  * 排版式分区（非流水线）：
- * 左列 Brief + 角色库（上下堆叠），中列分镜九宫格（视觉主角），右列成片交付台。
+ * 左列角色库，中列分镜九宫格（视觉主角），右列成片交付台。
  * 三列同顶对齐，无箭头——生成阶段顺序由左→右的阅读方向自然表达。
+ *
+ * Brief 不在画布上：它是项目级上下文，永远由右栏 Inspector 承载
+ * （选中 brief 节点时显示），这样画布只保留「角色 → 分镜 → 成片」这条
+ * 真正需要在空间里对照的链路，外部左栏 Activity 也不必再与它抢左缘。
  */
 const CARD_SIZE: Record<ComicWorkflowNode["kind"], { w: number; h: number }> = {
 	brief: { w: 404, h: 300 },
@@ -41,12 +45,12 @@ const CARD_SIZE: Record<ComicWorkflowNode["kind"], { w: number; h: number }> = {
 /** Classic storyboard grid columns (九宫格 reading order). */
 export const SHOT_GRID_COLUMNS = 3;
 
-/** 左列角色库固定两列：与 Brief 同宽，形成稳定的左栏 */
+/** 左列角色库固定两列，形成稳定的左栏 */
 const CHARACTER_COLUMNS = 2;
 
 const GAP = {
 	column: 28, // 列间距（原流水线 48 的 section 间距收紧）
-	stack: 28, // 左列内 Brief ↔ 角色库
+	stack: 28, // 左列内区块间距
 	card: 14, // ~ --canvas-gap-card
 	framePaddingX: 20, // ~ --canvas-frame-pad
 	frameHeader: 56, // ~ --canvas-frame-header
@@ -89,7 +93,6 @@ function gridHeight(count: number, columns: number, cardHeight: number): number 
 export function layoutComicWorkflow(
 	graph: ComicWorkflowGraph,
 ): ComicWorkflowLayout {
-	const briefNodes = nodesForSection(graph, "brief");
 	const characterNodes = nodesForSection(graph, "elements");
 	const shotNodes = nodesForSection(graph, "shotline");
 	const outputNodes = nodesForSection(graph, "output");
@@ -99,26 +102,17 @@ export function layoutComicWorkflow(
 		Math.max(1, shotNodes.length || 1),
 	);
 
-	// —— 左列：Brief 在顶、角色库在下，同宽 ——
+	// —— 左列：角色库 ——
 	const leftWidth =
 		GAP.framePaddingX * 2 +
 		CHARACTER_COLUMNS * CARD_SIZE.character.w +
 		(CHARACTER_COLUMNS - 1) * GAP.card;
 
-	const briefFrame: WorkflowLayoutFrame = {
-		id: "frame:brief",
-		section: "brief",
-		x: START.x,
-		y: START.y,
-		w: leftWidth,
-		h: GAP.frameHeader + CARD_SIZE.brief.h + GAP.framePaddingX,
-	};
-
 	const elementsFrame: WorkflowLayoutFrame = {
 		id: "frame:elements",
 		section: "elements",
 		x: START.x,
-		y: briefFrame.y + briefFrame.h + GAP.stack,
+		y: START.y,
 		w: leftWidth,
 		h: Math.max(
 			240,
@@ -154,17 +148,6 @@ export function layoutComicWorkflow(
 	};
 
 	const layoutNodes: WorkflowLayoutNode[] = [];
-
-	for (const node of briefNodes) {
-		layoutNodes.push({
-			id: node.id,
-			node,
-			x: briefFrame.x + GAP.framePaddingX,
-			y: briefFrame.y + GAP.frameHeader,
-			w: leftWidth - GAP.framePaddingX * 2,
-			h: CARD_SIZE.brief.h,
-		});
-	}
 
 	characterNodes.forEach((node, index) => {
 		const row = Math.floor(index / CHARACTER_COLUMNS);
@@ -212,7 +195,7 @@ export function layoutComicWorkflow(
 	}
 
 	return {
-		frames: [briefFrame, elementsFrame, shotlineFrame, outputFrame],
+		frames: [elementsFrame, shotlineFrame, outputFrame],
 		nodes: layoutNodes,
 	};
 }

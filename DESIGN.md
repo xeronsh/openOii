@@ -121,7 +121,33 @@ components:
 | Token | Role |
 |-------|------|
 | `--workbench-header` / `--workbench-toolbar` | TopBar + stage row (each 2.75rem) |
-| `--workbench-sidebar` | Agent Column width (18rem) |
+| `--workbench-activity` / `-collapsed` | 左栏 Agent Activity width (18rem / 2.75rem rail) |
+| `--workbench-inspector` / `-collapsed` | 右栏检查器 width (20rem / 2.75rem rail) |
+
+**Workbench 四区骨架（不可协商）：**
+
+```
+┌────────────────────────────────────────────────────────┐
+│ TopBar                                                  │
+├────────────┬──────────────────────────┬────────────────┤
+│ Activity   │ StagePipeline            │ Inspector      │
+│ (常驻左栏) ├──────────────────────────┤ (选中即开)      │
+│ 活动/资产/  │ Canvas  弹性 1fr         │ 概览/内容/操作  │
+│ 宇宙        ├──────────────────────────┤                │
+│            │ PromptBar 常驻            │                │
+└────────────┴──────────────────────────┴────────────────┘
+```
+
+1. **三栏都是常驻栏，画布是唯一弹性面** —— Activity 与 Inspector 都不再
+   `position: absolute` 浮在画布上。窄屏（`<lg`）：Inspector 不渲染，
+   Activity 回到文档流。
+2. **Inspector 承载一切属性面**，包括 Brief。画布上只有
+   Elements → 九宫格 → Output 三列——它们需要在空间里互相对照；
+   Brief 是项目级上下文，不必占画布栏位。
+3. **PromptBar 常驻画布下方**，不藏在侧栏 tab 里。「选中 → 提示 → 定点重跑」
+   的入口必须在默认状态下可见。
+4. **Inspector 默认展开**，可手动收起成窄轨；换选中目标时重新展开。
+   未选中任何卡片时回落到 Brief，项目级上下文永远可达。
 
 画布几何（卡片尺寸、九宫格列数、frame 内距 gap）的 SSOT 是
 `app/features/comic-workflow/graph/layoutComicWorkflow.ts`——tldraw 消费的是
@@ -151,6 +177,7 @@ focus ring 不手写：全局 `:focus-visible` 已是 2px primary outline，别�
 3. **One display face per screen** — Bangers at most once.
 4. **Dense chrome** — header/toolbar use `--touch-target-dense` for chips; primary actions keep `--touch-target-min` (44px).
 5. **Shell classes** — TopBar → `.chrome-row` + `data-shell="topbar"`; StagePipeline → `.chrome-toolbar` + `data-shell="stage-pipeline"`; pages → `.page-shell` / `.page-body`.
+6. **常驻非浮动面上限 3** — 第 4 个功能面一律走浮层/抽屉（yuuvis viewport architecture）。各面最小宽之和放不下时必须换布局模式，**不许按百分比切完再让面板重叠**。
 
 **Program:** Full UI domains land in batches (`docs/frontend-redesign-program.md`).
 

@@ -259,38 +259,6 @@ function EmptyMedia({ label }: { label: string }) {
 	);
 }
 
-function BriefCard({ node }: { node: Extract<ComicWorkflowNode, { kind: "brief" }> }) {
-	const duration = node.metrics.totalDuration
-		? `${node.metrics.totalDuration}s`
-		: "未定";
-
-	return (
-		<div className="flex h-full flex-col p-4">
-			<CardHeader node={node} icon="lightbulb" accentClass="bg-primary" />
-			<div className="mt-4 grid grid-cols-3 gap-2">
-				<Metric label="角色" value={node.metrics.characterCount} />
-				<Metric label="镜头" value={node.metrics.shotCount} />
-				<Metric label="时长" value={duration} />
-			</div>
-			{/* 行数上限与固定卡高匹配：超限走省略号，而不是被 overflow-hidden 齐腰裁半个字 */}
-			<div className="mt-4 min-h-0 flex-1 space-y-3 overflow-hidden">
-				{node.project.story ? (
-					<p className="m-0 line-clamp-4 whitespace-pre-wrap text-sm leading-relaxed text-ink/75">
-						{node.project.story}
-					</p>
-				) : (
-					<p className="m-0 text-sm text-ink-muted">等待故事输入</p>
-				)}
-				{node.project.summary ? (
-					<p className="m-0 line-clamp-3 rounded-lg border border-secondary/20 bg-secondary/10 p-2 text-xs leading-relaxed text-ink-muted">
-						{node.project.summary}
-					</p>
-				) : null}
-			</div>
-		</div>
-	);
-}
-
 /** 参考图管理条：缩略图 + 上传 + 删除 + 特征重算，全部就地完成 */
 function CharacterRefStrip({
 	node,
@@ -667,17 +635,6 @@ function outputStateLabel(state: Extract<ComicWorkflowNode, { kind: "output" }>[
 	return "等待合成";
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
-	return (
-		<div className="rounded-lg border border-ink/10 bg-paper-200/50 p-2">
-			<p className="m-0 text-2xs font-mono uppercase text-ink-muted">
-				{label}
-			</p>
-			<p className="m-0 truncate font-heading text-lg font-bold">{value}</p>
-		</div>
-	);
-}
-
 function CardHeader({
 	node,
 	icon,
@@ -731,9 +688,9 @@ export class WorkflowFrameShapeUtil extends ShapeUtil<WorkflowFrameShape> {
 		return {
 			w: 520,
 			h: 360,
-			section: "brief",
-			title: "Brief",
-			eyebrow: "01 / STORY",
+			section: "elements",
+			title: "Elements",
+			eyebrow: "02 / CAST",
 			status: "draft",
 			countLabel: "",
 			draggable: true,
@@ -852,7 +809,6 @@ export class WorkflowCardShapeUtil extends ShapeUtil<WorkflowCardShape> {
 					onPointerDown={draggable ? undefined : stopCanvasPointer}
 					onClick={() => selectWorkflowNode(node.id)}
 				>
-					{node.kind === "brief" ? <BriefCard node={node} /> : null}
 					{node.kind === "character" ? <CharacterCard node={node} /> : null}
 					{node.kind === "shot" ? <ShotCard node={node} /> : null}
 					{node.kind === "output" ? <OutputCard node={node} /> : null}

@@ -20,6 +20,8 @@ import {
 	WorkspaceSidebar,
 	type WorkspaceSidebarTab,
 } from "~/features/comic-workflow/sidebar/WorkspaceSidebar";
+import { InspectorColumn } from "~/features/comic-workflow/inspector/InspectorColumn";
+import { PromptBar } from "~/features/workbench/PromptBar";
 import {
 	deriveWorkbenchStatus,
 } from "~/features/comic-workflow/state/deriveWorkbenchStatus";
@@ -155,6 +157,21 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 		});
 		return graph.nodes.find((node) => node.id === selectedNodeId) ?? null;
 	}, [project, characters, shots, selectedNodeId, runIsGenerating]);
+
+	// Brief 不在画布上（见 layoutComicWorkflow）：未选中任何卡片时，
+	// 右栏 Inspector 回落到它，项目级上下文保持可达。
+	const briefNode = useMemo(() => {
+		if (!project) return null;
+		return (
+			buildComicWorkflow({
+				project,
+				characters,
+				shots,
+				blockingClips: project.blocking_clips,
+				isGenerating: runIsGenerating,
+			}).nodes.find((node) => node.kind === "brief") ?? null
+		);
+	}, [project, characters, shots, runIsGenerating]);
 	const selectionLabel = selectedNodeIds.length > 1
 		? selectedNodeIds.every((id) => id.startsWith("shot:"))
 			? `${selectedNodeIds.length} 个分镜格`
@@ -380,9 +397,6 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 					activeTab={sidebarTab}
 					onTabChange={setSidebarTab}
 					projectId={projectId}
-					project={project}
-					selectedNode={selectedWorkflowNode}
-					structureLocked={creationInterview || hasActiveRun || runAwaitingConfirm}
 					onConfirm={handleConfirm}
 					onCancel={handleCancel}
 					creationInterview={creationInterview}
@@ -392,28 +406,43 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 						next.set("autoStart", "true");
 						setSearchParams(next, { replace: true });
 					}}
-					selectionLabel={selectionLabel}
-					awaitingConfirm={runAwaitingConfirm}
-					awaitingAgent={runState.awaitingAgent}
-					recoveryGate={runState.recoveryGate}
 					onSendFeedback={handleFeedback}
 					isGenerating={hasActiveRun}
 					collapsed={creationInterview || isMobileWorkbench ? false : workspaceCollapsed}
 					onCollapsedChange={setWorkspaceCollapsed}
-					selectedNodeIds={selectedNodeIds}
 					universeId={project?.universe_id ?? null}
-					placement="left"
-					showInspectorTab
 				/>
-
 				{!creationInterview && !isMobileWorkbench ? (
-					<div className="relative min-w-0 flex-1 overflow-hidden workbench-canvas-frame">
-						<StageView
-							projectId={projectId}
-							onSelectedNodeIdChange={handleSelectedNodeIdChange}
-							onSelectedNodeIdsChange={handleSelectedNodeIdsChange}
+					<div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+						<div className="relative min-h-0 flex-1 overflow-hidden workbench-canvas-frame">
+							<StageView
+								projectId={projectId}
+								onSelectedNodeIdChange={handleSelectedNodeIdChange}
+								onSelectedNodeIdsChange={handleSelectedNodeIdsChange}
+							/>
+						</div>
+						{/* PromptBar 常驻画布下方：选中 → 提示 → 定点重跑 的核心入口 */}
+						<PromptBar
+							selectionLabel={selectionLabel}
+							awaitingConfirm={runAwaitingConfirm}
+							awaitingAgent={runState.awaitingAgent}
+							recoveryGate={runState.recoveryGate}
+							isGenerating={hasActiveRun}
+							onSendFeedback={handleFeedback}
+							onConfirm={handleConfirm}
 						/>
 					</div>
+				) : null}
+
+				{!creationInterview && !isMobileWorkbench ? (
+					<InspectorColumn
+						projectId={projectId}
+						selectedNode={selectedWorkflowNode}
+						selectedNodeIds={selectedNodeIds}
+						structureLocked={hasActiveRun || runAwaitingConfirm}
+						universeId={project?.universe_id ?? null}
+						briefNode={briefNode}
+					/>
 				) : null}
 			</main>
 
