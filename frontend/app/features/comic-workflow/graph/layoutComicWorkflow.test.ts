@@ -108,24 +108,21 @@ describe("layoutComicWorkflow", () => {
 		});
 
 		const layout = layoutComicWorkflow(graph);
-		const [brief, elements, shotline, output] = layout.frames;
+		const [elements, shotline, output] = layout.frames;
 
+		// Brief 不占画布栏位：它是右栏 Inspector 的项目级上下文
 		expect(layout.frames.map((frame) => frame.section)).toEqual([
-			"brief",
 			"elements",
 			"shotline",
 			"output",
 		]);
-		// 左列：Brief 与角色库同 x 同宽、上下堆叠
-		expect(elements.x).toBe(brief.x);
-		expect(elements.w).toBe(brief.w);
-		expect(elements.y).toBeGreaterThan(brief.y + brief.h);
-		// 中列在左列右侧，右列在中列右侧
-		expect(shotline.x).toBeGreaterThan(brief.x + brief.w);
-		expect(output.x).toBeGreaterThan(shotline.x + shotline.w);
+		expect(layout.nodes.some((node) => node.id === "brief")).toBe(false);
 		// 三列同顶对齐
-		expect(shotline.y).toBe(brief.y);
-		expect(output.y).toBe(brief.y);
+		expect(shotline.y).toBe(elements.y);
+		expect(output.y).toBe(elements.y);
+		// 中列在左列右侧，右列在中列右侧
+		expect(shotline.x).toBeGreaterThan(elements.x + elements.w);
+		expect(output.x).toBeGreaterThan(shotline.x + shotline.w);
 	});
 
 	it("lays out ordered shots left-to-right in a 3-column grid", () => {

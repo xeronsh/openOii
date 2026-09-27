@@ -246,10 +246,11 @@ test("comic workflow canvas supports core review interactions", async ({ page })
 	await page.goto("/project/7");
 	await page.waitForSelector('[data-shape-id="shape:workflow-card-shot-1"]');
 
-	await expect(page.getByRole("region", { name: "Brief" })).toBeVisible();
+	// Brief 不在画布上：它是右栏 Inspector 的项目级上下文
 	await expect(page.getByRole("region", { name: "Elements" })).toBeVisible();
 	await expect(page.getByRole("region", { name: "九宫格分镜" })).toBeVisible();
 	await expect(page.getByRole("region", { name: "Output" })).toBeVisible();
+	await expect(page.getByRole("region", { name: "Brief" })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "一致性评估" })).toHaveCount(0);
 
 	await page.getByRole("button", { name: "适应视图" }).click();

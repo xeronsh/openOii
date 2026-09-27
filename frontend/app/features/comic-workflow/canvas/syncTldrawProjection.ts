@@ -39,12 +39,6 @@ const SECTION_ARROW_FLOW: Array<{
 	kind: string;
 }> = [
 	{
-		id: "section-edge:brief-elements",
-		from: "brief",
-		to: "elements",
-		kind: "dependency",
-	},
-	{
 		id: "section-edge:elements-shotline",
 		from: "elements",
 		to: "shotline",

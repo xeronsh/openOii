@@ -56,8 +56,10 @@ export default {
         slow: "var(--duration-slow)",
       },
       width: {
-        sidebar: "var(--workbench-sidebar)",
-        "sidebar-collapsed": "var(--workbench-sidebar-collapsed)",
+        activity: "var(--workbench-activity)",
+        "activity-collapsed": "var(--workbench-activity-collapsed)",
+        inspector: "var(--workbench-inspector)",
+        "inspector-collapsed": "var(--workbench-inspector-collapsed)",
       },
       colors: {
         // Owned semantic palette; values live in styles/tokens.css.

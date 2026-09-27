@@ -114,8 +114,9 @@ describe("syncTldrawProjection helpers", () => {
 			layout: layoutComicWorkflow(graph),
 		});
 
-		expect(partials.filter((shape) => shape.type === "workflow-frame")).toHaveLength(4);
-		expect(partials.filter((shape) => shape.type === "workflow-card")).toHaveLength(4);
+		// 三栏：elements / shotline / output；Brief 由右栏 Inspector 承载
+		expect(partials.filter((shape) => shape.type === "workflow-frame")).toHaveLength(3);
+		expect(partials.filter((shape) => shape.type === "workflow-card")).toHaveLength(3);
 	});
 
 	it("parents workflow cards to section frames and locks inner cards by default", () => {
@@ -146,7 +147,6 @@ describe("syncTldrawProjection helpers", () => {
 				String(shape.parentId),
 			]),
 		).toEqual([
-			["brief", String(frames.get("brief"))],
 			["shot:10", String(frames.get("shotline"))],
 			["shot:11", String(frames.get("shotline"))],
 			["output", String(frames.get("output"))],
@@ -186,7 +186,6 @@ describe("syncTldrawProjection helpers", () => {
 			),
 		).toBe(true);
 		expect(cardState).toEqual([
-			{ nodeId: "brief", isLocked: true, draggable: false },
 			{ nodeId: "shot:10", isLocked: false, draggable: true },
 			{ nodeId: "shot:11", isLocked: false, draggable: true },
 			{ nodeId: "output", isLocked: true, draggable: false },
@@ -238,7 +237,6 @@ describe("syncTldrawProjection helpers", () => {
 		expect(
 			specs.map((spec) => [String(spec.fromId), String(spec.toId)]),
 		).toEqual([
-			[String(frames.get("brief")), String(frames.get("elements"))],
 			[String(frames.get("elements")), String(frames.get("shotline"))],
 			[String(frames.get("shotline")), String(frames.get("output"))],
 		]);
