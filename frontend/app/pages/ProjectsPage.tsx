@@ -137,7 +137,7 @@ export function ProjectsPage() {
 			<TopBar />
 
 			<PageBody className="workbench-surface">
-				<PageContent width="wide" className="gap-4 sm:gap-5 sm:py-5">
+				<PageContent className="gap-4 sm:gap-5 sm:py-5">
 				<PageHeader
 					eyebrow="openoii / library / projects"
 					title="项目库"
