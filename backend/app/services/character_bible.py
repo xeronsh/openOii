@@ -72,9 +72,17 @@ async def compute_face_embedding(image_url: str) -> list[float] | None:
         logger.warning("Failed to download image for embedding: %s", e)
         return None
 
+    return compute_face_embedding_from_bytes(image_bytes)
+
+
+def compute_face_embedding_from_bytes(image_bytes: bytes) -> list[float] | None:
+    """Extract the highest-confidence face embedding from image bytes."""
+    if not is_face_cropping_available():
+        return None
+
     faces = detect_faces(image_bytes)
     if not faces:
-        logger.info("No face detected in image: %s", image_url)
+        logger.info("No face detected in image")
         return None
 
     # Use the best-scoring face

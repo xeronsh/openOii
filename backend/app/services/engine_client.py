@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from collections.abc import Sequence
 from typing import Any, BinaryIO
@@ -21,6 +22,7 @@ logger = logging.getLogger("openOii.engine_client")
 ENGINE_START_TIMEOUT_S = 20.0
 ENGINE_STOP_TIMEOUT_S = 5.0
 _ENGINE_DIR = Path(__file__).resolve().parents[3] / "engine"
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 _ENGINE_START_LOCK = asyncio.Lock()
 _ENGINE_PROCESS: subprocess.Popen[bytes] | None = None
 _ENGINE_LOG_HANDLE: BinaryIO | None = None
@@ -139,6 +141,8 @@ async def ensure_engine_running(base_url: str, database_url: str, static_dir: Pa
             env = os.environ.copy()
             env["ENGINE_DB_PATH"] = db_path
             env["ENGINE_STATIC_DIR"] = str(static_dir)
+            env.setdefault("ENGINE_PYTHON", sys.executable)
+            env["ENGINE_BACKEND_DIR"] = str(_BACKEND_DIR)
             node = shutil.which("node")
             tsx_cli = _ENGINE_DIR / "node_modules" / "tsx" / "dist" / "cli.mjs"
             entry = _ENGINE_DIR / "src" / "index.ts"

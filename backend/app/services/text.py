@@ -276,6 +276,8 @@ class TextService:
             payload.setdefault("max_tokens", max_tokens)
         if self.settings.text_enable_thinking is not None:
             payload["enable_thinking"] = self.settings.text_enable_thinking
+        if self.settings.text_reasoning_effort:
+            payload["reasoning_effort"] = self.settings.text_reasoning_effort
         if temperature is not None:
             payload["temperature"] = temperature
 

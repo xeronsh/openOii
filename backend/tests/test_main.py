@@ -608,7 +608,7 @@ async def test_ws_projects_message_exception_sends_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_http_exception_handler_uses_error_envelope(monkeypatch):
-    """HTTPException 必须转成 {"error":{code,message}}。
+    """HTTPException 必须转成包含 code/retryable 的错误 envelope。
 
     回归守卫：FastAPI 默认回 {"detail": ...}，而前端只解析 {"error": {...}}，
     所以 4xx 的用户文案会静默退化成 statusText（例如把
@@ -632,7 +632,12 @@ async def test_http_exception_handler_uses_error_envelope(monkeypatch):
         assert response.status_code == status_code
         body = json.loads(response.body)
         assert body == {
-            "error": {"code": expected_code, "message": "具体原因", "details": {}}
+            "error": {
+                "code": expected_code,
+                "message": "具体原因",
+                "retryable": False,
+                "details": {},
+            }
         }, f"{status_code} 的错误体形状不对"
 
 

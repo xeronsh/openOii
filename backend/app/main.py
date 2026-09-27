@@ -56,6 +56,7 @@ _HTTP_STATUS_CODES: dict[int, str] = {
     403: "FORBIDDEN",
     404: "NOT_FOUND",
     405: "METHOD_NOT_ALLOWED",
+    408: "REQUEST_TIMEOUT",
     409: "CONFLICT",
     413: "PAYLOAD_TOO_LARGE",
     415: "UNSUPPORTED_MEDIA_TYPE",
@@ -66,6 +67,7 @@ _HTTP_STATUS_CODES: dict[int, str] = {
     503: "SERVICE_UNAVAILABLE",
     504: "GATEWAY_TIMEOUT",
 }
+_RETRYABLE_HTTP_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
 def create_app() -> FastAPI:
@@ -90,16 +92,32 @@ def create_app() -> FastAPI:
         if isinstance(detail, dict):
             code = str(detail.get("code") or fallback_code)
             message = str(detail.get("message") or detail.get("detail") or fallback_code)
+            retryable_value = detail.get("retryable")
+            retryable = (
+                retryable_value
+                if isinstance(retryable_value, bool)
+                else exc.status_code in _RETRYABLE_HTTP_STATUSES
+            )
             details = detail.get("details") or {
-                k: v for k, v in detail.items() if k not in ("code", "message", "details")
+                k: v
+                for k, v in detail.items()
+                if k not in ("code", "message", "retryable", "details")
             }
         else:
             code = fallback_code
             message = str(detail)
+            retryable = exc.status_code in _RETRYABLE_HTTP_STATUSES
             details = {}
         return JSONResponse(
             status_code=exc.status_code,
-            content={"error": {"code": code, "message": message, "details": details}},
+            content={
+                "error": {
+                    "code": code,
+                    "message": message,
+                    "retryable": retryable,
+                    "details": details,
+                }
+            },
             headers=getattr(exc, "headers", None),
         )
 
@@ -112,6 +130,7 @@ def create_app() -> FastAPI:
                 "error": {
                     "code": "VALIDATION_ERROR",
                     "message": "请求参数校验失败",
+                    "retryable": False,
                     "details": {"errors": jsonable_encoder(exc.errors())},
                 }
             },
@@ -137,6 +156,7 @@ def create_app() -> FastAPI:
                 "error": {
                     "code": exc.code,
                     "message": exc.message,
+                    "retryable": exc.status_code in _RETRYABLE_HTTP_STATUSES,
                     "details": exc.details,
                 }
             },
@@ -156,6 +176,7 @@ def create_app() -> FastAPI:
                 "error": {
                     "code": "INTERNAL_ERROR",
                     "message": "服务器内部错误，请稍后重试",
+                    "retryable": True,
                     "details": details,
                 }
             },

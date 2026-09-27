@@ -73,6 +73,7 @@ _ALLOWED_OVERRIDE_FIELDS = {
     "text_provider",
     "fake_text_response",
     "text_enable_thinking",
+    "text_reasoning_effort",
     # 图像生成
     "image_provider",
     "image_api_key",

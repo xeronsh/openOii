@@ -95,6 +95,8 @@ class RunFailedEventData(BaseModel):
     run_id: int | None = None
     project_id: int | None = None
     error: str | None = None
+    error_code: str | None = None
+    retryable: bool | None = None
     agent: str | None = None
     current_stage: str | None = None
 

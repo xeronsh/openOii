@@ -489,6 +489,6 @@ async def list_messages(project_id: int, session: AsyncSession = SessionDep):
     res = await session.execute(
         select(Message)
         .where(message_project_id_col == project_id)
-        .order_by(message_created_at_col.asc())
+        .order_by(message_created_at_col.asc(), Message.id.asc())
     )
     return [MessageRead.model_validate(m) for m in res.scalars().all()]

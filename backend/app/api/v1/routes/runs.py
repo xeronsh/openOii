@@ -17,11 +17,11 @@ from app.api.deps import SessionDep, SettingsDep, WsManagerDep, get_or_404, requ
 from app.config import Settings
 from app.db.utils import utcnow
 from app.exceptions import BusinessError
-from app.generated.workflow_contract import WORKFLOW_VERSION
+from app.generated.workflow_contract import GRAPH_STAGE_FOR_AGENT, WORKFLOW_VERSION
 from app.models.agent_run import AgentMessage, AgentRun
 from app.models.message import Message
 from app.models.project import Project
-from app.orchestration import PHASE2_STAGE_ORDER, PRODUCTION_STAGE_SEQUENCE
+from app.orchestration import PRODUCTION_STAGE_SEQUENCE
 from app.schemas.project import (
     AgentRunRead,
     CancelRunResponse,
@@ -42,10 +42,10 @@ from app.services.engine_client import (
 )
 from app.services.generation_entry import decide_generation_entry
 from app.services.image_factory import create_image_service
-from app.services.invalidation import build_invalidation_plan
 from app.services.provider_resolution import resolve_project_provider_settings_async
 from app.services.run_context import build_run_context_snapshot
 from app.services.run_recovery import build_recovery_control_surface
+from app.services.run_intent import build_rerun_intent
 from app.services.text_factory import create_text_service
 from app.services.video_factory import create_video_service
 from app.ws.manager import ConnectionManager
@@ -56,15 +56,6 @@ logger = logging.getLogger(__name__)
 _ACTIVE_RUN_STATUSES = ("queued", "running", "waiting_for_approval", "cancelling")
 _RECOVERABLE_RUN_STATUSES = ("failed", "cancelled")
 _TERMINAL_RUN_STATUSES = {"cancelled", "succeeded", "failed"}
-
-# ReviewAgent 的 start_agent → 引擎可从该阶段起跑
-_AGENT_TO_START_STAGE: dict[str, str] = {
-    "outline": "plan_outline",
-    "plan": "plan_characters",
-    "render": "render_characters",
-    "compose": "compose_videos",
-}
-
 
 def _has_live_lease(run: AgentRun) -> bool:
     return bool(
@@ -116,7 +107,15 @@ async def _dispatch_to_engine(
             },
         ) from exc
     except EngineUnavailableError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "ENGINE_UNAVAILABLE",
+                "message": str(exc),
+                "retryable": True,
+                "details": {"run_id": run_id},
+            },
+        ) from exc
 
 
 async def _route_feedback_to_stage(
@@ -155,10 +154,7 @@ async def _route_feedback_to_stage(
         return PRODUCTION_STAGE_SEQUENCE[0]
 
     start_agent = routing.get("start_agent") if isinstance(routing, dict) else None
-    stage = _AGENT_TO_START_STAGE.get(start_agent or "", PRODUCTION_STAGE_SEQUENCE[0])
-    if stage not in PHASE2_STAGE_ORDER:
-        return PRODUCTION_STAGE_SEQUENCE[0]
-    return stage
+    return GRAPH_STAGE_FOR_AGENT.get(start_agent or "", PRODUCTION_STAGE_SEQUENCE[0])
 
 
 async def _latest_run_for_project(
@@ -530,13 +526,13 @@ async def feedback_project(
         entity_id=payload.entity_id,
         entity_ids=payload.entity_ids,
     )
-    invalidation_plan = build_invalidation_plan(
+    rerun_intent = build_rerun_intent(
         start_stage=classified_stage,
         entity_type=payload.entity_type,
         entity_id=payload.entity_id,
         entity_ids=payload.entity_ids,
     )
-    run.patch_plan = json.dumps(invalidation_plan, ensure_ascii=False, sort_keys=True)
+    run.patch_plan = json.dumps(rerun_intent, ensure_ascii=False, sort_keys=True)
     session.add(run)
     await session.commit()
 
@@ -544,7 +540,7 @@ async def feedback_project(
         settings=settings,
         project_id=project_id,
         run_id=run_id,
-        stage=invalidation_plan["start_stage"],
+        stage=rerun_intent["start_stage"],
         auto_mode=False,
         user_feedback=content,
     )

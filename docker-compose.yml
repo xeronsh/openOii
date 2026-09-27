@@ -8,7 +8,7 @@ services:
       DATABASE_URL: sqlite+aiosqlite:///./data/openoii.db
       # pi engine sidecar 与后端同容器（Dockerfile 里拷贝了 node + engine/）
       ENGINE_URL: http://127.0.0.1:18766
-      # task_manager / confirm 依赖进程内状态，当前实现默认单 worker 才安全
+      # engine sidecar 所有权是进程内状态，当前实现默认单 worker 才安全
       WEB_CONCURRENCY: "1"
       # 如果图像/视频服务也在 Docker 中，取消注释并修改为实际的容器名和端口
       # IMAGE_BASE_URL: http://your_image_service:port

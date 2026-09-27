@@ -82,6 +82,10 @@ class Settings(BaseSettings):
         default=None,
         description="是否显式控制推理模型的 thinking 模式（例如 Qwen3.5）",
     )
+    text_reasoning_effort: str | None = Field(
+        default=None,
+        description="OpenAI 兼容推理模型的 reasoning_effort 档位，例如 low / medium / high",
+    )
 
     # ============================================
     # 图像生成服务

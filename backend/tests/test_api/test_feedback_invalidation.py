@@ -32,7 +32,7 @@ async def _resolution(_project, _settings):
 
 
 @pytest.mark.asyncio
-async def test_feedback_persists_deterministic_invalidation_plan(
+async def test_feedback_persists_rerun_intent_for_engine(
     async_client, test_session, monkeypatch
 ):
     monkeypatch.setattr(
@@ -59,13 +59,11 @@ async def test_feedback_persists_deterministic_invalidation_plan(
     run = await test_session.get(AgentRun, response.json()["run_id"])
     assert run is not None
     plan = json.loads(run.patch_plan or "{}")
-    assert plan["start_stage"] == "render_shots"
-    assert plan["scope"] == {"entity_type": "shot", "entity_ids": [3, 4]}
-    assert plan["invalidates"] == [
-        "shots.images",
-        "shots.videos",
-        "project.final_video",
-    ]
+    assert plan == {
+        "version": 1,
+        "start_stage": "render_shots",
+        "scope": {"entity_type": "shot", "entity_ids": [3, 4]},
+    }
 
 
 @pytest.mark.asyncio

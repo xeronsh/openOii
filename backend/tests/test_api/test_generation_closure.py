@@ -361,5 +361,5 @@ def test_require_run_id_returns_id_when_present():
 def test_feedback_agent_to_stage_map_targets_real_stages():
     from app.orchestration import PHASE2_STAGE_ORDER
 
-    for agent, stage in generation_routes._AGENT_TO_START_STAGE.items():
+    for agent, stage in generation_routes.GRAPH_STAGE_FOR_AGENT.items():
         assert stage in PHASE2_STAGE_ORDER, f"{agent} → {stage} 不在阶段表内"

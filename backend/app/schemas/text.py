@@ -17,3 +17,25 @@ class TextGenerateResponse(BaseModel):
 
     text: str = Field(..., description="生成的文本")
     model: str = Field(..., description="使用的模型")
+
+
+class TextInterviewAnswer(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+    answer: str = Field(..., min_length=1, max_length=2000)
+
+
+class TextInterviewRequest(BaseModel):
+    story: str = Field(..., min_length=1, max_length=5000)
+    answers: list[TextInterviewAnswer] = Field(default_factory=list, max_length=5)
+
+
+class TextInterviewQuestion(BaseModel):
+    label: str = Field(..., min_length=1, max_length=40)
+    question: str = Field(..., min_length=1, max_length=300)
+    placeholder: str = Field(..., min_length=1, max_length=300)
+    suggestions: list[str] = Field(..., min_length=2, max_length=4)
+
+
+class TextInterviewResponse(BaseModel):
+    ready: bool
+    question: TextInterviewQuestion | None = None

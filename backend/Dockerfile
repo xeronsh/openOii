@@ -1,5 +1,5 @@
 # ── engine sidecar build ──────────────────────────────────────────────────────
-# 编排引擎是 pi-agent-core (Node/TS)。后端首次触发生成时会拉起它，因此镜像里
+# openOii workflow engine 是 TypeScript sidecar。后端首次触发生成时会拉起它，因此镜像里
 # 必须同时具备 node + engine 依赖（better-sqlite3 是原生模块，需要编译工具链）。
 FROM node:22-bookworm-slim AS engine
 
@@ -53,5 +53,5 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH=/app \
     ENGINE_PORT=18766
 
-# task_manager / confirm flow依赖进程内状态，默认保持单 worker，避免恢复/取消流程失真。
+# engine 子进程所有权由进程内状态管理，默认保持单 worker，避免 sidecar 生命周期冲突。
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-18765} --workers ${WEB_CONCURRENCY:-1}"]
