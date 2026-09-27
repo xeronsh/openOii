@@ -54,6 +54,7 @@ export interface CharacterRow {
   description: string | null;
   image_url: string | null;
   reference_images: string | null; // JSON
+  face_embedding: string | null; // JSON
   visual_notes: string | null;
   approved_name: string | null;
   approved_description: string | null;
@@ -132,7 +133,7 @@ export function characterReadPayload(c: CharacterRow): Record<string, unknown> {
     description: c.description,
     image_url: c.image_url,
     reference_images: parseJsonColumn(c.reference_images, [] as string[]),
-    has_embedding: false,
+    has_embedding: Boolean(c.face_embedding),
     visual_notes: c.visual_notes,
     approval_state: characterApprovalState(c),
     approval_version: c.approval_version,
@@ -196,12 +197,14 @@ const CHARACTER_SNAPSHOT_FIELDS = [
   "description",
   "image_url",
   "reference_images",
+  "face_embedding",
   "visual_notes",
   "approved_name",
   "approved_description",
   "approved_image_url",
   "approved_at",
   "approval_version",
+  "revision",
 ] as const;
 
 const SHOT_SNAPSHOT_FIELDS = [
@@ -241,6 +244,7 @@ const SHOT_SNAPSHOT_FIELDS = [
   "approved_character_ids",
   "approved_at",
   "approval_version",
+  "revision",
 ] as const;
 
 function snapshotOf(row: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> {
@@ -576,6 +580,14 @@ export class SharedDb {
       | undefined;
   }
 
+  /** Read live outputs so a replay skips results committed after its frozen input snapshot. */
+  hasCharacterImage(characterId: number): boolean {
+    const row = this.db.prepare("SELECT image_url FROM character WHERE id = ?").get(characterId) as
+      | { image_url: string | null }
+      | undefined;
+    return Boolean(row?.image_url);
+  }
+
   insertCharacter(
     projectId: number,
     name: string,
@@ -591,11 +603,15 @@ export class SharedDb {
     return Number(info.lastInsertRowid);
   }
 
-  updateCharacter(characterId: number, fields: Record<string, unknown>): void {
+  updateCharacter(
+    characterId: number,
+    fields: Record<string, unknown>,
+    expectedRevision?: number,
+  ): void {
     this.casWrite(
       "character",
       characterId,
-      this.expectedRevision("character", characterId),
+      expectedRevision ?? this.expectedRevision("character", characterId),
       fields,
     );
   }
@@ -622,6 +638,24 @@ export class SharedDb {
     return this.db.prepare("SELECT * FROM shot WHERE id = ?").get(shotId) as ShotRow | undefined;
   }
 
+  getLiveShot(shotId: number): ShotRow | undefined {
+    return this.db.prepare("SELECT * FROM shot WHERE id = ?").get(shotId) as ShotRow | undefined;
+  }
+
+  hasShotImage(shotId: number): boolean {
+    const row = this.db.prepare("SELECT image_url FROM shot WHERE id = ?").get(shotId) as
+      | { image_url: string | null }
+      | undefined;
+    return Boolean(row?.image_url);
+  }
+
+  hasShotVideo(shotId: number): boolean {
+    const row = this.db.prepare("SELECT video_url FROM shot WHERE id = ?").get(shotId) as
+      | { video_url: string | null }
+      | undefined;
+    return Boolean(row?.video_url);
+  }
+
   insertShot(
     projectId: number,
     order: number,
@@ -642,7 +676,11 @@ export class SharedDb {
     return id;
   }
 
-  updateShot(shotId: number, fields: Record<string, unknown>): void {
+  updateShot(
+    shotId: number,
+    fields: Record<string, unknown>,
+    expectedRevision?: number,
+  ): void {
     const prepared = Object.fromEntries(
       Object.entries(fields)
         .filter(([k]) => k !== "id" && k !== "order" && k !== "revision")
@@ -656,7 +694,12 @@ export class SharedDb {
                 : [k, v],
         ),
     );
-    this.casWrite("shot", shotId, this.expectedRevision("shot", shotId), prepared);
+    this.casWrite(
+      "shot",
+      shotId,
+      expectedRevision ?? this.expectedRevision("shot", shotId),
+      prepared,
+    );
   }
 
   deleteShot(shotId: number): void {

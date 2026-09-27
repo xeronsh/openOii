@@ -85,6 +85,27 @@ export class PipelineEmitter {
     this.emit("run_message", data);
   }
 
+  activity(
+    agent: string,
+    role: "step" | "step_result" | "tool_call" | "tool_result",
+    content: string,
+    summary: string,
+  ): void {
+    const data = {
+      agent,
+      role,
+      content,
+      summary,
+      project_id: this.projectId,
+      run_id: this.runId,
+    };
+    this.shared.assertExecutionFence();
+    this.db.transaction(() => {
+      this.shared.insertMessage(this.projectId, this.runId, agent, role, content, summary);
+      this.db.appendEvent(this.runId, this.projectId, "run_message", data);
+    });
+  }
+
   async sendThinking(
     agent: string,
     phase: "reasoning" | "decision" | "planning" | "reviewing",

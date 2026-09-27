@@ -23,6 +23,7 @@ function character(overrides: Partial<CharacterRow> = {}): CharacterRow {
     description: "A cautious creator",
     image_url: null,
     reference_images: null,
+    face_embedding: null,
     visual_notes: "short black hair, red scarf",
     approved_name: null,
     approved_description: null,

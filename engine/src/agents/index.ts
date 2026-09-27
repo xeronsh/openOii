@@ -20,9 +20,11 @@ import type { MediaSettings } from "../media/media.js";
 import {
   buildCharacterPrompt,
   buildShotPrompt,
+  buildVideoPrompt,
   type ResolvedStylePrompt,
 } from "../style.js";
 import type { AiOperation } from "../ai-operation.js";
+import { BackendWorker } from "../backend-worker.js";
 
 export interface CompletionInfo {
   completed: string;
@@ -93,7 +95,7 @@ async function callLlm(
   agent: string,
   system: string,
   prompt: string,
-  maxTokens = 4096,
+  maxTokens = 8192,
 ): Promise<Record<string, unknown>> {
   const res = await ctx.llm.generate({
     system,
@@ -408,36 +410,96 @@ export async function runRenderCharacters(ctx: StageContext): Promise<void> {
   const characters = ctx.targetCharacterIds
     ? all.filter((character) => ctx.targetCharacterIds!.includes(character.id))
     : all;
+  const forced = new Set(ctx.targetCharacterIds ?? []);
+  const pending = characters.filter(
+    (character) => forced.has(character.id) || !ctx.shared.hasCharacterImage(character.id),
+  );
+  if (pending.length === 0) {
+    await ctx.emitter.sendMessage("render", "所有角色已有形象图。");
+    return;
+  }
   await ctx.emitter.sendMessage("render", "开始生成角色形象图...", { progress: 0, isLoading: true });
-  const total = characters.length;
+  const total = pending.length;
   let index = 0;
-  for (const character of characters) {
-    index += 1;
-    ctx.emitter.sendProgress("render", "render_characters", "character_images_approval", index / total);
-    await ctx.emitter.sendMessage("render", `正在绘制：${character.name} (${index}/${total})`);
-    // Identity lock + style lock + universe style: parity with the Python
-    // render agent, which is a precondition for deleting it (ADR 0008).
-    const prompt = ctx.style
-      ? buildCharacterPrompt({
-          character,
-          style: ctx.style,
-          universeStyle: ctx.universeStyle,
-          userFeedback: ctx.userFeedback,
-        })
-      : `角色立绘：${character.name}。${character.description ?? ""} ${character.visual_notes ?? ""} ${ctx.shared.getProject(ctx.projectId)?.visual_bible ?? ""}`.trim();
-    const imageUrl = await ctx.media.generateImageUrl({ prompt });
-    const before = ctx.shared.getCharacter(character.id);
-    if (!before) continue;
-    const version = ctx.shared.createVersion(ctx.projectId, "character", character.id, before, ctx.runId, "generation");
-    ctx.emitter.versionCreated("character", character.id, version, "generation");
-    // State write and its event are one transaction: a crash in between must
-    // not leave the row new while clients never learn about it.
-    const updated = ctx.emitter.commit("character_updated", () => {
-      ctx.shared.updateCharacter(character.id, { image_url: imageUrl });
-      const after = ctx.shared.getCharacter(character.id);
-      return { character: characterReadPayload(after ?? before) };
-    });
-    void updated;
+  const worker = new BackendWorker(ctx.signal);
+  try {
+    for (const character of pending) {
+      index += 1;
+      ctx.emitter.sendProgress("render", "render_characters", "character_images_approval", index / total);
+      await ctx.emitter.sendMessage("render", `正在绘制：${character.name} (${index}/${total})`);
+      let characterForRender = character;
+      if (!character.visual_notes && character.description) {
+        try {
+          const notes = await callLlm(
+            ctx,
+            "render",
+            "You are a character visual design assistant. Extract only observable visual traits: hair color and style, eye color, skin tone, body type, height, distinguishing features, clothing, colors, and signature items. Reply as JSON with one string field named visual_notes. Use the same language as the description; omit personality and backstory.",
+            `Character name: ${character.name}\nDescription: ${character.description}\n\nExtract the key visual traits.`,
+            512,
+          );
+          const visualNotes = typeof notes.visual_notes === "string" ? notes.visual_notes.trim() : "";
+          if (visualNotes) characterForRender = { ...character, visual_notes: visualNotes };
+        } catch (error) {
+          if (ctx.signal.aborted) throw error;
+        }
+      }
+      // Identity lock + style lock + universe style: parity with the Python
+      // render agent, which is a precondition for deleting it (ADR 0008).
+      const prompt = ctx.style
+        ? buildCharacterPrompt({
+            character: characterForRender,
+            style: ctx.style,
+            universeStyle: ctx.universeStyle,
+            userFeedback: ctx.userFeedback,
+          })
+        : `角色立绘：${character.name}。${character.description ?? ""} ${characterForRender.visual_notes ?? ""} ${ctx.shared.getProject(ctx.projectId)?.visual_bible ?? ""}`.trim();
+      const imageUrl = await ctx.media.generateImageUrl({ prompt });
+      let faceEmbedding: string | null = null;
+      try {
+        const embedding = await worker.faceEmbedding(await ctx.media.readImageBytes(imageUrl));
+        if (embedding) faceEmbedding = JSON.stringify(embedding);
+      } catch (error) {
+        if (ctx.signal.aborted) throw error;
+        console.warn(`Face embedding skipped (character ${character.id})`);
+      }
+      const before = ctx.shared.getCharacter(character.id);
+      if (!before) continue;
+      const version = ctx.shared.createVersion(
+        ctx.projectId,
+        "character",
+        character.id,
+        before,
+        ctx.runId,
+        "generation",
+      );
+      ctx.emitter.versionCreated("character", character.id, version, "generation");
+      // State write and its event are one transaction: a crash in between must
+      // not leave the row new while clients never learn about it.
+      ctx.emitter.commit("character_updated", () => {
+        ctx.shared.updateCharacter(
+          character.id,
+          {
+            image_url: imageUrl,
+            face_embedding: faceEmbedding,
+            ...(!character.visual_notes && characterForRender.visual_notes
+              ? { visual_notes: characterForRender.visual_notes }
+              : {}),
+          },
+          character.revision,
+        );
+        return {
+          character: characterReadPayload({
+            ...character,
+            image_url: imageUrl,
+            face_embedding: faceEmbedding,
+            visual_notes: characterForRender.visual_notes,
+            revision: character.revision + 1,
+          }),
+        };
+      });
+    }
+  } finally {
+    await worker.close();
   }
   await ctx.emitter.sendMessage("render", `已为 ${total} 个角色生成形象图，接下来生成分镜图。`);
   ctx.completionInfo = {
@@ -448,51 +510,83 @@ export async function runRenderCharacters(ctx: StageContext): Promise<void> {
   };
 }
 
+function characterReferenceUrls(characters: CharacterRow[]): string[] {
+  return characters.flatMap((character) => [
+    ...(character.image_url ? [character.image_url] : []),
+    ...parseJsonColumn(character.reference_images, [] as string[]),
+  ]);
+}
+
 export async function runRenderShots(ctx: StageContext): Promise<void> {
   const allShots = ctx.shared.shotsForProject(ctx.projectId);
-  const shots = ctx.targetShotIds
+  const scopedShots = ctx.targetShotIds
     ? allShots.filter((shot) => ctx.targetShotIds!.includes(shot.id))
     : allShots;
+  const forced = new Set(ctx.targetShotIds ?? []);
+  const shots = scopedShots.filter((shot) => forced.has(shot.id) || !ctx.shared.hasShotImage(shot.id));
+  if (shots.length === 0) {
+    await ctx.emitter.sendMessage("render", "所有分镜已有首帧图片。");
+    return;
+  }
   await ctx.emitter.sendMessage("render", "开始生成分镜首帧图...", { progress: 0, isLoading: true });
   const characters = ctx.shared.charactersForProject(ctx.projectId);
   const idToName = new Map(characters.map((c) => [c.id, c.name]));
   const byId = new Map(characters.map((c) => [c.id, c]));
   let index = 0;
-  for (const shot of shots) {
-    index += 1;
-    ctx.emitter.sendProgress("render", "render_shots", "shot_images_approval", index / shots.length);
-    const ids = parseJsonColumn(shot.character_ids, [] as number[]);
-    const names = ids.map((id) => idToName.get(id) ?? `#${id}`);
-    // Character bible + continuity lock + style lock (Python render parity).
-    const prompt = ctx.style
-      ? buildShotPrompt({
-          shot,
-          characters: ids
-            .map((id) => byId.get(id))
-            .filter((c): c is CharacterRow => c !== undefined),
-          style: ctx.style,
-          universeStyle: ctx.universeStyle,
-          userFeedback: ctx.userFeedback,
-        })
-      : [
-          `分镜首帧：${shot.description}`,
-          shot.scene ? `场景：${shot.scene}` : "",
-          shot.lighting ? `光线：${shot.lighting}` : "",
-          names.length ? `角色：${names.join("、")}` : "",
-        ]
-          .filter(Boolean)
-          .join("。");
-    await ctx.emitter.sendMessage("render", `正在绘制分镜 (${index}/${shots.length})`);
-    const imageUrl = await ctx.media.generateImageUrl({ prompt });
-    const before = ctx.shared.getShot(shot.id);
-    if (!before) continue;
-    const version = ctx.shared.createVersion(ctx.projectId, "shot", shot.id, before, ctx.runId, "generation");
-    ctx.emitter.versionCreated("shot", shot.id, version, "generation");
-    ctx.emitter.commit("shot_updated", () => {
-      ctx.shared.updateShot(shot.id, { image_url: imageUrl });
-      const after = ctx.shared.getShot(shot.id);
-      return { shot: shotReadPayload(after ?? before) };
-    });
+  const worker = new BackendWorker(ctx.signal);
+  try {
+    for (const shot of shots) {
+      index += 1;
+      ctx.emitter.sendProgress("render", "render_shots", "shot_images_approval", index / shots.length);
+      const ids = parseJsonColumn(shot.character_ids, [] as number[]);
+      const boundCharacters = ids
+        .map((id) => byId.get(id))
+        .filter((character): character is CharacterRow => character !== undefined);
+      const names = ids.map((id) => idToName.get(id) ?? `#${id}`);
+      // Character bible + continuity lock + style lock (Python render parity).
+      const prompt = ctx.style
+        ? buildShotPrompt({
+            shot,
+            characters: boundCharacters,
+            style: ctx.style,
+            universeStyle: ctx.universeStyle,
+            userFeedback: ctx.userFeedback,
+          })
+        : [
+            `分镜首帧：${shot.description}`,
+            shot.scene ? `场景：${shot.scene}` : "",
+            shot.lighting ? `光线：${shot.lighting}` : "",
+            names.length ? `角色：${names.join("、")}` : "",
+          ]
+            .filter(Boolean)
+            .join("。");
+      await ctx.emitter.sendMessage("render", `正在绘制分镜 (${index}/${shots.length})`);
+      let imageBytes: Buffer | null = null;
+      if (ctx.mediaSettings.enableImageToImage) {
+        const references = characterReferenceUrls(boundCharacters);
+        if (references.length > 0) {
+          try {
+            imageBytes = await worker.characterReference(references);
+          } catch (error) {
+            if (ctx.signal.aborted) throw error;
+            console.warn(`Character references skipped (shot ${shot.id})`);
+          }
+        }
+      }
+      const imageUrl = await ctx.media.generateImageUrl({ prompt, imageBytes });
+      const before = ctx.shared.getShot(shot.id);
+      if (!before) continue;
+      const version = ctx.shared.createVersion(ctx.projectId, "shot", shot.id, before, ctx.runId, "generation");
+      ctx.emitter.versionCreated("shot", shot.id, version, "generation");
+      ctx.emitter.commit("shot_updated", () => {
+        ctx.shared.updateShot(shot.id, { image_url: imageUrl }, shot.revision);
+        return {
+          shot: shotReadPayload({ ...shot, image_url: imageUrl, revision: shot.revision + 1 }),
+        };
+      });
+    }
+  } finally {
+    await worker.close();
   }
   ctx.completionInfo = {
     completed: "分镜画面已渲染完成",
@@ -509,6 +603,7 @@ export async function runRenderShots(ctx: StageContext): Promise<void> {
 export interface CritiqueOutcome {
   willRegenerate: boolean;
   minScore: number;
+  regenerateEntityIds: number[];
 }
 
 export async function runCritique(
@@ -524,6 +619,7 @@ export async function runCritique(
 
   let minScore = 10;
   let willRegenerate = false;
+  const regenerateEntityIds: number[] = [];
   for (const entity of entities) {
     const imageUrl = entity.image_url;
     const prompt = `You evaluate visual quality. Review image: ${imageUrl ?? "(none)"} for ${entityType} ${entityType === "character" ? ((entity as CharacterRow).name ?? "角色") : `分镜 #${entity.id}`}. Return JSON with total_score, consistency, quality, composition.`;
@@ -545,7 +641,10 @@ export async function runCritique(
     const belowThreshold = score < ctx.critiqueScoreThreshold;
     if (score < minScore) minScore = score;
     const willRegen = belowThreshold && rounds < ctx.critiqueMaxRounds;
-    if (willRegen) willRegenerate = true;
+    if (willRegen) {
+      willRegenerate = true;
+      regenerateEntityIds.push(entity.id);
+    }
     ctx.emitter.critiqueResult({
       score,
       dimensions,
@@ -565,7 +664,7 @@ export async function runCritique(
     const overall = Math.min(100, Math.round((minScore / 10) * 100));
     ctx.emitter.consistencyEvalCompleted(overall, entities.length);
   }
-  return { willRegenerate, minScore };
+  return { willRegenerate, minScore, regenerateEntityIds };
 }
 
 // ---------------------------------------------------------------------------
@@ -573,35 +672,167 @@ export async function runCritique(
 // ---------------------------------------------------------------------------
 
 export async function runComposeVideos(ctx: StageContext): Promise<void> {
-  const shots = ctx.shared.shotsForProject(ctx.projectId);
+  const allShots = ctx.shared.shotsForProject(ctx.projectId);
+  const scopedShots = ctx.targetShotIds
+    ? allShots.filter((shot) => ctx.targetShotIds!.includes(shot.id))
+    : allShots;
+  const forced = new Set(ctx.targetShotIds ?? []);
+  const shots = scopedShots.filter((shot) => forced.has(shot.id) || !ctx.shared.hasShotVideo(shot.id));
+  if (shots.length === 0) {
+    await ctx.emitter.sendMessage("compose", "所有分镜已有视频。");
+    return;
+  }
   await ctx.emitter.sendMessage("compose", `开始生成 ${shots.length} 个分镜视频...`, { progress: 0, isLoading: true });
   const useI2V = ctx.mediaSettings.enableImageToVideo;
+  const characters = ctx.shared.charactersForProject(ctx.projectId);
+  const byId = new Map(characters.map((character) => [character.id, character]));
+  const defaultDuration =
+    ctx.mediaSettings.videoProvider === "doubao" ? ctx.mediaSettings.doubaoVideoDuration : 5;
   let index = 0;
-  for (const shot of shots) {
-    index += 1;
-    ctx.emitter.sendProgress("compose", "compose_videos", "compose_merge", index / shots.length);
-    await ctx.emitter.sendMessage("compose", `正在生成视频 (${index}/${shots.length})`);
-    const prompt = `${shot.description}${shot.camera ? `（镜头：${shot.camera}）` : ""}`;
-    const videoUrl = await ctx.media.generateVideoUrl({
-      prompt,
-      imageUrl: useI2V ? shot.image_url : null,
-    });
-    ctx.emitter.commit("shot_updated", () => {
-      ctx.shared.updateShot(shot.id, { video_url: videoUrl });
-      const after = ctx.shared.getShot(shot.id);
-      return { shot: shotReadPayload(after ?? shot) };
-    });
+  const worker = new BackendWorker(ctx.signal);
+  try {
+    for (const shot of shots) {
+      index += 1;
+      ctx.emitter.sendProgress("compose", "compose_videos", "compose_merge", index / shots.length);
+      await ctx.emitter.sendMessage("compose", `正在生成视频 (${index}/${shots.length})`);
+      const boundCharacters = parseJsonColumn(shot.character_ids, [] as number[])
+        .map((id) => byId.get(id))
+        .filter((character): character is CharacterRow => character !== undefined);
+      const prompt = ctx.style
+        ? buildVideoPrompt({
+            shot,
+            characters: boundCharacters,
+            style: ctx.style,
+            userFeedback: ctx.userFeedback,
+          })
+        : shot.prompt || shot.description;
+      let imageUrl = useI2V ? shot.image_url : null;
+      const referenceMode = ctx.mediaSettings.videoImageMode === "reference";
+      let useReferenceBoard = false;
+      if (imageUrl && referenceMode) {
+        const shotIndex = allShots.findIndex((item) => item.id === shot.id);
+        try {
+          const reference = await worker.nineGridReference({
+            current: imageUrl,
+            previous: allShots[shotIndex - 1]?.image_url,
+            next: allShots[shotIndex + 1]?.image_url,
+            characters: characterReferenceUrls(boundCharacters),
+          });
+          imageUrl = ctx.media.saveImageBytes(reference, "video-reference");
+          useReferenceBoard = true;
+        } catch (error) {
+          if (ctx.signal.aborted) throw error;
+          console.warn(`Nine-grid reference skipped (shot ${shot.id})`);
+        }
+      }
+      const videoPrompt = imageUrl
+        ? useReferenceBoard
+          ? `The input is a 3x3 reference board. Use the top-center panel as the first frame and the other panels only for character identity and continuity. Generate one full-frame video; do not reproduce the grid. Preserve the comic/anime style and do not redesign characters. ${prompt}`
+          : `Use the provided image as the first-frame visual anchor. Preserve visible characters, outfits, hair colors, scene layout, framing, camera distance, and the 2D comic/anime style. Do not convert it to live-action, photorealistic, hyperrealistic, or realistic 3D footage; do not redesign characters. ${prompt}`
+        : prompt;
+      const duration = shot.duration && shot.duration > 0 ? shot.duration : defaultDuration;
+      const videoUrl = await ctx.media.generateVideoUrl({
+        prompt: videoPrompt,
+        imageUrl,
+        duration:
+          ctx.mediaSettings.videoProvider === "doubao" && duration !== 10 ? 5 : duration,
+      });
+      ctx.emitter.commit("shot_updated", () => {
+        ctx.shared.updateShot(shot.id, { video_url: videoUrl, duration }, shot.revision);
+        const updated: ShotRow = { ...shot, video_url: videoUrl, duration, revision: shot.revision + 1 };
+        return { shot: shotReadPayload(updated) };
+      });
+    }
+  } finally {
+    await worker.close();
   }
 }
 
 export async function runComposeMerge(ctx: StageContext): Promise<void> {
-  const shots = ctx.shared.shotsForProject(ctx.projectId).filter((s) => s.video_url);
+  const allShots = ctx.shared.shotsForProject(ctx.projectId);
+  const shots = allShots.filter((shot) => ctx.shared.getLiveShot(shot.id)?.video_url);
   if (shots.length === 0) {
     await ctx.emitter.sendMessage("compose", "没有可拼接的分镜视频。");
     return;
   }
-  await ctx.emitter.sendMessage("compose", `开始拼接 ${shots.length} 个分镜视频...`, { progress: 0, isLoading: true });
-  const mergedUrl = await ctx.media.mergeVideos(shots.map((s) => s.video_url as string));
+  await ctx.emitter.sendMessage(
+    "compose",
+    ctx.media.audioEnabled
+      ? `正在处理 ${shots.length} 个分镜音轨并拼接...`
+      : `开始拼接 ${shots.length} 个分镜视频...`,
+    { progress: 0, isLoading: true },
+  );
+  const project = ctx.shared.getProject(ctx.projectId);
+  const characters = ctx.shared.charactersForProject(ctx.projectId);
+  const byId = new Map(characters.map((character) => [character.id, character]));
+  const videoUrls: string[] = [];
+  const worker = new BackendWorker(ctx.signal);
+  try {
+    for (const shot of shots) {
+      const live = ctx.shared.getLiveShot(shot.id);
+      if (!live?.video_url) continue;
+      let videoUrl = live.video_url;
+      if (ctx.media.audioEnabled && !live.tts_url && !live.bgm_type) {
+        const speaker = parseJsonColumn(live.character_ids, [] as number[])
+          .map((id) => byId.get(id))
+          .find((character): character is CharacterRow => character !== undefined);
+        let audio: Awaited<ReturnType<BackendWorker["processAudio"]>> | null = null;
+        try {
+          audio = await worker.processAudio({
+            video_url: videoUrl,
+            dialogue: live.dialogue,
+            speaker: speaker ? { name: speaker.name, description: speaker.description } : null,
+            scene: live.scene,
+            expression: live.expression,
+            genre: project?.style ?? null,
+            settings: {
+              text_provider: ctx.mediaSettings.textProvider,
+              image_provider: ctx.mediaSettings.imageProvider,
+              video_provider: ctx.mediaSettings.videoProvider,
+              tts_enabled: ctx.mediaSettings.ttsEnabled,
+              tts_default_voice: ctx.mediaSettings.ttsDefaultVoice,
+              tts_volume: ctx.mediaSettings.ttsVolume,
+              bgm_enabled: ctx.mediaSettings.bgmEnabled,
+              bgm_volume: ctx.mediaSettings.bgmVolume,
+              bgm_directory: ctx.mediaSettings.bgmDirectory,
+            },
+          });
+        } catch (error) {
+          if (ctx.signal.aborted) throw error;
+          console.warn(`Audio processing skipped (shot ${shot.id})`);
+        }
+        const processedAudio = audio;
+        if (processedAudio) {
+          videoUrl = processedAudio.video_url;
+          if (videoUrl !== live.video_url || processedAudio.tts_url || processedAudio.bgm_type) {
+            const updated = {
+              ...live,
+              video_url: videoUrl,
+              tts_url: processedAudio.tts_url,
+              bgm_type: processedAudio.bgm_type,
+              revision: live.revision + 1,
+            };
+            ctx.emitter.commit("shot_updated", () => {
+              ctx.shared.updateShot(
+                live.id,
+                {
+                  video_url: videoUrl,
+                  tts_url: processedAudio.tts_url,
+                  bgm_type: processedAudio.bgm_type,
+                },
+                live.revision,
+              );
+              return { shot: shotReadPayload(updated) };
+            });
+          }
+        }
+      }
+      videoUrls.push(videoUrl);
+    }
+  } finally {
+    await worker.close();
+  }
+  const mergedUrl = await ctx.media.mergeVideos(videoUrls);
   ctx.emitter.commit("project_updated", () => {
     ctx.shared.updateProject(ctx.projectId, { video_url: mergedUrl, status: "ready" });
     return { project: { id: ctx.projectId, video_url: mergedUrl, status: "ready" } };
@@ -612,5 +843,3 @@ export async function runComposeMerge(ctx: StageContext): Promise<void> {
     { progress: 1 },
   );
 }
-
-export async function runAddAudioPlaceholderRemoved(): Promise<void> {}

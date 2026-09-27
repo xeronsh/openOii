@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "pi-agent-core based generation engine sidecar (pi-core migration)",
+  "description": "Deterministic workflow engine sidecar using pi-ai for model calls",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

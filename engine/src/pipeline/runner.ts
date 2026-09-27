@@ -20,7 +20,11 @@ import {
   type MediaRunSnapshot,
 } from "../media/media.js";
 import { TextLlmService, type RunCreativeContext } from "../llm.js";
-import { SharedDb, parseJsonColumn } from "../shared-db.js";
+import {
+  ConcurrentModificationError,
+  SharedDb,
+  parseJsonColumn,
+} from "../shared-db.js";
 import type {
   CharacterRow,
   FrozenStageInput,
@@ -40,7 +44,7 @@ import {
 } from "../agents/index.js";
 import { PipelineEmitter } from "./emitter.js";
 import { resolveStageStyleContext } from "../style.js";
-import { beginAiOperation } from "../ai-operation.js";
+import { AiOperationError, beginAiOperation } from "../ai-operation.js";
 import { withRunSpan, withStageSpan } from "../observability.js";
 
 export interface PipelineRequest {
@@ -65,6 +69,49 @@ export interface PipelineOutcome {
 
 const CONFIRM_POLL_MS = 300;
 const CONFIRM_TIMEOUT_MS = 30 * 60 * 1000;
+const STAGE_ACTIVITY_LABEL: Partial<Record<StageId, string>> = {
+  plan_outline: "生成故事大纲",
+  plan_characters: "规划角色",
+  plan_shots: "规划分镜",
+  render_characters: "生成角色形象",
+  critique_character_images: "检查角色一致性",
+  render_shots: "生成分镜画面",
+  critique_shot_images: "检查分镜画面",
+  compose_videos: "生成分镜视频",
+  compose_merge: "合成完整视频",
+};
+
+function durationLabel(durationMs: number): string {
+  return durationMs < 1000
+    ? `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(durationMs)} 毫秒`
+    : `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(durationMs / 1000)} 秒`;
+}
+
+function stageActivityLabel(stage: StageId): string {
+  return STAGE_ACTIVITY_LABEL[stage] ?? stage;
+}
+
+function classifyRunFailure(error: unknown): { error_code: string; retryable: boolean } {
+  if (error instanceof ConcurrentModificationError) {
+    return { error_code: "CONCURRENT_MODIFICATION", retryable: false };
+  }
+  if (error instanceof AiOperationError) {
+    switch (error.kind) {
+      case "timeout":
+        return { error_code: "PROVIDER_TIMEOUT", retryable: true };
+      case "aborted":
+        return { error_code: "OPERATION_ABORTED", retryable: true };
+      case "invalid_response":
+        return { error_code: "INVALID_PROVIDER_RESPONSE", retryable: false };
+      case "provider":
+        return { error_code: "PROVIDER_ERROR", retryable: false };
+    }
+  }
+  if (error instanceof Error && error.name === "TimeoutError") {
+    return { error_code: "PROVIDER_TIMEOUT", retryable: true };
+  }
+  return { error_code: "GENERATION_FAILED", retryable: false };
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -131,6 +178,7 @@ export class PipelineRunner {
     if (!this.runContext) return null;
     const providers = asRecord(this.runContext.providers);
     return {
+      text: asRecord(providers?.text) as MediaProviderSnapshot | null,
       image: asRecord(providers?.image) as MediaProviderSnapshot | null,
       video: asRecord(providers?.video) as MediaProviderSnapshot | null,
       policy: this.policy(),
@@ -196,7 +244,8 @@ export class PipelineRunner {
   private async executeStageAttempt<T>(
     stage: StageId,
     request: PipelineRequest,
-    fn: (attempt: StageAttemptRow) => Promise<T>,
+    emitter: PipelineEmitter,
+    fn: (attempt: StageAttemptRow, operation: ReturnType<typeof beginAiOperation>) => Promise<T>,
     options: { forceNew?: boolean } = {},
   ): Promise<T> {
     this.shared.assertExecutionFence();
@@ -208,25 +257,54 @@ export class PipelineRunner {
       executionAttempt: run?.execution_attempt ?? 0,
       forceNew: options.forceNew ?? false,
     });
+    const startedAt = Date.now();
+    const label = stageActivityLabel(stage);
+    const agent = agentForStage(stage);
+    let result!: T;
     try {
-      const result = await fn(attempt);
+      emitter.activity(agent, "step", label, "运行中");
+      const operation = beginAiOperation({
+        operationId: attempt.stage_attempt_id,
+        idempotencyKey: attempt.idempotency_key,
+        runId: request.runId,
+        projectId: request.projectId,
+        stage,
+        signal: this.abortController.signal,
+        reportActivity: (name, status, durationMs) => {
+          if (status === "running") {
+            emitter.activity(agent, "tool_call", name, "调用中");
+            return;
+          }
+          const outcome = status === "succeeded" ? "成功" : status === "cancelled" ? "已取消" : "失败";
+          emitter.activity(agent, "tool_result", name, `${outcome} · ${durationLabel(durationMs ?? 0)}`);
+        },
+      });
+      result = await fn(attempt, operation);
       this.shared.assertExecutionFence();
       this.db.completeStageAttempt(attempt.stage_attempt_id, "succeeded", {
         result: { stage, idempotency_key: attempt.idempotency_key },
       });
-      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.startsWith("execution lease lost for run")) {
         this.shared.assertExecutionFence();
+        const cancelled = this.shouldCancel(request.runId);
         this.db.completeStageAttempt(
           attempt.stage_attempt_id,
-          this.shouldCancel(request.runId) ? "cancelled" : "failed",
+          cancelled ? "cancelled" : "failed",
           { error: message },
+        );
+        emitter.activity(
+          agentForStage(stage),
+          "step_result",
+          stageActivityLabel(stage),
+          `${cancelled ? "已取消" : "失败"} · ${durationLabel(Date.now() - startedAt)}`,
         );
       }
       throw error;
     }
+    emitter.activity(agent, "step_result", label, `完成 · ${durationLabel(Date.now() - startedAt)}`);
+    return result;
   }
 
   async resume(request: PipelineRequest): Promise<PipelineOutcome> {
@@ -387,9 +465,16 @@ export class PipelineRunner {
           const outcome = await this.executeStageAttempt(
             stage,
             request,
-            async (attempt) => {
+            emitter,
+            async (attempt, operation) => {
               ctx.shared = this.shared.withFrozenStageInput(readFrozenStageInput(attempt));
-              return runCritique(ctx, entityType);
+              ctx.operation = operation;
+              try {
+                return await runCritique(ctx, entityType);
+              } finally {
+                ctx.operation = null;
+                ctx.shared = this.shared;
+              }
             },
           );
           ctx.shared = this.shared;
@@ -399,6 +484,11 @@ export class PipelineRunner {
             entityType === "character" ? "characters" : "shots";
           ctx.critiqueRounds[roundsKey] += 1;
           if (outcome.willRegenerate) {
+            if (entityType === "character") {
+              ctx.targetCharacterIds = outcome.regenerateEntityIds;
+            } else {
+              ctx.targetShotIds = outcome.regenerateEntityIds;
+            }
             const rerenderStage: StageId =
               entityType === "character" ? "render_characters" : "render_shots";
             this.invalidateCheckpointsFrom(request.runId, rerenderStage);
@@ -413,18 +503,10 @@ export class PipelineRunner {
           continue;
         }
 
-        await this.executeStageAttempt(stage, request, async (attempt) => {
+        await this.executeStageAttempt(stage, request, emitter, async (attempt, operation) => {
           ctx.shared = this.shared.withFrozenStageInput(readFrozenStageInput(attempt));
           // One operation identity for every provider call in this attempt:
           // text (pi-ai), image and video all read from the same contract.
-          const operation = beginAiOperation({
-            operationId: attempt.stage_attempt_id,
-            idempotencyKey: attempt.idempotency_key,
-            runId: request.runId,
-            projectId: request.projectId,
-            stage,
-            signal: this.abortController.signal,
-          });
           ctx.operation = operation;
           ctx.media.setOperation(operation);
           try {
@@ -488,10 +570,12 @@ export class PipelineRunner {
       this.shared.updateProject(request.projectId, { status: "failed" });
       this.shared.updateRun(request.runId, { status: "failed", error: message });
       emitter.emit("project_updated", { project: { id: request.projectId, status: "failed" } });
+      const failure = classifyRunFailure(err);
       emitter.emit("run_failed", {
         run_id: request.runId,
         project_id: request.projectId,
         error: message,
+        ...failure,
         agent: null,
         current_stage: stage,
       });
@@ -663,18 +747,10 @@ export class PipelineRunner {
       for (const stage of stages) {
         this.shared.assertExecutionFence();
         if (this.shouldCancel(request.runId)) return await this.finishCancelled(request, emitter);
-        await this.executeStageAttempt(stage, request, async (attempt) => {
+        await this.executeStageAttempt(stage, request, emitter, async (attempt, operation) => {
           ctx.shared = this.shared.withFrozenStageInput(readFrozenStageInput(attempt));
           // One operation identity for every provider call in this attempt:
           // text (pi-ai), image and video all read from the same contract.
-          const operation = beginAiOperation({
-            operationId: attempt.stage_attempt_id,
-            idempotencyKey: attempt.idempotency_key,
-            runId: request.runId,
-            projectId: request.projectId,
-            stage,
-            signal: this.abortController.signal,
-          });
           ctx.operation = operation;
           ctx.media.setOperation(operation);
           try {
@@ -726,10 +802,12 @@ export class PipelineRunner {
       if (this.shouldCancel(request.runId)) return await this.finishCancelled(request, emitter);
       this.shared.assertExecutionFence();
       this.shared.updateRun(request.runId, { status: "failed", error: message });
+      const failure = classifyRunFailure(err);
       emitter.emit("run_failed", {
         run_id: request.runId,
         project_id: request.projectId,
         error: message,
+        ...failure,
         agent: startAgent,
       });
       return { status: "failed", error: message };

@@ -1,35 +1,69 @@
+import { STAGE_ORDER, type StageId } from "./contract.js";
 import { parseJsonColumn, type SharedDb } from "./shared-db.js";
 
-export interface InvalidationPlan {
+export interface RerunIntent {
   version: number;
   start_stage: string;
-  checkpoint_from: string;
   scope: {
     entity_type: "character" | "shot" | null;
     entity_ids: number[];
   };
-  invalidates: string[];
 }
 
-/**
- * Apply a backend-authored invalidation plan under the run's fencing lease.
- *
- * This function is intentionally synchronous and idempotent. The caller writes
- * a durable `__invalidation__` checkpoint after it returns; if the process dies
- * between the DB writes and that marker, the next executor may safely reapply
- * exactly the same NULL projections.
- */
+const FULL_CHAIN = [
+  "project.outline",
+  "characters.definitions",
+  "characters.images",
+  "shots.definitions",
+  "shots.images",
+  "shots.videos",
+  "project.final_video",
+];
+const CHARACTER_PLAN = [
+  "characters.definitions",
+  "characters.images",
+  "shots.definitions",
+  "shots.images",
+  "shots.videos",
+  "project.final_video",
+];
+const SHOT_PLAN = ["shots.definitions", "shots.images", "shots.videos", "project.final_video"];
+const CHARACTER_MEDIA = ["characters.images", "shots.images", "shots.videos", "project.final_video"];
+const SHOT_MEDIA = ["shots.images", "shots.videos", "project.final_video"];
+
+const INVALIDATES_BY_STAGE: Partial<Record<StageId, readonly string[]>> = {
+  plan_outline: FULL_CHAIN,
+  outline_approval: CHARACTER_PLAN,
+  plan_characters: CHARACTER_PLAN,
+  characters_approval: CHARACTER_PLAN,
+  plan_shots: SHOT_PLAN,
+  shots_approval: SHOT_PLAN,
+  render_characters: CHARACTER_MEDIA,
+  critique_character_images: CHARACTER_MEDIA,
+  character_images_approval: SHOT_MEDIA,
+  render_shots: SHOT_MEDIA,
+  critique_shot_images: SHOT_MEDIA,
+  shot_images_approval: ["shots.videos", "project.final_video"],
+  compose_videos: ["shots.videos", "project.final_video"],
+  compose_merge: ["project.final_video"],
+  compose_approval: ["project.final_video"],
+};
+
+/** Apply Engine-owned invalidation rules under the run's fencing lease. */
 export function applyInvalidationPlan(
   shared: SharedDb,
   projectId: number,
-  plan: InvalidationPlan,
-): void {
-  if (plan.version !== 1) throw new Error(`unsupported invalidation plan version ${plan.version}`);
+  intent: RerunIntent,
+): StageId {
+  if (intent.version !== 1) throw new Error(`unsupported rerun intent version ${intent.version}`);
 
-  const invalidates = new Set(plan.invalidates);
+  const stage = (STAGE_ORDER as readonly string[]).includes(intent.start_stage)
+    ? (intent.start_stage as StageId)
+    : "plan_outline";
+  const invalidates = new Set(INVALIDATES_BY_STAGE[stage] ?? FULL_CHAIN);
   const requestedIds = new Set(
-    Array.isArray(plan.scope?.entity_ids)
-      ? plan.scope.entity_ids.filter((id): id is number => Number.isInteger(id) && id > 0)
+    Array.isArray(intent.scope?.entity_ids)
+      ? intent.scope.entity_ids.filter((id): id is number => Number.isInteger(id) && id > 0)
       : [],
   );
   const broadDefinitions =
@@ -37,18 +71,17 @@ export function applyInvalidationPlan(
 
   const characters = shared.charactersForProject(projectId);
   const shots = shared.shotsForProject(projectId);
-
   const characterIds =
-    !broadDefinitions && plan.scope?.entity_type === "character" && requestedIds.size > 0
+    !broadDefinitions && intent.scope?.entity_type === "character" && requestedIds.size > 0
       ? requestedIds
       : new Set(characters.map((item) => item.id));
 
   let shotIds: Set<number>;
-  if (!broadDefinitions && plan.scope?.entity_type === "shot" && requestedIds.size > 0) {
+  if (!broadDefinitions && intent.scope?.entity_type === "shot" && requestedIds.size > 0) {
     shotIds = requestedIds;
   } else if (
     !broadDefinitions &&
-    plan.scope?.entity_type === "character" &&
+    intent.scope?.entity_type === "character" &&
     requestedIds.size > 0
   ) {
     shotIds = new Set(
@@ -81,6 +114,11 @@ export function applyInvalidationPlan(
   }
 
   if (invalidates.has("project.final_video")) {
-    shared.updateProject(projectId, { video_url: null, status: "planning" });
+    const project = shared.getProject(projectId);
+    shared.updateProject(projectId, {
+      video_url: null,
+      status: project?.video_url || project?.status === "superseded" ? "superseded" : "planning",
+    });
   }
+  return stage;
 }

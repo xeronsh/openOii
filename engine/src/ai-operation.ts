@@ -25,6 +25,12 @@ export interface AiOperation {
   deadline: number;
   /** Aborted when the run is cancelled; every provider request must observe it. */
   signal?: AbortSignal;
+  /** Reports provider activity to the run's durable event stream. */
+  reportActivity?: (
+    name: string,
+    status: "running" | "succeeded" | "failed" | "cancelled",
+    durationMs?: number,
+  ) => void;
 }
 
 export interface AiOperationContext {
@@ -34,6 +40,7 @@ export interface AiOperationContext {
   projectId: number;
   stage: string;
   signal?: AbortSignal;
+  reportActivity?: AiOperation["reportActivity"];
   /** Milliseconds from now; defaults to `DEFAULT_OPERATION_TIMEOUT_MS`. */
   timeoutMs?: number;
 }
@@ -51,7 +58,29 @@ export function beginAiOperation(context: AiOperationContext): AiOperation {
     stage: context.stage,
     deadline: Date.now() + timeoutMs,
     signal: context.signal,
+    reportActivity: context.reportActivity,
   };
+}
+
+/** Record one provider operation without exposing its prompt or response. */
+export async function withAiActivity<T>(
+  operation: AiOperation | undefined,
+  name: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const report = operation?.reportActivity;
+  if (!report) return fn();
+
+  const startedAt = Date.now();
+  report(name, "running");
+  try {
+    const result = await fn();
+    report(name, "succeeded", Date.now() - startedAt);
+    return result;
+  } catch (error) {
+    report(name, operation.signal?.aborted ? "cancelled" : "failed", Date.now() - startedAt);
+    throw error;
+  }
 }
 
 /** Whether an operation may still start work (deadline + cancellation). */

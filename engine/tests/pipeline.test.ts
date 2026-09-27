@@ -126,6 +126,13 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
       }).n,
     );
     expect(messageCount).toBeGreaterThan(0);
+    const activityRows = edb.db
+      .prepare("SELECT role, summary FROM message WHERE run_id = ?")
+      .all(runId) as Array<{ role: string; summary: string | null }>;
+    expect(activityRows.some((row) => row.role === "step")).toBe(true);
+    expect(activityRows.some((row) => row.role === "step_result" && row.summary?.startsWith("完成 ·"))).toBe(true);
+    expect(activityRows.some((row) => row.role === "tool_call")).toBe(true);
+    expect(activityRows.some((row) => row.role === "tool_result" && row.summary?.includes("秒"))).toBe(true);
     edb.close();
   }, 60000);
 

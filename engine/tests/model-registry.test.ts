@@ -13,7 +13,8 @@ const SCHEMA = readFileSync(resolve(import.meta.dirname, "fixtures/app-schema.sq
  * The model descriptor used to be fabricated (`contextWindow: 1000000`,
  * `as unknown as Model`). Fake metadata becomes real behaviour once anything
  * depends on it, so known models must come from the pi-ai registry and unknown
- * ones must fail loudly instead of inheriting invented limits.
+ * OpenAI-compatible custom ids use bounded fallback metadata; unknown
+ * Anthropic ids still fail rather than inheriting invented limits.
  */
 describe("provider model descriptors", () => {
   let dir: string;
@@ -36,6 +37,7 @@ describe("provider model descriptors", () => {
       provider,
       model,
       base_url: baseUrl,
+      reasoning_effort: "high",
       credential_keys: [],
     } as never);
     return { edb, llm };
@@ -61,6 +63,32 @@ describe("provider model descriptors", () => {
         "https://example.test",
       ),
     ).toThrow(/unknown model/);
+    edb.close();
+  });
+
+  it("builds a bounded chat-completions descriptor for OpenAI-compatible custom models", () => {
+    const { edb, llm } = llmWith("openai", "deepseek-v4.1-flash");
+    const resolved = llm.resolveProvider();
+    const model = (llm as unknown as {
+      buildModel(p: string, m: string, b: string, reasoning?: string): {
+        api: string;
+        baseUrl: string;
+        contextWindow: number;
+        maxTokens: number;
+        reasoning: boolean;
+        compat: { maxTokensField?: string; supportsReasoningEffort?: boolean };
+      };
+    }).buildModel("openai", "deepseek-v4.1-flash", "http://127.0.0.1:7863/v1", resolved.reasoning);
+
+    expect(model).toMatchObject({
+      api: "openai-completions",
+      baseUrl: "http://127.0.0.1:7863/v1",
+      contextWindow: 32768,
+      maxTokens: 8192,
+      reasoning: true,
+      compat: { maxTokensField: "max_tokens", supportsReasoningEffort: true },
+    });
+    expect(resolved.reasoning).toBe("high");
     edb.close();
   });
 

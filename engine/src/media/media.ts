@@ -12,10 +12,11 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  realpathSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import type { EngineDatabase } from "../db.js";
 import {
@@ -23,6 +24,7 @@ import {
   assertOperationInFlight,
   operationHeaders,
   type AiOperation,
+  withAiActivity,
 } from "../ai-operation.js";
 import { operationSpanAttributes, withProviderSpan } from "../observability.js";
 
@@ -50,9 +52,17 @@ export interface MediaSettings {
   doubaoVideoModel: string;
   doubaoVideoDuration: number;
   doubaoVideoRatio: string;
+  videoImageMode: string;
+  videoInlineLocalImages: boolean;
+  publicBaseUrl: string | null;
 
   ttsEnabled: boolean;
   bgmEnabled: boolean;
+  ttsDefaultVoice: string;
+  ttsVolume: number;
+  bgmVolume: number;
+  bgmDirectory: string;
+  textProvider: string;
   staticDir: string;
 }
 
@@ -64,12 +74,16 @@ export interface MediaProviderSnapshot {
   enable_image_to_image?: unknown;
   enable_image_to_video?: unknown;
   video_mode?: string | null;
+  video_image_mode?: string | null;
+  video_inline_local_images?: unknown;
+  public_base_url?: string | null;
   duration?: unknown;
   ratio?: string | null;
   credential_keys?: string[] | null;
 }
 
 export interface MediaRunSnapshot {
+  text?: MediaProviderSnapshot | null;
   image?: MediaProviderSnapshot | null;
   video?: MediaProviderSnapshot | null;
   policy?: Record<string, unknown> | null;
@@ -113,6 +127,7 @@ export function resolveMediaSettings(
 
   const imageSnapshot = snapshot?.image ?? null;
   const videoSnapshot = snapshot?.video ?? null;
+  const textSnapshot = snapshot?.text ?? null;
   const policy = snapshot?.policy ?? null;
 
   const imageProviderRaw =
@@ -123,10 +138,19 @@ export function resolveMediaSettings(
       : "fake";
   const videoProviderRaw =
     videoSnapshot?.provider ?? pick("VIDEO_PROVIDER", "VIDEO_PROVIDER", "fake");
+  const videoMode = videoSnapshot
+    ? String(videoSnapshot.video_mode ?? "text")
+    : pick("VIDEO_MODE", "VIDEO_MODE", "text");
+  const enableImageToVideo = (videoSnapshot
+    ? asBoolean(videoSnapshot.enable_image_to_video, false)
+    : pick("ENABLE_IMAGE_TO_VIDEO", "ENABLE_IMAGE_TO_VIDEO", "false") === "true") || videoMode === "image";
   const videoProvider: MediaSettings["videoProvider"] =
     videoProviderRaw === "openai" || videoProviderRaw === "doubao"
       ? videoProviderRaw
       : "fake";
+  const textProvider = String(
+    textSnapshot?.provider ?? pick("TEXT_PROVIDER", "TEXT_PROVIDER", "anthropic"),
+  );
 
   const imageBaseUrl = imageSnapshot
     ? String(imageSnapshot.base_url ?? "")
@@ -188,12 +212,17 @@ export function resolveMediaSettings(
     videoEndpoint: videoSnapshot
       ? String(videoSnapshot.endpoint ?? "/videos/generations")
       : pick("VIDEO_ENDPOINT", "VIDEO_ENDPOINT", "/videos/generations"),
-    enableImageToVideo: videoSnapshot
-      ? asBoolean(videoSnapshot.enable_image_to_video, false)
-      : pick("ENABLE_IMAGE_TO_VIDEO", "ENABLE_IMAGE_TO_VIDEO", "false") === "true",
-    videoMode: videoSnapshot
-      ? String(videoSnapshot.video_mode ?? "text")
-      : pick("VIDEO_MODE", "VIDEO_MODE", "text"),
+    enableImageToVideo,
+    videoMode,
+    videoImageMode: videoSnapshot && "video_image_mode" in videoSnapshot
+      ? String(videoSnapshot.video_image_mode ?? "first_frame")
+      : pick("VIDEO_IMAGE_MODE", "VIDEO_IMAGE_MODE", "first_frame"),
+    videoInlineLocalImages: videoSnapshot && "video_inline_local_images" in videoSnapshot
+      ? asBoolean(videoSnapshot.video_inline_local_images, true)
+      : pick("VIDEO_INLINE_LOCAL_IMAGES", "VIDEO_INLINE_LOCAL_IMAGES", "true") === "true",
+    publicBaseUrl: videoSnapshot && "public_base_url" in videoSnapshot
+      ? videoSnapshot.public_base_url ?? null
+      : optional("PUBLIC_BASE_URL", "PUBLIC_BASE_URL"),
     fakeVideoFixtureUrl: optional("FAKE_VIDEO_FIXTURE_URL", "FAKE_VIDEO_FIXTURE_URL"),
     fakeVideoFixturePath: optional("FAKE_VIDEO_FIXTURE_PATH", "FAKE_VIDEO_FIXTURE_PATH"),
     doubaoApiKey:
@@ -222,6 +251,19 @@ export function resolveMediaSettings(
     bgmEnabled: policy
       ? asBoolean(policy.bgm_enabled, true)
       : pick("BGM_ENABLED", "BGM_ENABLED", "true") === "true",
+    ttsDefaultVoice: policy && "tts_default_voice" in policy
+      ? String(policy.tts_default_voice ?? "zh-CN-XiaoxiaoNeural")
+      : pick("TTS_DEFAULT_VOICE", "TTS_DEFAULT_VOICE", "zh-CN-XiaoxiaoNeural"),
+    ttsVolume: policy && "tts_volume" in policy
+      ? asNumber(policy.tts_volume, 1)
+      : asNumber(pick("TTS_VOLUME", "TTS_VOLUME", "1"), 1),
+    bgmVolume: policy && "bgm_volume" in policy
+      ? asNumber(policy.bgm_volume, 0.3)
+      : asNumber(pick("BGM_VOLUME", "BGM_VOLUME", "0.3"), 0.3),
+    bgmDirectory: policy && "bgm_directory" in policy
+      ? String(policy.bgm_directory ?? "static/bgm")
+      : pick("BGM_DIRECTORY", "BGM_DIRECTORY", "static/bgm"),
+    textProvider,
     staticDir,
   };
 }
@@ -362,16 +404,51 @@ export class MediaService {
     return this.settings.ttsEnabled || this.settings.bgmEnabled;
   }
 
+  async readImageBytes(url: string): Promise<Buffer> {
+    this.throwIfAborted();
+    if (url.startsWith("/static/")) {
+      const root = realpathSync(this.settings.staticDir);
+      const path = realpathSync(resolve(root, url.slice("/static/".length)));
+      if (!path.startsWith(`${root}${sep}`)) throw new Error("image path is outside static storage");
+      return readFileSync(path);
+    }
+    if (url.startsWith("data:image/")) {
+      const comma = url.indexOf(",");
+      if (comma < 0 || !url.slice(0, comma).endsWith(";base64")) {
+        throw new Error("unsupported image data URL");
+      }
+      return Buffer.from(url.slice(comma + 1), "base64");
+    }
+    if (!/^https?:\/\//i.test(url)) throw new Error("unsupported image URL");
+    const timeout = AbortSignal.timeout(30_000);
+    const signal = this.abortSignal ? AbortSignal.any([this.abortSignal, timeout]) : timeout;
+    const response = await fetch(url, { signal });
+    if (!response.ok) throw new Error(`image download failed: ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  saveImageBytes(image: Buffer, prefix: string): string {
+    const dir = join(this.settings.staticDir, "images");
+    mkdirSync(dir, { recursive: true });
+    const digest = createHash("sha1").update(image).digest("hex").slice(0, 12);
+    const filename = `${safeSlug(prefix, "reference")}_${digest}.png`;
+    const path = join(dir, filename);
+    if (!existsSync(path)) writeFileSync(path, image);
+    return `/static/images/${filename}`;
+  }
+
   async generateImageUrl(args: {
     prompt: string;
     size?: string;
     imageBytes?: Buffer | null;
   }): Promise<string> {
     // One provider span per image request, nested under its stage span.
-    return withProviderSpan(
-      "gen_ai.image.generate",
-      this.providerSpanAttributes("image", this.settings.imageProvider, this.settings.imageModel),
-      () => this.generateImageUrlInner(args),
+    return withAiActivity(this.operation ?? undefined, "图像生成", () =>
+      withProviderSpan(
+        "gen_ai.image.generate",
+        this.providerSpanAttributes("image", this.settings.imageProvider, this.settings.imageModel),
+        () => this.generateImageUrlInner(args),
+      ),
     );
   }
 
@@ -428,10 +505,12 @@ export class MediaService {
     imageUrl?: string | null;
     duration?: number;
   }): Promise<string> {
-    return withProviderSpan(
-      "gen_ai.video.generate",
-      this.providerSpanAttributes("video", this.settings.videoProvider, this.settings.videoModel),
-      () => this.generateVideoUrlInner(args),
+    return withAiActivity(this.operation ?? undefined, "视频生成", () =>
+      withProviderSpan(
+        "gen_ai.video.generate",
+        this.providerSpanAttributes("video", this.settings.videoProvider, this.settings.videoModel),
+        () => this.generateVideoUrlInner(args),
+      ),
     );
   }
 
@@ -469,9 +548,10 @@ export class MediaService {
         ratio: this.settings.doubaoVideoRatio,
       };
       if (args.imageUrl && this.settings.enableImageToVideo) {
+        const imageUrl = await this.videoImageUrl(args.imageUrl);
         (payload.content as unknown[]).push({
           type: "image_url",
-          image_url: { url: args.imageUrl },
+          image_url: { url: imageUrl },
         });
       }
       const createResponse = await fetch(
@@ -525,7 +605,9 @@ export class MediaService {
       prompt,
       duration: args.duration,
     };
-    if (args.imageUrl && this.settings.enableImageToVideo) payload.image_url = args.imageUrl;
+    if (args.imageUrl && this.settings.enableImageToVideo) {
+      payload.image_url = await this.videoImageUrl(args.imageUrl);
+    }
     const response = await fetch(
       endpoint,
       this.requestInit({
@@ -547,6 +629,17 @@ export class MediaService {
     const url = directUrl ?? (typeof nestedUrl === "string" ? nestedUrl : null);
     if (!url) throw new Error("video provider returned no URL");
     return url;
+  }
+
+  private async videoImageUrl(url: string): Promise<string> {
+    if (url.startsWith("data:image/")) return url;
+    if (!url.startsWith("/static/")) return url;
+    if (this.settings.videoInlineLocalImages) {
+      return `data:image/png;base64,${(await this.readImageBytes(url)).toString("base64")}`;
+    }
+    return this.settings.publicBaseUrl
+      ? new URL(url, this.settings.publicBaseUrl).toString()
+      : url;
   }
 
   private async ensureDefaultFakeClip(prompt: string, durationArg?: number): Promise<string> {
@@ -588,8 +681,9 @@ export class MediaService {
       destination,
     ];
     try {
-      await execFileAsync("ffmpeg", command);
+      await execFileAsync("ffmpeg", command, { signal: this.abortSignal ?? undefined });
     } catch (error) {
+      if (this.abortSignal?.aborted) throw error;
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Fake video provider needs ffmpeg: ${message.slice(0, 300)}`);
     }
@@ -633,8 +727,9 @@ export class MediaService {
         "-c",
         "copy",
         outputPath,
-      ]);
-    } catch {
+      ], { signal: this.abortSignal ?? undefined });
+    } catch (error) {
+      if (this.abortSignal?.aborted) throw error;
       await execFileAsync("ffmpeg", [
         "-y",
         "-f",
@@ -656,7 +751,7 @@ export class MediaService {
         "-movflags",
         "+faststart",
         outputPath,
-      ]);
+      ], { signal: this.abortSignal ?? undefined });
     }
     return `/static/videos/${name}.mp4`;
   }

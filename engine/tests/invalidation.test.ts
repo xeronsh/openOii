@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyInvalidationPlan, type InvalidationPlan } from "../src/invalidation.js";
+import { applyInvalidationPlan, type RerunIntent } from "../src/invalidation.js";
 import type { SharedDb } from "../src/shared-db.js";
 
 function fakeShared() {
@@ -16,6 +16,7 @@ function fakeShared() {
       { id: 11, character_ids: "[2]" },
       { id: 12, character_ids: "[1,2]" },
     ],
+    getProject: () => ({ video_url: null, status: "draft" }),
     updateCharacter,
     updateShot,
     updateProject,
@@ -23,27 +24,20 @@ function fakeShared() {
   return { shared, updateCharacter, updateShot, updateProject };
 }
 
-function plan(overrides: Partial<InvalidationPlan> = {}): InvalidationPlan {
+function intent(overrides: Partial<RerunIntent> = {}): RerunIntent {
   return {
     version: 1,
     start_stage: "render_characters",
-    checkpoint_from: "render_characters",
     scope: { entity_type: "character", entity_ids: [1] },
-    invalidates: [
-      "characters.images",
-      "shots.images",
-      "shots.videos",
-      "project.final_video",
-    ],
     ...overrides,
   };
 }
 
-describe("deterministic invalidation executor", () => {
+describe("Engine-owned invalidation policy", () => {
   it("scopes a character rerender to that character and dependent shots", () => {
     const { shared, updateCharacter, updateShot, updateProject } = fakeShared();
 
-    applyInvalidationPlan(shared, 99, plan());
+    applyInvalidationPlan(shared, 99, intent());
 
     expect(updateCharacter).toHaveBeenCalledTimes(1);
     expect(updateCharacter).toHaveBeenCalledWith(1, { image_url: null });
@@ -58,11 +52,9 @@ describe("deterministic invalidation executor", () => {
     applyInvalidationPlan(
       shared,
       99,
-      plan({
+      intent({
         start_stage: "render_shots",
-        checkpoint_from: "render_shots",
         scope: { entity_type: "shot", entity_ids: [11] },
-        invalidates: ["shots.images", "shots.videos", "project.final_video"],
       }),
     );
 
@@ -75,18 +67,21 @@ describe("deterministic invalidation executor", () => {
     applyInvalidationPlan(
       shared,
       99,
-      plan({
+      intent({
         start_stage: "plan_characters",
-        checkpoint_from: "plan_characters",
-        invalidates: [
-          "characters.definitions",
-          "characters.images",
-          "shots.definitions",
-          "shots.images",
-          "shots.videos",
-          "project.final_video",
-        ],
       }),
+    );
+
+    expect(updateCharacter).toHaveBeenCalledTimes(2);
+    expect(updateShot).toHaveBeenCalledTimes(3);
+  });
+
+  it("falls back to a full invalidation for an unknown stage", () => {
+    const { shared, updateCharacter, updateShot } = fakeShared();
+    applyInvalidationPlan(
+      shared,
+      99,
+      intent({ start_stage: "unknown" }),
     );
 
     expect(updateCharacter).toHaveBeenCalledTimes(2);

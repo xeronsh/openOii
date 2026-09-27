@@ -86,6 +86,7 @@ describe("ai operation contract", () => {
       "idempotencyKey",
       "operationId",
       "projectId",
+      "reportActivity",
       "runId",
       "signal",
       "stage",

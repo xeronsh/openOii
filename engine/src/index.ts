@@ -11,7 +11,7 @@ import { SharedDb, parseJsonColumn } from "./shared-db.js";
 import { PipelineRunner } from "./pipeline/runner.js";
 import {
   applyInvalidationPlan,
-  type InvalidationPlan,
+  type RerunIntent,
 } from "./invalidation.js";
 import { PRODUCTION_STAGE_SEQUENCE, type StageId, WORKFLOW_VERSION } from "./contract.js";
 
@@ -31,11 +31,11 @@ export function createEngineApp(dbPath: string) {
     return parseJsonColumn(row?.context_snapshot, {} as RunCreativeContext);
   }
 
-  function runInvalidationPlan(runId: number): InvalidationPlan | undefined {
+  function runRerunIntent(runId: number): RerunIntent | undefined {
     const row = db.db
       .prepare("SELECT patch_plan FROM agentrun WHERE id = ?")
       .get(runId) as { patch_plan: string | null } | undefined;
-    const plan = parseJsonColumn(row?.patch_plan, null as InvalidationPlan | null);
+    const plan = parseJsonColumn(row?.patch_plan, null as RerunIntent | null);
     return plan ?? undefined;
   }
 
@@ -73,16 +73,27 @@ export function createEngineApp(dbPath: string) {
 
     const context = runContext(runId);
     const fencedShared = shared.fenced(runId, leaseToken);
-    const plan = runInvalidationPlan(runId);
+    const plan = runRerunIntent(runId);
+    const targetIds = Array.isArray(plan?.scope?.entity_ids)
+      ? plan.scope.entity_ids.filter((id) => Number.isSafeInteger(id) && id > 0)
+      : [];
+    const scopedRequest =
+      request.targetCharacterIds?.length || request.targetShotIds?.length || !targetIds.length
+        ? request
+        : plan?.scope.entity_type === "character"
+          ? { ...request, targetCharacterIds: targetIds }
+          : plan?.scope.entity_type === "shot"
+            ? { ...request, targetShotIds: targetIds }
+            : request;
     if (plan && !db.checkpointStages(runId).includes(INVALIDATION_CHECKPOINT)) {
       // Artifact invalidation is part of execution ownership, so it must happen
       // only after the fencing lease is acquired. The marker makes replay safe:
       // crash before marker -> idempotently reapply; crash after marker -> skip.
-      applyInvalidationPlan(fencedShared, request.projectId, plan);
+      const appliedStage = applyInvalidationPlan(fencedShared, request.projectId, plan);
       db.saveCheckpoint(runId, INVALIDATION_CHECKPOINT, {
         applied_at: new Date().toISOString(),
         version: plan.version,
-        start_stage: plan.start_stage,
+        start_stage: appliedStage,
         scope: plan.scope,
       });
     }
@@ -99,7 +110,7 @@ export function createEngineApp(dbPath: string) {
     }, LEASE_HEARTBEAT_MS);
     heartbeat.unref();
 
-    void runner[mode](request).finally(() => {
+    void runner[mode](scopedRequest).finally(() => {
       clearInterval(heartbeat);
       shared.releaseRunLease(runId, ownerId, leaseToken);
       if (pipelines.get(runId) === runner) pipelines.delete(runId);

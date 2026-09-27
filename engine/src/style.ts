@@ -28,6 +28,10 @@ export const SHOT_CONTINUITY_LOCK =
   "use the provided character reference as identity anchor, preserve exact face, hairstyle, " +
   "outfit, body proportions, signature accessories, and character color palette, no redesign";
 
+export const VIDEO_CONTINUITY_LOCK =
+  "animate the existing storyboard frame only, preserve the first-frame composition, " +
+  "same characters, same outfits, same hair colors, same 2D comic/anime style, no identity drift";
+
 /**
  * Python keeps the comic lock in `_lock_prompt`; the literal is inlined here
  * because the engine must not diverge from the Python prompt text.
@@ -280,6 +284,26 @@ export function buildShotPrompt(args: {
   if (feedback) parts.push(`用户反馈：${feedback}`);
   const prompt = parts.filter(Boolean).join(", ");
   return style.negativePrompt ? `${prompt} || negative: ${style.negativePrompt}` : prompt;
+}
+
+export function buildVideoPrompt(args: {
+  shot: { prompt: string | null; description: string };
+  characters: CharacterRow[];
+  style: ResolvedStylePrompt;
+  userFeedback?: string | null;
+}): string {
+  const { shot, characters, style, userFeedback } = args;
+  const parts = [(shot.prompt || shot.description).trim()];
+  for (const character of characters) {
+    parts.push(`Character ${character.name}: ${buildCharacterBible(character)}`);
+  }
+  const context = buildCharacterContext(characters);
+  if (context) parts.push(context);
+  if (characters.length > 0) parts.push(`Continuity lock: ${VIDEO_CONTINUITY_LOCK}`);
+  parts.push(`Visual style lock: ${style.stylePrompt}`, `Avoid: ${style.negativePrompt}`);
+  const feedback = stripFocusPrefix(userFeedback);
+  if (feedback) parts.push(`用户反馈：${feedback}`);
+  return parts.join(", ");
 }
 
 /** Python strips a leading `[focus:...]` marker before appending feedback. */

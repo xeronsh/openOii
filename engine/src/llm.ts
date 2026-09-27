@@ -1,8 +1,13 @@
 /** Text LLM service built on pi-ai with immutable per-run provider/context selection. */
-import { complete, getModels, type Api, type Model } from "@mariozechner/pi-ai";
+import { complete, getModels, type Api, type Model, type ThinkingLevel } from "@mariozechner/pi-ai";
 import type { EngineDatabase } from "./db.js";
 import { fakeRespond } from "./fake-stream.js";
-import { AiOperationError, assertOperationInFlight, type AiOperation } from "./ai-operation.js";
+import {
+  AiOperationError,
+  assertOperationInFlight,
+  type AiOperation,
+  withAiActivity,
+} from "./ai-operation.js";
 import {
   operationSpanAttributes,
   recordUsage,
@@ -16,6 +21,7 @@ export interface TextProviderSnapshot {
   base_url?: string | null;
   model?: string | null;
   endpoint?: string | null;
+  reasoning_effort?: string | null;
   credential_keys?: string[] | null;
 }
 
@@ -98,6 +104,13 @@ export class TextLlmService {
     return "";
   }
 
+  private reasoningEffort(): ThinkingLevel | undefined {
+    const value = this.pinned?.reasoning_effort ?? this.db.configValue("TEXT_REASONING_EFFORT");
+    return ["minimal", "low", "medium", "high", "xhigh"].includes(value ?? "")
+      ? (value as ThinkingLevel)
+      : undefined;
+  }
+
   private promptWithRunContext(prompt: string): string {
     if (!this.runContext) return prompt;
     try {
@@ -125,7 +138,13 @@ export class TextLlmService {
     return `${prompt}\n\n<run_context>${JSON.stringify(this.runContext)}</run_context>`;
   }
 
-  resolveProvider(): { key: TextProviderKey; baseUrl?: string; apiKey?: string; model: string } {
+  resolveProvider(): {
+    key: TextProviderKey;
+    baseUrl?: string;
+    apiKey?: string;
+    model: string;
+    reasoning?: ThinkingLevel;
+  } {
     if (this.pinned?.provider) {
       const raw = this.pinned.provider;
       const key = (["fake", "anthropic", "openai"] as const).includes(raw as TextProviderKey)
@@ -133,7 +152,7 @@ export class TextLlmService {
         : null;
       if (key === null) throw new Error(`unsupported pinned text provider: ${raw}`);
       if (key === "fake") return { key, model: this.pinned.model || "fake" };
-      return {
+      const resolved = {
         key,
         baseUrl: this.pinned.base_url ?? undefined,
         apiKey: this.secret(
@@ -146,6 +165,7 @@ export class TextLlmService {
           this.pinned.model ||
           (key === "anthropic" ? "claude-sonnet-4-5-20250929" : "deepseek-chat"),
       };
+      return key === "openai" ? { ...resolved, reasoning: this.reasoningEffort() } : resolved;
     }
 
     const raw = this.db.configValue("TEXT_PROVIDER", "TEXT_PROVIDER", "anthropic") ?? "anthropic";
@@ -174,6 +194,7 @@ export class TextLlmService {
       baseUrl: this.db.configValue("TEXT_BASE_URL", "TEXT_BASE_URL"),
       apiKey: this.db.configValue("TEXT_API_KEY", "TEXT_API_KEY") ?? "",
       model: this.db.configValue("TEXT_MODEL", "TEXT_MODEL", "deepseek-chat"),
+      reasoning: this.reasoningEffort(),
     };
   }
 
@@ -194,11 +215,43 @@ export class TextLlmService {
     provider: TextProviderKey,
     modelId: string,
     baseUrl: string,
+    reasoning?: ThinkingLevel,
   ): Model<Api> {
     if (provider === "fake") {
       throw new Error("the fake provider does not build a real pi-ai model");
     }
     const known = getModels(provider as never).find((entry) => entry.id === modelId);
+    if (provider === "openai") {
+      const supportsReasoning = Boolean(reasoning) || Boolean(known?.reasoning);
+      const compat = {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: supportsReasoning,
+        maxTokensField: "max_tokens" as const,
+        thinkingFormat: "openai" as const,
+      };
+      if (known) {
+        return {
+          ...known,
+          api: "openai-completions",
+          baseUrl,
+          reasoning: supportsReasoning,
+          compat,
+        } as Model<Api>;
+      }
+      return {
+        id: modelId,
+        name: modelId,
+        api: "openai-completions",
+        provider: "openai",
+        baseUrl,
+        reasoning: supportsReasoning,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 32768,
+        maxTokens: 8192,
+        compat,
+      } as Model<Api>;
+    }
     if (!known) {
       const available = getModels(provider as never).map((entry) => entry.id).slice(0, 8);
       throw new Error(
@@ -222,7 +275,7 @@ export class TextLlmService {
       throw new Error(`provider ${resolved.key} needs a base URL in the run context snapshot`);
     }
 
-    const model = this.buildModel(resolved.key, resolved.model, resolved.baseUrl);
+    const model = this.buildModel(resolved.key, resolved.model, resolved.baseUrl, resolved.reasoning);
 
     const context = {
       systemPrompt: req.system,
@@ -243,6 +296,13 @@ export class TextLlmService {
         const result = await complete(model, context, {
           apiKey: resolved.apiKey,
           maxTokens: req.maxTokens ?? 4096,
+          reasoning: resolved.reasoning,
+          onPayload: resolved.model.toLowerCase().startsWith("deepseek")
+            ? (payload) => ({
+                ...(payload as Record<string, unknown>),
+                response_format: { type: "json_object" },
+              })
+            : undefined,
           // pi-ai honours AbortSignal itself, so cancellation does not have to
           // wait for the response to come back before the run actually stops.
           signal: req.signal ?? op?.signal,
@@ -279,18 +339,20 @@ export class TextLlmService {
    * the stage explicitly instead of flowing downstream as `{}`.
    */
   async generate(req: LlmRequest): Promise<LlmResponse> {
-    const first = await this.generateOnce(req);
+    const first = await withAiActivity(req.operation, "文本生成", () => this.generateOnce(req));
     try {
       parseJsonObjectText(first.text);
       return first;
     } catch (firstError) {
-      const repair = await this.generateOnce({
-        system:
-          "Repair the supplied model output into one valid JSON object. Preserve the original data and meaning. Return JSON only, with no markdown or explanation.",
-        prompt: JSON.stringify({ invalid_output: first.text }),
-        maxTokens: req.maxTokens ?? 4096,
-        signal: req.signal,
-      });
+      const repair = await withAiActivity(req.operation, "修复结构化输出", () =>
+        this.generateOnce({
+          system:
+            "Repair the supplied model output into one valid JSON object. Preserve the original data and meaning. Return JSON only, with no markdown or explanation.",
+          prompt: JSON.stringify({ invalid_output: first.text }),
+          maxTokens: req.maxTokens ?? 4096,
+          signal: req.signal,
+        }),
+      );
       try {
         const parsed = parseJsonObjectText(repair.text);
         return { ...repair, text: JSON.stringify(parsed) };

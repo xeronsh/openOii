@@ -24,8 +24,16 @@ function settings(overrides: Partial<MediaSettings>): MediaSettings {
     doubaoVideoModel: "doubao-test",
     doubaoVideoDuration: 5,
     doubaoVideoRatio: "16:9",
+    videoImageMode: "first_frame",
+    videoInlineLocalImages: true,
+    publicBaseUrl: null,
     ttsEnabled: false,
     bgmEnabled: false,
+    ttsDefaultVoice: "zh-CN-XiaoxiaoNeural",
+    ttsVolume: 1,
+    bgmVolume: 0.3,
+    bgmDirectory: "static/bgm",
+    textProvider: "openai",
     ...overrides,
   };
 }
