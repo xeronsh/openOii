@@ -93,7 +93,9 @@ async def test_character_regenerate_accepts_edit_payload_and_promotes_on_approva
     await test_session.refresh(related_shot)
     await test_session.refresh(unrelated_shot)
     await test_session.refresh(project)
-    assert related_shot.video_url is None
+    # Downstream clip invalidation is engine-owned (scoped to the rerun); the
+    # backend leaves existing clips in place and only supersedes the final video.
+    assert related_shot.video_url == "http://test.com/related-shot.mp4"
     assert project.video_url == "http://test.com/final-project.mp4"
     assert project.status == "superseded"
     assert unrelated_shot.video_url == "http://test.com/unrelated-shot.mp4"
@@ -108,7 +110,7 @@ async def test_character_regenerate_accepts_edit_payload_and_promotes_on_approva
 
 
 @pytest.mark.asyncio
-async def test_character_regenerate_keeps_stale_final_visible_and_surfaces_blockers(
+async def test_character_regenerate_keeps_stale_final_visible(
     async_client, test_session, ws_manager, monkeypatch
 ):
     _stub_engine_dispatch(monkeypatch)
@@ -167,7 +169,7 @@ async def test_character_regenerate_keeps_stale_final_visible_and_surfaces_block
 
     assert project.video_url == "http://test.com/final.mp4"
     assert project.status == "superseded"
-    assert blocking_shot.video_url is None
+    assert blocking_shot.video_url == "http://test.com/blocking-shot.mp4"
     assert unrelated_shot.video_url == "http://test.com/unrelated-shot.mp4"
 
     project_events = [event for _, event in ws_manager.events if event["type"] == "project_updated"]
@@ -175,5 +177,6 @@ async def test_character_regenerate_keeps_stale_final_visible_and_surfaces_block
     payload = project_events[-1]["data"]["project"]
     assert payload["video_url"] == "http://test.com/final.mp4"
     assert payload["status"] == "superseded"
-    assert payload["blocking_clips"]
-    assert payload["blocking_clips"][0]["shot_id"] == blocking_shot.id
+    # Clips only become blockers once the engine invalidates them during the
+    # scoped rerun; at dispatch time every existing clip is still usable.
+    assert payload["blocking_clips"] == []

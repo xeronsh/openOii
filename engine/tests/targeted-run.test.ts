@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import SqliteDatabase from "better-sqlite3";
@@ -7,7 +7,7 @@ import { EngineDatabase } from "../src/db.js";
 import { SharedDb } from "../src/shared-db.js";
 import { TextLlmService } from "../src/llm.js";
 import { PipelineRunner } from "../src/pipeline/runner.js";
-import { installEngineRuntimeSchema, installExecutionLeaseColumns } from "./test-db.js";
+import { installEngineRuntimeSchema, installExecutionLeaseColumns, leaseRun } from "./test-db.js";
 
 const SCHEMA = readFileSync(resolve(import.meta.dirname, "fixtures/app-schema.sql"), "utf8");
 
@@ -41,10 +41,13 @@ describe("targeted runs", () => {
 
   function boot() {
     process.env.ENGINE_STATIC_DIR = join(cleanupDir, "static");
+    // The managed media root must exist, as backend/app/static does in a checkout.
+    mkdirSync(process.env.ENGINE_STATIC_DIR, { recursive: true });
     const edb = new EngineDatabase(dbFile);
     const shared = new SharedDb(edb.db);
-    const runner = new PipelineRunner(edb, shared, new TextLlmService(edb));
-    return { edb, shared, runner };
+    const runnerFor = (runId: number) =>
+      new PipelineRunner(edb, leaseRun(shared, runId), new TextLlmService(edb));
+    return { edb, shared, runnerFor };
   }
 
   function seed(edb: EngineDatabase) {
@@ -82,13 +85,13 @@ describe("targeted runs", () => {
   }
 
   it("redraws only the requested character and leaves the others untouched", async () => {
-    const { edb, shared, runner } = boot();
+    const { edb, shared, runnerFor } = boot();
     const { projectId, runId } = seed(edb);
     const characters = shared.charactersForProject(projectId);
     const target = characters[0]!;
     const untouched = characters[1]!;
 
-    const outcome = await runner.run({
+    const outcome = await runnerFor(runId).run({
       projectId,
       runId,
       autoMode: true,
@@ -100,18 +103,18 @@ describe("targeted runs", () => {
     expect(outcome.status, outcome.error ?? "targeted run failed").toBe("completed");
     const after = shared.charactersForProject(projectId);
     // The targeted character got a fresh image; the other kept its existing one.
-    expect(after.find((c) => c.id === target.id)?.image_url).toContain("/static/images/");
+    expect(after.find((c) => c.id === target.id)?.image_url).toContain("/static/managed-v1/");
     expect(after.find((c) => c.id === untouched.id)?.image_url).toBe(untouched.image_url);
     edb.close();
   });
 
   it("skips a target whose output already exists", async () => {
-    const { edb, shared, runner } = boot();
+    const { edb, shared, runnerFor } = boot();
     const { projectId, runId } = seed(edb);
     const alreadyDrawn = shared.charactersForProject(projectId)[1]!;
     const before = alreadyDrawn.image_url;
 
-    const outcome = await runner.run({
+    const outcome = await runnerFor(runId).run({
       projectId,
       runId,
       autoMode: true,
@@ -127,12 +130,12 @@ describe("targeted runs", () => {
   });
 
   it("renders only the requested shot in a scoped run", async () => {
-    const { edb, shared, runner } = boot();
+    const { edb, shared, runnerFor } = boot();
     const { projectId, runId } = seed(edb);
     const shots = shared.shotsForProject(projectId);
     const target = shots[0]!;
 
-    const outcome = await runner.run({
+    const outcome = await runnerFor(runId).run({
       projectId,
       runId,
       autoMode: true,
@@ -148,7 +151,7 @@ describe("targeted runs", () => {
     expect(types).toContain("run_completed");
     // Only one shot_updated should exist: the scoped one.
     expect(types.filter((t) => t === "shot_updated")).toHaveLength(1);
-    expect(after.find((s) => s.id === target.id)?.image_url).toContain("/static/images/");
+    expect(after.find((s) => s.id === target.id)?.image_url).toContain("/static/managed-v1/");
     edb.close();
   }, 60000);
 });

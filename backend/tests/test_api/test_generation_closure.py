@@ -297,8 +297,8 @@ async def test_feedback_routes_through_review_then_dispatches(closure_client, mo
     """反馈必须经 ReviewAgent 决定起点，再由引擎从该阶段起跑。"""
     client, ctx, engine = closure_client
 
-    async def fake_route(**_kwargs) -> str:
-        return "render_characters"
+    async def fake_route(**_kwargs) -> tuple[str, dict[str, list[int]], bool]:
+        return "render_characters", {"character_ids": [], "shot_ids": []}, False
 
     monkeypatch.setattr(generation_routes, "_route_feedback_to_stage", fake_route)
 
@@ -325,7 +325,7 @@ async def test_feedback_returns_503_when_engine_unavailable(closure_client, monk
     client, ctx, engine = closure_client
     engine.unavailable = True
     monkeypatch.setattr(
-        generation_routes, "_route_feedback_to_stage", lambda **_kw: _async_return("plan_characters")
+        generation_routes, "_route_feedback_to_stage", lambda **_kw: _async_return(("plan_characters", {"character_ids": [], "shot_ids": []}, False))
     )
 
     async with ctx["session_maker"]() as session:

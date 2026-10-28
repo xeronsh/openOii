@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import SqliteDatabase from "better-sqlite3";
@@ -7,7 +7,7 @@ import { EngineDatabase } from "../src/db.js";
 import { ConcurrentModificationError, SharedDb } from "../src/shared-db.js";
 import { beginAiOperation } from "../src/ai-operation.js";
 import { MediaService, type MediaSettings } from "../src/media/media.js";
-import { installEngineRuntimeSchema, installExecutionLeaseColumns } from "./test-db.js";
+import { installEngineRuntimeSchema, installExecutionLeaseColumns, leaseRun } from "./test-db.js";
 
 const SCHEMA = readFileSync(resolve(import.meta.dirname, "fixtures/app-schema.sql"), "utf8");
 
@@ -271,6 +271,8 @@ describe("5. observability under failure", () => {
       process.env.IMAGE_PROVIDER = "fake";
       process.env.VIDEO_PROVIDER = "fake";
       process.env.ENGINE_STATIC_DIR = join(dir, "static");
+      // The managed media root must exist, as backend/app/static does in a checkout.
+      mkdirSync(process.env.ENGINE_STATIC_DIR, { recursive: true });
 
       edb.db
         .prepare(
@@ -279,7 +281,7 @@ describe("5. observability under failure", () => {
         )
         .run();
 
-      const runner = new PipelineRunner(edb, shared, new TextLlmService(edb));
+      const runner = new PipelineRunner(edb, leaseRun(shared, 1), new TextLlmService(edb));
       await runner.run({
         projectId: 1,
         runId: 1,

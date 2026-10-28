@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import SqliteDatabase from "better-sqlite3";
@@ -7,7 +7,7 @@ import { EngineDatabase } from "../src/db.js";
 import { SharedDb } from "../src/shared-db.js";
 import { TextLlmService } from "../src/llm.js";
 import { PipelineRunner } from "../src/pipeline/runner.js";
-import { installEngineRuntimeSchema, installExecutionLeaseColumns } from "./test-db.js";
+import { installEngineRuntimeSchema, installExecutionLeaseColumns, leaseRun } from "./test-db.js";
 
 const SCHEMA = readFileSync(
   resolve(import.meta.dirname, "fixtures/app-schema.sql"),
@@ -37,13 +37,19 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
     rmSync(cleanupDir, { recursive: true, force: true });
   });
 
-  function boot(): { runner: PipelineRunner; shared: SharedDb; edb: EngineDatabase } {
+  function boot(): {
+    runnerFor: (runId: number) => PipelineRunner;
+    shared: SharedDb;
+    edb: EngineDatabase;
+  } {
     const edb = new EngineDatabase(dbFile);
     const shared = new SharedDb(edb.db);
     const llm = new TextLlmService(edb);
     process.env.ENGINE_STATIC_DIR = join(cleanupDir, "static");
-    const runner = new PipelineRunner(edb, shared, llm);
-    return { runner, shared, edb };
+    // The managed media root must exist, as backend/app/static does in a checkout.
+    mkdirSync(process.env.ENGINE_STATIC_DIR, { recursive: true });
+    const runnerFor = (runId: number) => new PipelineRunner(edb, leaseRun(shared, runId), llm);
+    return { runnerFor, shared, edb };
   }
 
   function seedProject(edb: EngineDatabase): number {
@@ -61,7 +67,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
   }
 
   it("completes all stages, persists domain rows, emits contract events", async () => {
-    const { runner, shared, edb } = boot();
+    const { runnerFor, shared, edb } = boot();
     const projectId = seedProject(edb);
     edb.db
       .prepare(
@@ -77,27 +83,27 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
       shared.updateRun(runId, { confirm_requested: 1 });
     }, 100);
 
-    const outcome = await runner.run({ projectId, runId, autoMode: true, userFeedback: "" });
+    const outcome = await runnerFor(runId).run({ projectId, runId, autoMode: true, userFeedback: "" });
     clearInterval(confirmer);
 
     expect(outcome.status, outcome.error ?? "pipeline failed without an error message").toBe("completed");
 
     const project = shared.getProject(projectId);
     expect(project?.status).toBe("ready");
-    expect(project?.video_url ?? "").toContain("/static/videos/");
+    expect(project?.video_url ?? "").toContain("/static/managed-v1/");
     expect((project?.story_outline ?? "").length).toBeGreaterThan(2);
 
     const characters = shared.charactersForProject(projectId);
     expect(characters.length).toBeGreaterThan(0);
     for (const c of characters) {
-      expect(c.image_url).toContain("/static/images/");
+      expect(c.image_url).toContain("/static/managed-v1/");
     }
 
     const shots = shared.shotsForProject(projectId);
     expect(shots.length).toBeGreaterThan(0);
     for (const s of shots) {
-      expect(s.image_url).toContain("/static/images/");
-      expect(s.video_url).toContain("/static/videos/");
+      expect(s.image_url).toContain("/static/managed-v1/");
+      expect(s.video_url).toContain("/static/managed-v1/");
     }
 
     const types = edb.eventsForRun(runId).map((e) => e.type);
@@ -137,7 +143,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
   }, 60000);
 
   it("gate pause/resume: stops at awaiting, continues after confirm signal", async () => {
-    const { runner, shared, edb } = boot();
+    const { runnerFor, shared, edb } = boot();
     const projectId = seedProject(edb);
     edb.db
       .prepare(
@@ -149,7 +155,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
       (edb.db.prepare("SELECT MAX(id) AS id FROM agentrun").get() as { id: number | null }).id ?? 0,
     );
 
-    const running = runner.run({ projectId, runId, autoMode: false, userFeedback: "" });
+    const running = runnerFor(runId).run({ projectId, runId, autoMode: false, userFeedback: "" });
 
     let sawAwaiting = false;
     const confirmer = setInterval(() => {
@@ -170,7 +176,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
   }, 60000);
 
   it("resume reuses interrupted stage attempt instead of re-calling the provider", async () => {
-    const { runner, shared, edb } = boot();
+    const { runnerFor, shared, edb } = boot();
     const projectId = seedProject(edb);
     edb.db
       .prepare(
@@ -185,7 +191,7 @@ describe("pipeline runner (fake providers, auto-mode)", () => {
     const confirmer = setInterval(() => {
       shared.updateRun(runId, { confirm_requested: 1 });
     }, 100);
-    const outcome = await runner.run({ projectId, runId, autoMode: true, userFeedback: "" });
+    const outcome = await runnerFor(runId).run({ projectId, runId, autoMode: true, userFeedback: "" });
     clearInterval(confirmer);
     expect(outcome.status, outcome.error ?? "pipeline failed").toBe("completed");
 

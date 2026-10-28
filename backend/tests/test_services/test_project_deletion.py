@@ -22,7 +22,7 @@ from tests.factories import (
 
 
 @pytest.mark.asyncio
-async def test_delete_project_by_id_removes_related_rows_and_files(test_session, monkeypatch):
+async def test_delete_project_by_id_removes_related_rows(test_session):
     project = await create_project(test_session)
     project.video_url = "/static/videos/project.mp4"
     test_session.add(project)
@@ -70,24 +70,8 @@ async def test_delete_project_by_id_removes_related_rows_and_files(test_session,
     await test_session.commit()
     await test_session.refresh(shared_character)
 
-    deleted_single: list[str | None] = []
-    deleted_batches: list[list[str | None]] = []
-
-    monkeypatch.setattr(project_deletion, "delete_file", lambda url: deleted_single.append(url) or True)
-    monkeypatch.setattr(
-        project_deletion,
-        "delete_files",
-        lambda urls: deleted_batches.append(list(urls)) or len(urls),
-    )
-
     await project_deletion.delete_project_by_id(test_session, project.id)
 
-    assert deleted_single == ["/static/videos/project.mp4"]
-    assert deleted_batches == [
-        ["/static/characters/hero.png"],
-        ["/static/shots/shot.png"],
-        ["/static/videos/shot.mp4"],
-    ]
     assert await test_session.get(Project, project.id) is None
     assert (await test_session.execute(select(Character))).scalars().all() == []
     assert (await test_session.execute(select(Shot))).scalars().all() == []

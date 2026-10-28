@@ -57,16 +57,29 @@ def test_infer_current_stage_defaults_to_first_stage():
 
 # --- engine_checkpoint_stages (DB) ---
 
+_CHECKPOINT_DDL = (
+    "CREATE TABLE IF NOT EXISTS engine_checkpoints ("
+    "run_id INTEGER NOT NULL, stage TEXT NOT NULL, state_json TEXT NOT NULL, "
+    "updated_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (run_id, stage))"
+)
+
+async def test_engine_checkpoint_stages_none_when_table_missing(test_session: AsyncSession):
+    """A failed checkpoint query is "unknown" (None), not "nothing completed" ([])."""
+    assert await _engine_checkpoint_stages(test_session, 999999) is None
+
 async def test_engine_checkpoint_stages_empty_for_unknown_run(test_session: AsyncSession):
+    from sqlalchemy import text
+
+    await test_session.execute(text(_CHECKPOINT_DDL))
     assert await _engine_checkpoint_stages(test_session, 999999) == []
 
-async def test_engine_checkpoint_stages_ignores_missing_run_id(test_session: AsyncSession):
-    assert await _engine_checkpoint_stages(test_session, None) == []
+async def test_engine_checkpoint_stages_none_without_run_id(test_session: AsyncSession):
+    assert await _engine_checkpoint_stages(test_session, None) is None
 
 async def test_engine_checkpoint_stages_returns_production_order(
     test_session: AsyncSession,
 ):
-    """写入乱序 checkpoint，读回来必须是生产阶段顺序。"""
+    """乱序 checkpoint 读回为生产阶段顺序；未知阶段排在末尾，保留给调用方判断。"""
     project = await create_project(test_session)
     run = await create_run(test_session, project.id)
     from sqlalchemy import text
@@ -86,7 +99,7 @@ async def test_engine_checkpoint_stages_returns_production_order(
     await test_session.commit()
 
     stages = await _engine_checkpoint_stages(test_session, run.id)
-    assert stages == ["plan_outline", "render_characters"]
+    assert stages == ["plan_outline", "render_characters", "not_a_stage"]
 
 # --- build_recovery_summary ---
 

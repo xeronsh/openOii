@@ -53,6 +53,7 @@ def test_alembic_upgrade_head_rebuilds_blank_database(tmp_path: Path) -> None:
         "engine_stage_attempts",
         "exportcache",
         "message",
+        "media_object",
         "project",
         "shot",
         "shot_character_binding",

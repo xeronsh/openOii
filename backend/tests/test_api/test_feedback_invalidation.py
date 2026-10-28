@@ -39,8 +39,8 @@ async def test_feedback_persists_rerun_intent_for_engine(
         generation_routes, "resolve_project_provider_settings_async", _resolution
     )
 
-    async def route(**_kwargs) -> str:
-        return "render_shots"
+    async def route(**_kwargs) -> tuple[str, dict[str, list[int]], bool]:
+        return "render_shots", {"character_ids": [], "shot_ids": []}, False
 
     monkeypatch.setattr(generation_routes, "_route_feedback_to_stage", route)
 

@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Server } from "node:http";
 import SqliteDatabase from "better-sqlite3";
 import { createEngineApp } from "../src/index.js";
 import { WORKFLOW_VERSION } from "../src/contract.js";
 import type { PipelineRunner } from "../src/pipeline/runner.js";
-import { installEngineRuntimeSchema } from "./test-db.js";
+import { installEngineRuntimeSchema, installExecutionLeaseColumns } from "./test-db.js";
+
+const SCHEMA = readFileSync(resolve(import.meta.dirname, "fixtures/app-schema.sql"), "utf8");
 
 describe("engine sidecar", () => {
   let cleanupDir: string;
@@ -20,6 +22,9 @@ describe("engine sidecar", () => {
     cleanupDir = mkdtempSync(join(tmpdir(), "openoii-engine-"));
     const dbFile = join(cleanupDir, "test.db");
     const migrated = new SqliteDatabase(dbFile);
+    // POST /runs validates targets against project rows, so the sidecar needs the app tables too.
+    migrated.exec(SCHEMA);
+    installExecutionLeaseColumns(migrated);
     installEngineRuntimeSchema(migrated);
     migrated.close();
     app = createEngineApp(dbFile);
@@ -56,6 +61,17 @@ describe("engine sidecar", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects a run without a complete execution command", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: 1, run_id: 78 }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("RUN_COMMAND_INVALID");
+  });
+
   it("rejects a second executor for the same run id", async () => {
     // Seed the active-execution registry directly so this test isolates the
     // HTTP duplicate guard from project fixtures/provider timing.
@@ -63,7 +79,13 @@ describe("engine sidecar", () => {
     const res = await fetch(`http://127.0.0.1:${port}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project_id: 1, run_id: 77 }),
+      body: JSON.stringify({
+        project_id: 1,
+        run_id: 77,
+        stage: "full",
+        auto_mode: false,
+        user_feedback: "",
+      }),
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as {

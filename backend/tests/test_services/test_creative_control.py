@@ -6,7 +6,6 @@ import pytest
 
 from app.services.creative_control import (
     _blocking_clip_reason,
-    _sanitize_ids,
     collect_project_blocking_clips,
     invalidate_character_downstream_outputs,
     invalidate_shot_clip_output,
@@ -16,11 +15,6 @@ from app.services.creative_control import (
 )
 
 
-def test_sanitize_ids_deduplicates_and_ignores_invalid_values():
-    assert _sanitize_ids([1, 2, 2, True, 3.0, 4.5, "x"]) == [1, 2, 3]
-    assert _sanitize_ids("bad") == []
-
-
 def test_blocking_clip_reason_maps_known_states():
     assert _blocking_clip_reason("missing") == "当前分镜视频尚未生成"
     assert _blocking_clip_reason("generating") == "当前分镜视频仍在生成中"
@@ -28,26 +22,8 @@ def test_blocking_clip_reason_maps_known_states():
     assert _blocking_clip_reason("anything") == "当前分镜视频不可用于最终拼接"
 
 
-def test_infer_feedback_targets_from_target_ids():
-    data = {"target_ids": {"character_ids": [1, 1, 2], "shot_ids": [3, 4, 4]}}
-    result = infer_feedback_targets(data, {})
-
-    assert result.character_ids == [1, 2]
-    assert result.shot_ids == [3, 4]
-
-
-def test_infer_feedback_targets_from_analysis_and_state():
-    data = {"analysis": {"target_items": ["角色A需要重做", "镜头2要修改"]}}
-    state = {"characters": [{"id": 10, "name": "角色A"}], "shots": [{"id": 20, "order": 2}]}
-
-    result = infer_feedback_targets(data, state)
-
-    assert result.character_ids == [10]
-    assert result.shot_ids == [20]
-
-
 def test_infer_feedback_targets_returns_none_for_unmatched_items():
-    data = {"analysis": {"target_items": ["无关内容"]}}
+    data = {"feedback": "无关内容"}
     assert infer_feedback_targets(data, {"characters": [], "shots": []}) is None
 
 
@@ -114,7 +90,8 @@ async def test_collect_project_blocking_clips_reports_missing_and_generating(tes
 
 
 @pytest.mark.asyncio
-async def test_invalidate_character_downstream_outputs_clears_matching_shots(test_session):
+async def test_invalidate_character_downstream_outputs_keeps_shot_outputs(test_session):
+    """Output invalidation is engine-owned; the backend only supersedes the final video."""
     from app.models.project import Project, Shot
 
     project = Project(title="P", story="S", style="Style", status="draft")
@@ -135,12 +112,15 @@ async def test_invalidate_character_downstream_outputs_clears_matching_shots(tes
     await invalidate_character_downstream_outputs(test_session, project, 1)
 
     await test_session.refresh(shot)
-    assert shot.image_url is None
-    assert shot.video_url is None
+    await test_session.refresh(project)
+    assert shot.image_url == "image.png"
+    assert shot.video_url == "video.mp4"
+    assert project.status == "draft"
 
 
 @pytest.mark.asyncio
-async def test_invalidate_shot_storyboard_outputs_clears_outputs(test_session):
+async def test_invalidate_shot_storyboard_outputs_supersedes_final_video(test_session):
+    """Output invalidation is engine-owned; the backend only supersedes the final video."""
     from app.models.project import Project, Shot
 
     project = Project(title="P", story="S", style="Style", status="draft", video_url="proj.mp4")
@@ -153,8 +133,10 @@ async def test_invalidate_shot_storyboard_outputs_clears_outputs(test_session):
     await invalidate_shot_storyboard_outputs(test_session, project, shot)
 
     await test_session.refresh(shot)
-    assert shot.image_url is None
-    assert shot.video_url is None
+    await test_session.refresh(project)
+    assert shot.image_url == "image.png"
+    assert shot.video_url == "video.mp4"
+    assert project.status == "superseded"
 
 
 @pytest.mark.asyncio

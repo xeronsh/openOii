@@ -9,8 +9,9 @@ def test_extract_static_path_accepts_direct_static_url():
     assert file_cleaner._extract_static_path("/static/videos/a.mp4") == "/static/videos/a.mp4"
 
 
-def test_extract_static_path_accepts_full_url_path():
-    assert file_cleaner._extract_static_path("https://example.com/static/images/a.png") == "/static/images/a.png"
+def test_extract_static_path_rejects_absolute_url_with_static_path():
+    # Only same-origin /static/... paths are local; a remote host's /static/ is not ours.
+    assert file_cleaner._extract_static_path("https://example.com/static/images/a.png") is None
 
 
 def test_extract_static_path_rejects_non_static_url():
@@ -44,14 +45,15 @@ def test_get_local_path_returns_none_when_static_dir_missing(monkeypatch):
     assert file_cleaner.get_local_path("/static/videos/a.mp4") == Path("/tmp/nonexistent-static-dir/videos/a.mp4")
 
 
-def test_delete_file_removes_existing_local_file(monkeypatch, tmp_path):
+def test_delete_file_keeps_existing_local_file(monkeypatch, tmp_path):
+    """Unlink is disabled until reference-safe media collection exists."""
     monkeypatch.setattr(file_cleaner, "STATIC_DIR", tmp_path)
     target = tmp_path / "videos" / "a.mp4"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("x", encoding="utf-8")
 
-    assert file_cleaner.delete_file("/static/videos/a.mp4") is True
-    assert not target.exists()
+    assert file_cleaner.delete_file("/static/videos/a.mp4") is False
+    assert target.exists()
 
 
 def test_delete_file_returns_false_for_missing_local_file(monkeypatch, tmp_path):

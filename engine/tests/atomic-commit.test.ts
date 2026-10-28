@@ -6,7 +6,7 @@ import SqliteDatabase from "better-sqlite3";
 import { EngineDatabase } from "../src/db.js";
 import { SharedDb } from "../src/shared-db.js";
 import { PipelineEmitter } from "../src/pipeline/emitter.js";
-import { installEngineRuntimeSchema, installExecutionLeaseColumns } from "./test-db.js";
+import { installEngineRuntimeSchema, installExecutionLeaseColumns, leaseRun } from "./test-db.js";
 
 /**
  * "DB = truth, event = notification". That only holds if the state write and
@@ -25,7 +25,12 @@ describe("atomic state + event commit", () => {
     path = join(dir, "test.db");
     const raw = new SqliteDatabase(path);
     raw.exec(`
-      CREATE TABLE agentrun (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL);
+      CREATE TABLE agentrun (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        updated_at TEXT
+      );
       CREATE TABLE project (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT, status TEXT, video_url TEXT, updated_at TEXT, created_at TEXT
@@ -44,7 +49,9 @@ describe("atomic state + event commit", () => {
     installEngineRuntimeSchema(raw);
     raw.close();
     edb = new EngineDatabase(path);
-    shared = new SharedDb(edb.db);
+    edb.db.prepare("INSERT INTO agentrun (project_id) VALUES (1)").run();
+    // commit() is only legal under the run's execution lease, as in the sidecar.
+    shared = leaseRun(new SharedDb(edb.db), 1);
     emitter = new PipelineEmitter(edb, shared, 1, 1, {
       thinkingChainEnabled: false,
       thinkingDetailLevel: "normal",

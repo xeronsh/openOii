@@ -173,17 +173,16 @@ async def test_review_llm_full_mode(test_session, test_settings):
 
 
 @pytest.mark.asyncio
-async def test_review_invalid_llm_json_falls_back(test_session, test_settings):
+async def test_review_invalid_llm_json_raises(test_session, test_settings):
+    """Unparseable routing must fail loudly rather than silently rerun from plan."""
     project = await create_project(test_session)
     run = await create_run(test_session, project_id=project.id)
     llm = FakeLLM("not-json-at-all")
     ctx = await make_context(test_session, test_settings, project=project, run=run, llm=llm)
     ctx.user_feedback = "随便改改"
 
-    result = await ReviewAgent().run(ctx)
-
-    assert result["start_agent"] == "plan"
-    assert result["mode"] == "incremental"
+    with pytest.raises(ValueError):
+        await ReviewAgent().run(ctx)
 
 
 @pytest.mark.asyncio
@@ -219,21 +218,9 @@ async def test_review_multi_entity_ids(test_session, test_settings):
 
 
 @pytest.mark.asyncio
-async def test_review_sends_message(test_session, test_settings):
-    project = await create_project(test_session)
-    run = await create_run(test_session, project_id=project.id)
-    llm = FakeLLM(_routing_json("plan", "incremental"))
-    ctx = await make_context(test_session, test_settings, project=project, run=run, llm=llm)
-    ctx.user_feedback = "fix it"
-
-    await ReviewAgent().run(ctx)
-
-    msg_events = [e for pid, e in ctx.ws.events if e["type"] == "run_message"]
-    assert len(msg_events) >= 1
-
-
-@pytest.mark.asyncio
-async def test_review_target_info_in_message(test_session, test_settings):
+async def test_review_ignores_llm_target_ids(test_session, test_settings):
+    """Targets come only from the user's selection or entities named in the feedback,
+    never from ids the model invents."""
     project = await create_project(test_session)
     run = await create_run(test_session, project_id=project.id)
     llm = FakeLLM(
@@ -244,13 +231,8 @@ async def test_review_target_info_in_message(test_session, test_settings):
 
     result = await ReviewAgent().run(ctx)
 
-    msg_events = [e for pid, e in ctx.ws.events if e["type"] == "run_message"]
-    assert any(
-        "2 个角色" in e["data"]["content"] and "3 个分镜" in e["data"]["content"]
-        for e in msg_events
-    )
-    assert result["target_ids"].character_ids == [1, 2]
-    assert result["target_ids"].shot_ids == [3, 4, 5]
+    assert result["start_agent"] == "plan"
+    assert result["target_ids"] is None
 
 
 @pytest.mark.asyncio

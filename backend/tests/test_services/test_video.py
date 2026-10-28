@@ -26,6 +26,13 @@ def test_build_url_and_retryable_status():
     assert svc._is_retryable_status(401) is False
 
 
+def test_build_url_joins_slashes():
+    svc = VideoService(
+        make_settings(video_base_url="https://video.example.com/", video_endpoint="videos/generations")
+    )
+    assert svc._build_url() == "https://video.example.com/videos/generations"
+
+
 def test_build_poll_url_for_yunwu_video_create():
     svc = VideoService(
         make_settings(video_base_url="https://yunwu.ai/v1", video_endpoint="/video/create")
@@ -435,26 +442,20 @@ async def test_post_stream_with_retry_collects_reasoning_content(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_merge_urls_returns_first_url_and_rejects_empty(monkeypatch):
+async def test_merge_urls_delegates_to_video_merger(monkeypatch):
+    from app.services import video_merger
+
     svc = VideoService(make_settings())
 
-    with pytest.raises(RuntimeError, match="No video URLs"):
-        await svc.merge_urls([])
-
-    class FakeMerger:
+    class StubMerger:
         async def merge_videos(self, urls):
-            return "https://cdn.example.com/merged.mp4"
+            assert urls == ["https://cdn.example.com/1.mp4", "https://cdn.example.com/2.mp4"]
+            return "/static/videos/merged.mp4"
 
-    monkeypatch.setattr(
-        "app.services.video.VideoService.merge_urls",
-        lambda self, video_urls: FakeMerger().merge_videos(video_urls),
-        raising=False,
-    )
+    monkeypatch.setattr(video_merger, "get_video_merger_service", lambda: StubMerger())
 
-    assert (
-        await svc.merge_urls(["https://a.mp4", "https://b.mp4"])
-        == "https://cdn.example.com/merged.mp4"
-    )
+    url = await svc.merge_urls(["https://cdn.example.com/1.mp4", "https://cdn.example.com/2.mp4"])
+    assert url == "/static/videos/merged.mp4"
 
 
 # --- _post_json_with_retry error paths ---

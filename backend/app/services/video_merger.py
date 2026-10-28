@@ -109,8 +109,8 @@ class VideoMergerService:
             logger.info("Single video normalized to local output: %s", output_path)
             return f"/static/videos/{output_filename}.mp4"
 
-        # 创建临时目录存放下载的视频
-        with tempfile.TemporaryDirectory() as temp_dir:
+        # 创建临时目录存放下载的视频；放在输出目录下，保证最终 os.link 不跨文件系统
+        with tempfile.TemporaryDirectory(dir=self.output_dir) as temp_dir:
             temp_path = Path(temp_dir)
             downloaded_files: list[Path] = []
 

@@ -1013,11 +1013,12 @@ describe('ProjectPage live hydration', () => {
     });
   });
 
-  it('cancels recoverable runs and resets the live state after settle', async () => {
+  it('cancels recoverable runs and resets the live state once the server confirms', async () => {
     const user = userEvent.setup();
+    vi.mocked(runsApi.cancel).mockResolvedValueOnce({ status: 'cancelled', cancelled: 1 } as never);
     renderWithProviders(<ProjectPage />);
-    seedRunState({ recoveryControl: {
-      state: 'active',
+    seedRunState({ isGenerating: false, recoveryControl: {
+      state: 'recoverable',
       detail: '当前运行仍可取消。',
       available_actions: ['resume', 'cancel'],
       active_run: {
@@ -1332,12 +1333,12 @@ describe('ProjectPage live hydration', () => {
     });
   });
 
-  it('resets state on cancel even when cancel request fails', async () => {
+  it('keeps the run and warns when the cancel request fails', async () => {
     const user = userEvent.setup();
     vi.mocked(runsApi.cancel).mockRejectedValueOnce(new Error('cancel failed'));
     renderWithProviders(<ProjectPage />);
-    seedRunState({ recoveryControl: {
-      state: 'active',
+    seedRunState({ isGenerating: false, recoveryControl: {
+      state: 'recoverable',
       detail: '当前运行仍可取消。',
       available_actions: ['resume', 'cancel'],
       active_run: {
@@ -1368,14 +1369,15 @@ describe('ProjectPage live hydration', () => {
     await waitFor(() => {
       expect(runsApi.cancel).toHaveBeenCalledWith(18);
     });
-    expect(readRunState(9).isGenerating).toBe(false);
-    expect(readRunState(9).currentRunId).toBeNull();
-    expect(appendMessage).toHaveBeenCalledWith(
+    // The request may have reached the server, so the UI must not claim the run stopped.
+    await waitFor(() => {
+      expect(toast.warning).toHaveBeenCalledWith(
+        expect.objectContaining({ title: '停止结果未知', details: 'cancel failed' })
+      );
+    });
+    expect(appendMessage).not.toHaveBeenCalledWith(
       9,
-      expect.objectContaining({
-        agent: 'system',
-        content: '生成已停止',
-      })
+      expect.objectContaining({ content: '生成已停止' })
     );
   });
 

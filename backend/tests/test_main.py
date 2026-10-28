@@ -430,8 +430,8 @@ async def test_ws_projects_confirm_valid_run_saves_feedback_and_triggers_confirm
 
     trigger_calls = []
 
-    async def fake_trigger(run_id):
-        trigger_calls.append(run_id)
+    async def fake_trigger(run_id, *, project_id):
+        trigger_calls.append((run_id, project_id))
 
     monkeypatch.setattr(main_module, "ws_manager", FakeManager())
     monkeypatch.setattr(
@@ -460,7 +460,7 @@ async def test_ws_projects_confirm_valid_run_saves_feedback_and_triggers_confirm
 
     await handler(fake_ws, 1)
 
-    assert trigger_calls == [123]
+    assert trigger_calls == [(123, 1)]
 
 
 @pytest.mark.asyncio

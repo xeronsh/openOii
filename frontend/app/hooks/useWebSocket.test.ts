@@ -650,7 +650,7 @@ describe("useProjectWebSocket", () => {
         image: { selected_key: "openai", source: "default", resolved_key: "openai", valid: true },
         video: { selected_key: "doubao", source: "project", resolved_key: "doubao", valid: true },
       } as never,
-      recoveryControl: { type: "retry" } as never,
+      recoveryControl: { state: "active", active_run: { id: 303 } } as never,
       recoverySummary: { from: "before" } as never,
       recoveryGate: {
         run_id: 111,
@@ -732,7 +732,7 @@ describe("useProjectWebSocket", () => {
       progress: 0.48,
       currentAgent: "plan",
       currentRunId: 303,
-      recoveryControl: { type: "retry" } as never,
+      recoveryControl: { state: "active", active_run: { id: 303 } } as never,
       recoverySummary: { from: "before-cancel" } as never,
       recoveryGate: { run_id: 303, agent: "plan" } as never,
     });

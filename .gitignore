@@ -18,6 +18,8 @@ node_modules
 dist
 static
 *.db
+*.db-shm
+*.db-wal
 *.timestamp_*
 playwright-report/
 test-results/

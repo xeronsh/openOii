@@ -80,13 +80,20 @@ async def test_mix_audio_downloads_remote_video_before_ffmpeg(tmp_path, monkeypa
 async def test_ffmpeg_mix_maps_only_primary_video_stream(tmp_path, monkeypatch):
     captured: dict[str, tuple[str, ...]] = {}
 
+    probe_json = b'{"streams": [{"codec_type": "video", "duration": "4.0"}]}'
+
     class FakeProcess:
         returncode = 0
 
+        def __init__(self, stdout: bytes = b""):
+            self._stdout = stdout
+
         async def communicate(self):
-            return b"", b""
+            return self._stdout, b""
 
     async def fake_create_subprocess_exec(*cmd, stdout=None, stderr=None):
+        if cmd[0] == "ffprobe":
+            return FakeProcess(probe_json)
         captured["cmd"] = cmd
         return FakeProcess()
 

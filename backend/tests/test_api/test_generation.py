@@ -392,8 +392,8 @@ async def test_feedback_project_success(async_client, test_session, monkeypatch)
     )
 
     # ReviewAgent 的路由决策由 LLM 承担；此处只验路由契约，不调外部模型。
-    async def _fake_route(**_kwargs) -> str:
-        return "plan_characters"
+    async def _fake_route(**_kwargs) -> tuple[str, dict[str, list[int]], bool]:
+        return "plan_characters", {"character_ids": [], "shot_ids": []}, False
 
     monkeypatch.setattr(generation_routes, "_route_feedback_to_stage", _fake_route)
 

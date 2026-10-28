@@ -36,12 +36,24 @@ async def create_project(
     return project
 
 
+def full_run_command(*, auto_mode: bool = False) -> dict[str, object]:
+    return {
+        "version": 1,
+        "stage": "full",
+        "auto_mode": auto_mode,
+        "user_feedback": "",
+        "target_character_ids": [],
+        "target_shot_ids": [],
+    }
+
+
 async def create_run(
     session: AsyncSession,
     project_id: int,
     status: str = "queued",
     *,
     live_lease: bool | None = None,
+    execution_command: dict[str, object] | None = None,
 ) -> AgentRun:
     """Create a run that reflects the canonical durable status model.
 
@@ -49,6 +61,9 @@ async def create_run(
     active executor. Production no longer does either: recoverable runs are
     ``failed``/``cancelled`` and running ownership is proven by a lease. Keep
     those translations in one test factory rather than weakening production.
+
+    Like ``POST /projects/{id}/runs``, the run carries a canonical full-run
+    ``execution_command`` so recovery treats it as resumable.
     """
     canonical_status = "failed" if status == "paused" else status
     if live_lease is None:
@@ -60,6 +75,7 @@ async def create_run(
         lease_owner="test-engine" if live_lease else None,
         lease_token=f"test-lease-{project_id}-{id(session)}" if live_lease else None,
         lease_expires_at=utcnow() + timedelta(minutes=5) if live_lease else None,
+        context_snapshot={"execution_command": execution_command or full_run_command()},
     )
     session.add(run)
     await session.commit()
