@@ -39,7 +39,7 @@
 
 - **重生成旧媒体保护已验证**：隔离副本中分镜重生成失败时，旧图片、视频、音频引用和文件均保留；成功重生成后写入新视频引用，HTTP 版本回滚可恢复旧引用。角色图 fake 重生成成功。Engine 不可用时接口返回 `503`，run 留在 `queued`。记录：`/tmp/openoii-regeneration.KBNq0e/report.md`。
 - **共享文件不删除已验证**：删除临时项目后，另一项目共用的媒体文件仍存在。此结论只覆盖该真实隔离路径；当前没有引用计数清理机制。
-- **媒体已登记，自动清理未实现**：隔离端到端 run 的 2 张 fake 图片和 2 个视频已登记在 `media_object` 的 `managed-v1` namespace，文件存在且静态 URL 可读取。登记不代表可回收：`file_cleaner.delete_file()` 禁用 unlink，引用协议、连续计时和后台清理闭环未实现；旧文件不会被自动删除。引用分散在业务字段、版本快照、事件与恢复数据，不能仅凭当前实体无引用删除。
+- **已登记媒体的保守回收**：Engine 产出的图片、视频登记在 `media_object` 的 `managed-v1` namespace。后端启动时（`backend/app/main.py` lifespan，`init_db` 之后）执行一次 mark-and-sweep（`backend/app/services/file_cleaner.py:sweep_managed_media`）：扫描数据库所有表所有列中出现的 `managed-v1/<文件名>` 字符串作为引用（覆盖业务字段、版本快照、run context、stage attempt、checkpoint/event，不逐类建模）；只删除已登记、登记超过 24 小时、无任何引用且解析后仍位于 `STATIC_DIR` 内的文件，并删除对应登记行。任一 run 处于活动状态或持有未过期 lease 时整轮跳过。未登记的旧文件从不删除。只在启动时运行：长期不重启的进程不会回收，这是有意的最小实现。
 - **恢复与 fake 端到端已验证**：普通 fake run 在 checkpoint 后被强制终止，`POST /api/v1/runs/3/resume` 返回 `200` 并最终 `succeeded`。定向恢复的隔离 HTTP 路径也成功：已提交目标不重复生成，目标外 shot 保持原引用；均不证明真实 AI/provider 恢复。隔离环境中的实际默认 fake 视频路径已成功，run 状态为 `succeeded`；产物为 H.264/AAC、4.5 秒，已登记且静态 URL 返回 HTTP 200。更早使用本地 MP4 fixture 的路径也已成功。
 - **反馈分类崩溃恢复已由最新 `pending_feedback` 路径处理并隔离实跑**：`backend/app/api/v1/routes/runs.py:781-821` 在持久化含分类输入的 `pending_feedback` 与两条反馈消息后提交，再调用 `_classify_pending_feedback`；分类器先以条件更新取得 `feedback-classifier` 租约，期限 15 分钟（`backend/app/api/v1/routes/runs.py:172-243`），分类成功后在同一更新中保存 `patch_plan`、`execution_command` 和 `classified` 状态并释放租约（`backend/app/api/v1/routes/runs.py:343-372`）。因此新路径不再是“先提交无输入/无命令 run，崩溃后不可分类”的旧缺口。
 - **无租约等待恢复的真实隔离路径已验**：分类期间强杀 backend 后，活跃租约时 `resume` 返回 `409 RUN_ALREADY_ACTIVE`；将隔离库中的分类租约设为过期后，`resume` 返回 `200`，分类输入重新处理，两个指定角色完成，run 最终 `succeeded`。实际验证覆盖的是手动令租约过期后的重试，不是等待自然 15 分钟到期；使用假分类器，真实分类 provider 未验。`resume` 对 pending feedback 会重新分类，再 dispatch Engine（`backend/app/api/v1/routes/runs.py:598-643`）。
@@ -54,10 +54,10 @@
 ### 主要旧媒体路径安全风险
 
 - 旧文件名可能跨项目共享：Engine fake 图/视频、九宫格及合并输出存在确定性命名，合并还可能覆盖目标；按项目删除或路径猜测会误删仍被引用的文件。共享文件路径验证仅证明当前没有误删，不能推出自动回收安全。
-- 不能仅查当前实体字段：`ArtifactVersion` 快照、run context、stage attempt、checkpoint/event 可能继续保存旧 URL；回滚和恢复会再次使用它们。没有全引用登记/事务协调前，任何 unlink 都可能造成悬空引用。
-- 旧 URL 到本地文件的映射需保守：历史实现曾把任意域名下 `/static/...` 当本地候选；当前 `backend/app/services/file_cleaner.py` 只接受以 `/static/` 开头的路径，并在解析后检查路径仍位于 `STATIC_DIR` 内。`delete_file()` 当前禁用 unlink；历史行为不应描述成现行漏洞，未来启用删除仍须保留路径边界检查。
+- 不能仅查当前实体字段：`ArtifactVersion` 快照、run context、stage attempt、checkpoint/event 可能继续保存旧 URL；回滚和恢复会再次使用它们。因此回收按全库字符串扫描判断引用，而不是按当前实体字段。
+- 旧 URL 到本地文件的映射需保守：`backend/app/services/file_cleaner.py` 只接受以 `/static/` 开头的路径，并在解析后检查路径仍位于 `STATIC_DIR` 内；回收沿用该边界检查，指向目录外的登记（如符号链接）不会被删除。
 - 历史上传目录有路径差异：`projects.py` 上传写入 `backend/app/api/static/references`，而 `/static` 挂载指向 `backend/app/static`（`backend/app/main.py`）；旧文件扫描、迁移不能按 URL 推断文件存在位置。
-- 现阶段 `delete_file()` 禁止删除是安全保护，不是自动清理能力；媒体回收需先解决共享引用、旧版本/运行态引用和并发写入/删除协调。
+- 回收仅依赖登记表、宽限期和活动 run 检查做并发保护；未登记的旧共享文件（确定性命名、跨项目共用）不在回收范围内，仍保留。
 
 ## 范围与未验证项
 

@@ -67,10 +67,17 @@ async def test_lifespan_creates_directories_and_calls_init_db(monkeypatch, tmp_p
 
     monkeypatch.setattr(main_module, "init_db", fake_init_db)
 
+    async def fake_sweep(_session):
+        called["sweep"] = True
+        return 0
+
+    monkeypatch.setattr("app.services.file_cleaner.sweep_managed_media", fake_sweep)
+
     async with main_module.lifespan(FastAPI()):
         pass
 
     assert called["init_db"] is True
+    assert called["sweep"] is True
     assert (tmp_path / "static" / "videos").exists()
     assert (tmp_path / "static" / "images").exists()
 

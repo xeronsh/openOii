@@ -44,6 +44,14 @@ async def lifespan(_: FastAPI):
     await init_db()
     log.info("lifespan: init_db done")
     try:
+        from app.db.session import async_session_maker
+        from app.services.file_cleaner import sweep_managed_media
+
+        async with async_session_maker() as session:
+            await sweep_managed_media(session)
+    except Exception:
+        log.exception("lifespan: media sweep failed; continuing")
+    try:
         yield
     finally:
         from app.services.engine_client import shutdown_engine
