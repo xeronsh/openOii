@@ -18,3 +18,13 @@ export const STYLE_CATEGORIES = [
 		{ value: "realistic", label: "写实" },
 	] },
 ];
+
+/** 风格 id → 中文名；未知的自定义风格原样显示。 */
+export function styleLabel(value: string | null | undefined): string | null {
+	if (!value) return null;
+	for (const category of STYLE_CATEGORIES) {
+		const match = category.styles.find((style) => style.value === value);
+		if (match) return match.label;
+	}
+	return value;
+}

@@ -10,6 +10,7 @@ import { ApiError } from "~/types/errors";
 import { cleanupDeletedProjectCaches } from "~/features/projects/deleteProject";
 import { IconButton } from "../../components/ui/IconButton";
 import { PlainButton } from "../../components/ui/PlainButton";
+import { styleLabel } from "~/features/projects/styleCategories";
 
 interface HistoryDrawerProps {
 	open: boolean;
@@ -20,7 +21,11 @@ interface HistoryDrawerProps {
 function statusLabel(status: string) {
 	const map: Record<string, string> = {
 		draft: "草稿",
+		planning: "规划中",
 		processing: "生成中",
+		running: "生成中",
+		failed: "出错",
+		cancelled: "已取消",
 		completed: "已完成",
 		error: "出错",
 		ready: "就绪",
@@ -32,6 +37,9 @@ function statusCls(status: string) {
 	const map: Record<string, string> = {
 		draft: "bg-paper-100/80 text-ink-muted border-line",
 		processing: "bg-warning/15 text-warning-fg border-warning/30",
+		planning: "bg-warning/15 text-warning-fg border-warning/30",
+		running: "bg-warning/15 text-warning-fg border-warning/30",
+		failed: "bg-error/15 text-error-fg border-error/30",
 		completed: "bg-success/15 text-success-fg border-success/30",
 		error: "bg-error/15 text-error-fg border-error/30",
 		ready: "bg-paper-100/80 text-ink-muted border-line",
@@ -115,7 +123,7 @@ function ProjectRow({
 						</div>
 						<div className="flex items-center gap-2 text-xs text-ink-muted">
 							<span>{new Date(project.updated_at).toLocaleDateString("zh-CN")}</span>
-							{project.style && <span>{project.style}</span>}
+							{project.style && <span>{styleLabel(project.style)}</span>}
 							{project.target_shot_count && <span>{project.target_shot_count} 镜头</span>}
 						</div>
 					</PlainButton>

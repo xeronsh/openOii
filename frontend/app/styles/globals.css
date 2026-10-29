@@ -342,8 +342,9 @@
   font-size: 11px;
 }
 
-/* 选中态由卡片自身的 ring 表达，去掉 React Flow 默认的节点轮廓 */
-.infinite-canvas-container .react-flow__node:focus-visible {
+/* 选中态由卡片自身的 ring 表达；键盘焦点要看得见。
+   .selectable 用来压过 xyflow 自带的 `.react-flow__node.selectable:focus-visible { outline: none }`（它后加载） */
+.infinite-canvas-container .react-flow__node.selectable:focus-visible {
   outline: 2px solid rgb(var(--color-primary));
   outline-offset: 4px;
   border-radius: 0.5rem;

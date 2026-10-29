@@ -682,7 +682,7 @@ export interface WorkflowFrameViewProps {
 /** 空分区的引导：告诉第一次用的人这里会出现什么、下一步做什么 */
 const EMPTY_HINT: Partial<Record<ComicWorkflowSection, string>> = {
 	elements: "规划完成后，角色会出现在这里。",
-	shotline: "还没有分镜。点顶部「开始生成」，或在下方提示栏写下想法。",
+	shotline: "规划完成后，分镜会出现在这里。",
 	output: "分镜都有了视频后，成片会出现在这里。",
 };
 

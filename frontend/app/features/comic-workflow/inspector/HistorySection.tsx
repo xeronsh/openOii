@@ -1,6 +1,6 @@
 import { canvasEvents } from "~/components/canvas/canvasEvents";
 import type { ComicWorkflowNode } from "../graph/types";
-import { ActionButton, ActionStack, FieldList } from "./fields";
+import { ActionButton, ActionStack, FieldList, reviewLabel } from "./fields";
 
 function formatTime(value: string | null): string {
 	if (!value) return "未批准";
@@ -17,7 +17,7 @@ export function HistorySection({ node }: { node: ComicWorkflowNode }) {
 				<FieldList
 					items={[
 						["版本", `v${entity.approval_version}`],
-						["审阅状态", entity.approval_state],
+						["审阅状态", reviewLabel(entity.approval_state)],
 						["批准时间", formatTime(entity.approved_at)],
 					]}
 				/>

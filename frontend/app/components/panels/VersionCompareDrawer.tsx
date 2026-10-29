@@ -55,8 +55,10 @@ function valueToText(value: unknown): string {
 	return String(value);
 }
 
+const TRIGGER_LABEL: Record<string, string> = { generation: "生成", rollback: "回滚" };
+
 function versionLabel(version: ArtifactVersion): string {
-	return `v${version.version} · ${version.trigger}`;
+	return `v${version.version} · ${TRIGGER_LABEL[version.trigger] ?? version.trigger}`;
 }
 
 function VersionColumn({ title, version }: { title: string; version?: ArtifactVersion }) {

@@ -8,6 +8,7 @@ import type {
 	OutputState,
 	WorkflowNodeStatus,
 } from "./types";
+import { styleLabel } from "~/features/projects/styleCategories";
 
 const SECTION_COPY: Record<
 	ComicWorkflowSection,
@@ -210,7 +211,7 @@ export function buildComicWorkflow({
 			kind: "brief",
 			section: "brief",
 			title: project.title || "未命名项目",
-			subtitle: project.style || "故事起点",
+			subtitle: styleLabel(project.style) || "故事起点",
 			status: briefStatus(project, isGenerating),
 			entityId: project.id,
 			project,

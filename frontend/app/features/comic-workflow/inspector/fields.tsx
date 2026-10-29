@@ -189,3 +189,10 @@ export function textOrNull(value: unknown): string | null {
 	const trimmed = value.trim();
 	return trimmed ? trimmed : null;
 }
+
+const REVIEW_LABEL: Record<string, string> = { draft: "未确认", approved: "已确认", superseded: "已被新版本替换" };
+
+/** 审阅状态的中文名（draft / approved / superseded）。 */
+export function reviewLabel(state: string | null | undefined): string {
+	return (state && REVIEW_LABEL[state]) || state || "未确认";
+}
