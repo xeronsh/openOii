@@ -121,16 +121,16 @@ openOii 把一句故事想法变成一部带配音、字幕和背景音乐的漫
 
 **分阶段工作流 + pi-agent-core 对话助手**，两者共用一个 Node 引擎和一个 SQLite 文件：
 
-- **工作流**（`engine/src/pipeline`）：15 个阶段由状态机按固定顺序执行，每个阶段是一个普通函数——文本阶段用 [pi-ai](https://github.com/badlogic/pi-mono/tree/main/packages/ai) 调用模型并解析结构化输出，图像 / 视频阶段调用各服务商接口，成片由后端 FFmpeg 合成。下一步做什么由状态机决定，不由模型决定。
+- **工作流**（`engine/src/pipeline`）：15 个阶段由状态机按固定顺序执行，每个阶段是一个普通函数——文本阶段用 [pi-ai](https://github.com/badlogic/pi-mono/tree/main/packages/ai) 调用模型并解析结构化输出，图像 / 视频阶段调用各服务商接口，成片由引擎用 FFmpeg 拼接。下一步做什么由状态机决定，不由模型决定。
 - **项目助手**（`engine/src/agent`）：基于 [pi-agent-core](https://github.com/badlogic/pi-mono/tree/main/packages/agent) 的工具调用循环，用已配置的文本模型。它能读取项目和运行状态，也能启动 / 继续 / 停止运行、重画、重新合成和编辑内容，但每个写操作都要你在确认卡片上点「确认」；它没有通过审批门的工具。每个项目一段对话，保存在 SQLite 里。
-- **后端**（`backend/`）：FastAPI 只做产品 API、WebSocket 和引擎网关，外加给引擎调用的拼接、配音、背景音乐和人脸比对工具。
+- **后端**（`backend/`）：FastAPI 只做产品 API、WebSocket 和引擎网关，外加给引擎调用的配音、背景音乐混音、参考图拼图和人脸比对工具。
 
 ```text
 frontend/ (React + React Flow)  ──HTTP/WS──▶  backend/ (FastAPI 网关)  ──loopback──▶  engine/ (工作流 + 助手)
                                                          └──────── 共享 SQLite（WAL）+ /static 媒体 ────────┘
 ```
 
-架构约束见 [AGENTS.md](AGENTS.md)，决策记录在 [docs/adr](docs/adr)。
+工作流、视觉审查和助手共用 `engine/src/pi-models.ts` 里的一个 pi-ai 模型注册表（`createModels()`），测试模式用其中的 fake 模型。架构约束见 [AGENTS.md](AGENTS.md)，决策记录在 [docs/adr](docs/adr)。
 
 ## 快速开始
 

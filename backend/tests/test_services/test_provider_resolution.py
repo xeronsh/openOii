@@ -11,7 +11,6 @@ from app.services.provider_resolution import (
     TEXT_PROBE_MAX_RETRIES,
     _missing_credentials_message,
     _normalize_provider_key,
-    _provider_snapshot_payload,
     _resolve_entry,
     _text_credentials_available,
     probe_text_provider,
@@ -50,14 +49,11 @@ def test_resolver_uses_runtime_defaults_for_text_provider() -> None:
     assert result.text.capabilities.stream is True
 
 
-def test_provider_resolution_helpers_cover_normalization_and_snapshot() -> None:
+def test_provider_resolution_helpers_cover_normalization() -> None:
     assert _normalize_provider_key(None) is None
     assert _normalize_provider_key("  OPENAI  ") == "openai"
     assert _normalize_provider_key("   ") is None
     assert _missing_credentials_message("openai") == "openai Provider 缺少凭据，当前无法启动。"
-    assert _provider_snapshot_payload({"text": {"selected_key": "openai"}}) == {"text": {"selected_key": "openai"}}
-    assert _provider_snapshot_payload(SimpleNamespace(model_dump=lambda mode="json": {"text": {"selected_key": "anthropic"}})) == {"text": {"selected_key": "anthropic"}}
-    assert _provider_snapshot_payload(None) is None
 
 
 def test_resolve_entry_handles_invalid_and_missing_credentials() -> None:

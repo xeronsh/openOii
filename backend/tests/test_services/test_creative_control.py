@@ -8,8 +8,6 @@ from app.services.creative_control import (
     _blocking_clip_reason,
     collect_project_blocking_clips,
     invalidate_character_downstream_outputs,
-    invalidate_shot_clip_output,
-    invalidate_shot_storyboard_outputs,
     apply_character_rerun_edits,
 )
 
@@ -98,38 +96,3 @@ async def test_invalidate_character_downstream_outputs_keeps_shot_outputs(test_s
     assert shot.image_url == "image.png"
     assert shot.video_url == "video.mp4"
     assert project.status == "draft"
-
-
-@pytest.mark.asyncio
-async def test_invalidate_shot_storyboard_outputs_supersedes_final_video(test_session):
-    """Output invalidation is engine-owned; the backend only supersedes the final video."""
-    from app.models.project import Project, Shot
-
-    project = Project(title="P", story="S", style="Style", status="draft", video_url="proj.mp4")
-    test_session.add(project)
-    await test_session.flush()
-    shot = Shot(project_id=project.id, order=1, description="A", image_url="image.png", video_url="video.mp4")
-    test_session.add(shot)
-    await test_session.commit()
-
-    await invalidate_shot_storyboard_outputs(test_session, project, shot)
-
-    await test_session.refresh(shot)
-    await test_session.refresh(project)
-    assert shot.image_url == "image.png"
-    assert shot.video_url == "video.mp4"
-    assert project.status == "superseded"
-
-
-@pytest.mark.asyncio
-async def test_invalidate_shot_clip_output_marks_project_superseded(test_session):
-    from app.models.project import Project
-
-    project = Project(title="P", story="S", style="Style", status="draft", video_url="proj.mp4")
-    test_session.add(project)
-    await test_session.commit()
-
-    await invalidate_shot_clip_output(test_session, project)
-
-    await test_session.refresh(project)
-    assert project.status == "superseded"

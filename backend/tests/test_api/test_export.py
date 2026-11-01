@@ -7,19 +7,6 @@ import pytest
 class TestExportSchemas:
     """导出 Schema 测试（不需要数据库）"""
 
-    def test_export_request_pdf(self):
-        from app.schemas.export import ExportRequest
-        req = ExportRequest(format="pdf")
-        assert req.format == "pdf"
-        assert req.include_dialogue is True
-        assert req.include_character_info is True
-
-    def test_export_request_webtoon(self):
-        from app.schemas.export import ExportRequest
-        req = ExportRequest(format="webtoon", include_dialogue=False)
-        assert req.format == "webtoon"
-        assert req.include_dialogue is False
-
     def test_export_response_processing(self):
         from app.schemas.export import ExportResponse
         resp = ExportResponse(

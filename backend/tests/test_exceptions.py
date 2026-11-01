@@ -6,7 +6,6 @@ from app.exceptions import (
     ConflictError,
     NotFoundError,
     PermissionError,
-    ValidationError,
 )
 
 
@@ -25,18 +24,6 @@ def test_app_exception_custom():
     assert exc.code == "BAD"
     assert exc.status_code == 418
     assert exc.details == details
-
-
-def test_validation_error():
-    exc = ValidationError("invalid input", details={"field": "email"})
-    assert exc.status_code == 400
-    assert exc.code == "VALIDATION_ERROR"
-    assert exc.details == {"field": "email"}
-
-
-def test_validation_error_no_details():
-    exc = ValidationError("invalid")
-    assert exc.details == {}
 
 
 def test_not_found_error():
@@ -88,7 +75,6 @@ def test_business_error_custom_code():
 
 
 def test_app_exception_is_base():
-    assert issubclass(ValidationError, AppException)
     assert issubclass(NotFoundError, AppException)
     assert issubclass(ConflictError, AppException)
     assert issubclass(PermissionError, AppException)

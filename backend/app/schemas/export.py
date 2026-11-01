@@ -8,14 +8,6 @@ from pydantic import BaseModel, Field
 from app.db.utils import UtcDatetime, utcnow
 
 
-class ExportRequest(BaseModel):
-    """导出请求"""
-
-    format: Literal["pdf", "webtoon"]
-    include_dialogue: bool = True
-    include_character_info: bool = True
-
-
 class ExportResponse(BaseModel):
     """导出响应"""
 

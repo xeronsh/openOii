@@ -2,22 +2,11 @@
 from __future__ import annotations
 
 import pytest
-from app.schemas.export import ExportRequest, ExportResponse, ExportCompletedEventData
+from app.schemas.export import ExportResponse, ExportCompletedEventData
 
 
 class TestExportSchemas:
     """导出 Schema 测试"""
-
-    def test_export_request_pdf(self):
-        req = ExportRequest(format="pdf")
-        assert req.format == "pdf"
-        assert req.include_dialogue is True
-        assert req.include_character_info is True
-
-    def test_export_request_webtoon(self):
-        req = ExportRequest(format="webtoon", include_dialogue=False)
-        assert req.format == "webtoon"
-        assert req.include_dialogue is False
 
     def test_export_response_processing(self):
         resp = ExportResponse(

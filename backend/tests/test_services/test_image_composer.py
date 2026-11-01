@@ -31,44 +31,6 @@ def test_resize_to_fit_scales_down_preserving_aspect_ratio():
 
 
 @pytest.mark.asyncio
-async def test_compose_reference_image_without_characters_returns_shot_only(monkeypatch):
-    composer = ImageComposer(max_width=800, max_height=600)
-    shot = _make_image(1600, 900)
-
-    async def fake_download(url: str):
-        return shot
-
-    monkeypatch.setattr(composer, "_download_image", fake_download)
-
-    result = await composer.compose_reference_image("shot.png", [])
-    image = Image.open(io.BytesIO(result))
-
-    assert image.size == (800, 450)
-
-
-@pytest.mark.asyncio
-async def test_compose_reference_image_skips_failed_character_download(monkeypatch):
-    composer = ImageComposer(max_width=800, max_height=600)
-    shot = _make_image(1000, 600)
-    character = _make_image(200, 200, (0, 255, 0))
-
-    async def fake_download(url: str):
-        if url == "broken.png":
-            raise RuntimeError("download failed")
-        if url == "shot.png":
-            return shot
-        return character
-
-    monkeypatch.setattr(composer, "_download_image", fake_download)
-
-    result = await composer.compose_reference_image("shot.png", ["broken.png", "char.png"])
-    image = Image.open(io.BytesIO(result))
-
-    assert image.width == 800
-    assert image.height > 450
-
-
-@pytest.mark.asyncio
 async def test_compose_character_reference_image_validates_inputs(monkeypatch):
     composer = ImageComposer(max_width=800, max_height=600)
 
@@ -87,25 +49,6 @@ async def test_compose_character_reference_image_raises_when_all_fail(monkeypatc
 
     with pytest.raises(RuntimeError, match="All character images failed"):
         await composer.compose_character_reference_image(["char1.png", "char2.png"])
-
-
-@pytest.mark.asyncio
-async def test_compose_and_save_reference_image_writes_png(tmp_path, monkeypatch):
-    composer = ImageComposer(max_width=800, max_height=600)
-    composed = _make_image(500, 300)
-
-    async def fake_compose(shot, chars):
-        buffer = io.BytesIO()
-        composed.save(buffer, format="PNG")
-        return buffer.getvalue()
-
-    monkeypatch.setattr(composer, "compose_reference_image", fake_compose)
-    monkeypatch.setattr("app.services.image_composer.STATIC_DIR", tmp_path)
-
-    url = await composer.compose_and_save_reference_image("shot.png", ["char.png"])
-
-    assert url.startswith("/static/images/composed_")
-    assert (tmp_path / "images").exists()
 
 
 @pytest.mark.asyncio

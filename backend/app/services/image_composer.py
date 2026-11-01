@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import io
 import logging
-from uuid import uuid4
 
 import httpx
 from PIL import Image
 
-from app.services.file_cleaner import STATIC_DIR, get_local_path, is_local_file
+from app.services.file_cleaner import get_local_path, is_local_file
 from app.services.face_cropper import (
     compose_face_reference_strip,
     is_face_cropping_available,
@@ -44,122 +43,6 @@ class ImageComposer:
             new_size = (int(img.width * ratio), int(img.height * ratio))
             return img.resize(new_size, Image.Resampling.LANCZOS)
         return img
-
-    async def compose_reference_image(
-        self,
-        shot_image_url: str,
-        character_image_urls: list[str],
-    ) -> bytes:
-        """
-        拼接参考图：分镜图 + 角色图
-
-        布局：
-        ┌─────────────────────────┐
-        │                         │
-        │    分镜图（主图）        │
-        │                         │
-        ├─────────┬─────────┬─────┤
-        │ 角色1   │ 角色2   │ ... │
-        └─────────┴─────────┴─────┘
-
-        Args:
-            shot_image_url: 分镜图片 URL
-            character_image_urls: 角色图片 URL 列表
-
-        Returns:
-            拼接后的图片字节流（PNG 格式）
-        """
-        # 下载分镜图
-        shot_img = await self._download_image(shot_image_url)
-
-        # 下载角色图
-        char_imgs: list[Image.Image] = []
-        for url in character_image_urls:
-            try:
-                img = await self._download_image(url)
-                char_imgs.append(img)
-            except Exception as e:
-                # 下载失败则跳过该角色，但要留下记录
-                logger.warning("Character reference download failed, skipping %.80s: %s", url, e)
-                continue
-
-        # 如果没有角色图，直接返回分镜图
-        if not char_imgs:
-            shot_img = self._resize_to_fit(shot_img, self.max_width, self.max_height)
-            buffer = io.BytesIO()
-            shot_img.save(buffer, format="PNG")
-            return buffer.getvalue()
-
-        # 计算布局
-        # 主图占 70% 高度，角色图占 30% 高度
-        main_height = int(self.max_height * 0.7)
-        char_height = int(self.max_height * 0.3)
-
-        # 缩放主图
-        shot_img = self._resize_to_fit(shot_img, self.max_width, main_height)
-
-        # 计算角色图宽度（平均分配）
-        char_width = self.max_width // len(char_imgs)
-
-        # 缩放角色图
-        resized_chars: list[Image.Image] = []
-        for img in char_imgs:
-            resized = self._resize_to_fit(img, char_width, char_height)
-            resized_chars.append(resized)
-
-        # 创建画布
-        canvas_height = shot_img.height + char_height
-        canvas = Image.new("RGB", (self.max_width, canvas_height), color=(255, 255, 255))
-
-        # 粘贴主图（居中）
-        x_offset = (self.max_width - shot_img.width) // 2
-        canvas.paste(shot_img, (x_offset, 0))
-
-        # 粘贴角色图（底部横排）
-        x_pos = 0
-        for char_img in resized_chars:
-            y_offset = shot_img.height + (char_height - char_img.height) // 2
-            x_offset = x_pos + (char_width - char_img.width) // 2
-            canvas.paste(char_img, (x_offset, y_offset))
-            x_pos += char_width
-
-        # 转换为字节流
-        buffer = io.BytesIO()
-        canvas.save(buffer, format="PNG")
-        return buffer.getvalue()
-
-    async def compose_and_save_reference_image(
-        self,
-        shot_image_url: str,
-        character_image_urls: list[str],
-    ) -> str:
-        """
-        拼接参考图并保存到本地，返回 URL
-
-        Args:
-            shot_image_url: 分镜图片 URL
-            character_image_urls: 角色图片 URL 列表
-
-        Returns:
-            保存后的图片 URL（如 /static/images/composed_xxx.png）
-        """
-        # 生成拼接图
-        image_bytes = await self.compose_reference_image(shot_image_url, character_image_urls)
-
-        # 生成唯一文件名
-        filename = f"composed_{uuid4().hex}.png"
-        images_dir = STATIC_DIR / "images"
-        images_dir.mkdir(parents=True, exist_ok=True)
-        file_path = images_dir / filename
-
-        # 保存到本地
-        with open(file_path, "wb") as f:
-            f.write(image_bytes)
-
-        logger.info(f"Saved composed image to {file_path}")
-
-        # 返回 URL
-        return f"/static/images/{filename}"
 
     def _fit_into_cell(
         self,

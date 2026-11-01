@@ -20,18 +20,6 @@ class AppException(Exception):
         super().__init__(message)
 
 
-class ValidationError(AppException):
-    """验证错误 (400)"""
-
-    def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
-        super().__init__(
-            message=message,
-            code="VALIDATION_ERROR",
-            status_code=400,
-            details=details,
-        )
-
-
 class NotFoundError(AppException):
     """资源不存在 (404)"""
 

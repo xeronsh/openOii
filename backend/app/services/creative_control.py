@@ -98,24 +98,3 @@ async def invalidate_character_downstream_outputs(
         project.status = "superseded"
     session.add(project)
     await session.flush()
-
-
-async def invalidate_shot_storyboard_outputs(
-    session: AsyncSession,
-    project: Project,
-    shot: Shot,
-) -> None:
-    if project.video_url:
-        project.status = "superseded"
-    session.add(project)
-    await session.flush()
-
-
-async def invalidate_shot_clip_output(
-    session: AsyncSession,
-    project: Project,
-) -> None:
-    if project.video_url:
-        project.status = "superseded"
-    session.add(project)
-    await session.flush()

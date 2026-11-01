@@ -299,60 +299,12 @@ class Settings(BaseSettings):
         description="对外可访问的后端地址（用于把 /static 路径转换为完整 URL）",
     )
 
-    def use_i2i(self) -> bool:
-        """是否启用图生图（I2I）"""
-        return bool(self.enable_image_to_image)
-
-    def use_i2v(self) -> bool:
-        """是否启用图生视频（I2V）
-
-        兼容旧配置：VIDEO_MODE=image 仍视为启用 I2V。
-        """
-        return bool(self.enable_image_to_video) or self.video_mode == "image"
-
-    def image_headers(self) -> dict[str, str]:
-        """图像服务请求头"""
-        headers: dict[str, str] = {"User-Agent": self.app_name}
-        if self.image_api_key:
-            headers["Authorization"] = f"Bearer {self.image_api_key}"
-        return headers
-
-    def video_headers(self) -> dict[str, str]:
-        """视频服务请求头"""
-        headers: dict[str, str] = {"User-Agent": self.app_name}
-        if self.video_api_key:
-            headers["Authorization"] = f"Bearer {self.video_api_key}"
-        return headers
-
     def text_headers(self) -> dict[str, str]:
         """文本服务请求头"""
         headers: dict[str, str] = {"User-Agent": self.app_name}
         if self.text_api_key:
             headers["Authorization"] = f"Bearer {self.text_api_key}"
         return headers
-
-    def anthropic_env(self) -> dict[str, Any]:
-        """Anthropic 环境变量（用于 LLMService）"""
-        env: dict[str, Any] = {}
-        if self.anthropic_api_key:
-            env["ANTHROPIC_API_KEY"] = self.anthropic_api_key
-        if self.anthropic_auth_token:
-            env["ANTHROPIC_AUTH_TOKEN"] = self.anthropic_auth_token
-        if self.anthropic_base_url:
-            env["ANTHROPIC_BASE_URL"] = self.anthropic_base_url
-        return env
-
-    def build_public_url(self, path: str | None) -> str | None:
-        """将本地路径（如 /static/xxx）转换为对外可访问的完整 URL"""
-        if not path:
-            return path
-        if path.startswith(("http://", "https://")):
-            return path
-        if not self.public_base_url:
-            return path
-        normalized = path if path.startswith("/") else f"/{path}"
-        return f"{self.public_base_url.rstrip('/')}{normalized}"
-
 
 def apply_settings_overrides(overrides: dict[str, Any]) -> None:
     if not overrides:

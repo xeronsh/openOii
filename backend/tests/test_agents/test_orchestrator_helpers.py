@@ -9,16 +9,12 @@ from __future__ import annotations
 import pytest
 
 from app.orchestration import PHASE2_STAGE_ORDER, next_production_stage
+from app.generated.workflow_contract import STAGE_AGENT_MAP
 from app.services.run_signals import (
     GRAPH_STAGE_FOR_AGENT,
-    STAGE_AGENT_MAP,
-    clear_awaiting_payload,
-    clear_confirm_signal,
+    _update_run_columns,
     get_awaiting_payload,
-    resume_agent_for_stage,
-    store_awaiting_payload,
     trigger_confirm_signal,
-    wait_for_confirm_signal,
 )
 from tests.factories import create_project, create_run
 
@@ -41,11 +37,6 @@ class TestStageContract:
         for agent, stage in GRAPH_STAGE_FOR_AGENT.items():
             assert stage in PHASE2_STAGE_ORDER, f"{agent} → {stage} 不在阶段表内"
 
-    def test_resume_agent_for_stage_falls_back_to_plan(self):
-        assert resume_agent_for_stage(None) == "plan"
-        assert resume_agent_for_stage("not-a-stage") == "plan"
-        assert resume_agent_for_stage("render_shots") == "render"
-
     def test_recovery_agent_map_matches_signal_map(self):
         for agent, stage in GRAPH_STAGE_FOR_AGENT.items():
             assert GRAPH_STAGE_FOR_AGENT[agent] == stage
@@ -54,7 +45,6 @@ class TestStageContract:
         assert next_production_stage("plan_outline") == "plan_characters"
         assert next_production_stage("add_audio") is None
         assert next_production_stage(None) is None
-
 
 
 # ---------------------------------------------------------------------------
@@ -83,36 +73,15 @@ async def test_trigger_confirm_signal_missing_run_is_noop(signal_db):
     assert await trigger_confirm_signal(424242) is True
 
 
-async def test_wait_for_confirm_signal_consumes_flag(signal_db, test_session):
-    project = await create_project(test_session)
-    run = await create_run(test_session, project.id)
-
-    await trigger_confirm_signal(run.id)
-    assert await wait_for_confirm_signal(run.id, timeout=2) is True
-    await test_session.refresh(run)
-    assert run.confirm_requested is False
-
-
-async def test_wait_for_confirm_signal_times_out(signal_db, test_session):
-    project = await create_project(test_session)
-    run = await create_run(test_session, project.id)
-
-    assert await wait_for_confirm_signal(run.id, timeout=1) is False
-
-
-async def test_clear_confirm_signal_missing_run_is_noop(signal_db):
-    await clear_confirm_signal(424242)
-
-
 async def test_awaiting_payload_roundtrip(signal_db, test_session):
     project = await create_project(test_session)
     run = await create_run(test_session, project.id)
 
     assert await get_awaiting_payload(run.id) is None
     payload = {"gate": "outline", "run_id": run.id, "message": "确认大纲"}
-    await store_awaiting_payload(run.id, payload)
+    await _update_run_columns(run.id, awaiting_payload=payload)
     assert await get_awaiting_payload(run.id) == payload
-    await clear_awaiting_payload(run.id)
+    await _update_run_columns(run.id, awaiting_payload=None)
     assert await get_awaiting_payload(run.id) is None
 
 

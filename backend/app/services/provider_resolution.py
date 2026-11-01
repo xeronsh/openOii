@@ -49,19 +49,6 @@ def _default_capabilities(*, generate: bool | None, stream: bool | None = None) 
     return ProjectProviderEntry.Capabilities(generate=generate, stream=stream)
 
 
-def _provider_snapshot_payload(snapshot: object) -> dict[str, object] | None:
-    if isinstance(snapshot, dict):
-        return snapshot
-    if hasattr(snapshot, "model_dump"):
-        try:
-            dumped = snapshot.model_dump(mode="json")
-        except Exception:
-            return None
-        if isinstance(dumped, dict):
-            return dumped
-    return None
-
-
 def _text_probe_cache_key(settings: Settings) -> str:
     return build_provider_capability_cache_key(
         provider=settings.text_provider,
