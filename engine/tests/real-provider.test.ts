@@ -132,6 +132,22 @@ describe("structured output repair", () => {
     edb.close();
   });
 
+  it("does not spend a repair call after the run was cancelled (#149)", async () => {
+    const { edb, llm, calls } = llmWithAnswers(['{"story_outline": ', JSON.stringify({ story_outline: {} })]);
+    const controller = new AbortController();
+    (llm as unknown as { generateOnce: (req: LlmRequest) => Promise<unknown> }).generateOnce = vi.fn(async (req: LlmRequest) => {
+      calls.push({ req, opts: undefined });
+      // The stop lands while the first answer streams in: it comes back cut off.
+      controller.abort();
+      return { text: '{"story_outline": ', provider: "fake", model: "fake" };
+    });
+    await expect(
+      llm.generate({ system: "s", prompt: "{}", validate: OUTPUT_SHAPES.outline, signal: controller.signal }),
+    ).rejects.toThrow("run cancelled: llm request aborted");
+    expect(calls).toHaveLength(1);
+    edb.close();
+  });
+
   it("uses the caller's output budget for the repair", async () => {
     const { edb, llm, calls } = llmWithAnswers(["nope", '{"visual_notes": "red scarf"}']);
     await llm.generate({ system: "s", prompt: "p", maxTokens: 512, validate: OUTPUT_SHAPES.visualNotes });
@@ -215,6 +231,81 @@ describe("critic verdicts", () => {
     const { ctx } = critiqueContext({ score: 3, dimensions: {}, issues: ["脸型不符"], suggestions: [] });
     const outcome = await runCritique(ctx, "character");
     expect(outcome).toMatchObject({ willRegenerate: true, regenerateEntityIds: [31], minScore: 3 });
+  });
+});
+
+describe("shot critic asks for its story checks (#147)", () => {
+  function shotCritique(answers: Array<Record<string, unknown>>, targetShotIds?: number[]) {
+    const requests: LlmRequest[] = [];
+    const reviews: Array<{ id: number; status: unknown }> = [];
+    const shots = [
+      { id: 41, project_id: 1, order: 1, description: "乌鸦看见水瓶\n画面状态：水位很低", image_url: "/static/s1.png", character_ids: "[]" },
+      { id: 42, project_id: 1, order: 2, description: "乌鸦丢石子\n画面状态：水位升到一半", image_url: "/static/s2.png", character_ids: "[]" },
+    ];
+    const ctx = {
+      projectId: 1,
+      runId: 1,
+      signal: new AbortController().signal,
+      operation: null,
+      targetShotIds,
+      critiqueRounds: { characters: 0, shots: 0 },
+      critiqueScoreThreshold: 6,
+      critiqueMaxRounds: 2,
+      shared: {
+        shotsForProject: () => shots,
+        charactersForProject: () => [],
+        getProject: () => ({ id: 1, visual_bible: null }),
+        getShot: (id: number) => shots.find((shot) => shot.id === id),
+        getLiveShot: (id: number) => shots.find((shot) => shot.id === id),
+        updateShot: (id: number, fields: Record<string, unknown>) => void reviews.push({ id, status: fields.review_status }),
+        insertAgentMessage: () => undefined,
+      },
+      emitter: {
+        sendMessage: async () => undefined,
+        llmStream: () => ({ update: () => undefined, end: () => undefined }),
+        critiqueResult: () => undefined,
+        consistencyEvalCompleted: () => undefined,
+        commit: (_type: string, write: () => unknown) => write(),
+        shotUpdated: () => undefined,
+      },
+      media: { readImageBytes: async () => PNG },
+      llm: {
+        generate: async (req: LlmRequest) => {
+          requests.push(req);
+          const answer = answers[Math.min(requests.length - 1, answers.length - 1)]!;
+          return { text: JSON.stringify(answer), provider: "openai", model: "m" };
+        },
+      },
+    } as unknown as StageContext;
+    return { ctx, requests, reviews };
+  }
+  const allTrue = { characters: true, state: true, props: true, look: true, no_future_beat: true };
+
+  it("asks once more when the reply skips the checks, then passes on them", async () => {
+    const { ctx, requests } = shotCritique([{ score: 8, issues: [] }, { score: 8, checks: allTrue, issues: [] }], [42]);
+    const outcome = await runCritique(ctx, "shot");
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.prompt).toContain("上一次回答缺少 checks");
+    expect(outcome.willRegenerate).toBe(false);
+  });
+
+  it("does not pass a reported issue on score alone when checks never come", async () => {
+    const { ctx } = shotCritique([{ score: 9, issues: ["水位没有升高"] }], [42]);
+    const outcome = await runCritique(ctx, "shot");
+    expect(outcome).toMatchObject({ willRegenerate: true, regenerateEntityIds: [42] });
+  });
+
+  it("sends a failed check back for a redraw", async () => {
+    const { ctx } = shotCritique([{ score: 9, checks: { ...allTrue, state: false }, issues: [] }], [42]);
+    const outcome = await runCritique(ctx, "shot");
+    expect(outcome.regenerateEntityIds).toEqual([42]);
+  });
+
+  it("reviews only the targeted shots", async () => {
+    const { ctx, requests } = shotCritique([{ score: 8, checks: allTrue, issues: [] }], [42]);
+    await runCritique(ctx, "shot");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.prompt).toContain("开始状态：水位很低");
   });
 });
 

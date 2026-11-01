@@ -302,3 +302,44 @@ async def test_websocket_manager_rejects_invalid_outbound_payload():
                 },
             },
         )
+
+
+class _StageSession(_SessionContext):
+    """Run rows for the active-run query, the engine's last stage for the event query."""
+
+    def __init__(self, rows: list[Any], last_stage: str | None) -> None:
+        super().__init__(rows)
+        self._last_stage = last_stage
+
+    async def execute(self, _statement: Any, params: dict[str, Any] | None = None) -> Any:
+        if params is None:
+            return self._result
+        return SimpleNamespace(scalar=lambda: self._last_stage)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("last_stage", "expected"),
+    [("render_shots", "render_shots"), (None, None)],
+)
+async def test_websocket_hydrate_takes_the_stage_from_the_engine_events(monkeypatch, last_stage, expected):
+    """current_agent "render" covers two stages; the engine's last stage event is exact (#150)."""
+    project_id = 3
+
+    async def fake_get_awaiting_payload(candidate_run_id: int) -> dict[str, Any] | None:
+        return None
+
+    monkeypatch.setattr("app.services.run_signals.get_awaiting_payload", fake_get_awaiting_payload)
+    manager = _FakeManager()
+    _patch_ws_app(monkeypatch, manager)
+    run = SimpleNamespace(id=7, project_id=project_id, current_agent="render", progress=0.3)
+    monkeypatch.setattr("app.db.session.async_session_maker", lambda: _StageSession([run], last_stage))
+
+    await _ws_handler()(_InboundWebSocket([]), project_id)
+
+    from app.services.run_signals import GRAPH_STAGE_FOR_AGENT
+
+    fallback = GRAPH_STAGE_FOR_AGENT.get("render", "render")
+    progress = next(event for _, event in manager.events if event["type"] == "run_progress")
+    assert progress["data"]["current_stage"] == (expected or fallback)
+    assert progress["data"]["stage"] == (expected or fallback)

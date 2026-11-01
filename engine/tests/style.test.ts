@@ -6,6 +6,7 @@ import {
   buildCharacterContext,
   buildCharacterPrompt,
   buildShotPrompt,
+  buildVideoPrompt,
   resolveStylePrompt,
 } from "../src/style.js";
 import type { CharacterRow, ShotRow } from "../src/shared-db.js";
@@ -202,5 +203,33 @@ describe("character quality prompts", () => {
     const prompt = buildShotPrompt({ shot: shot(), characters: [], style });
     expect(prompt).not.toContain(SHOT_CONTINUITY_LOCK);
     expect(prompt).toContain("Opening shot at dawn");
+  });
+});
+
+describe("shot start/end state lock (#147)", () => {
+  const previous = "乌鸦叼起第一颗石子\n画面状态：瓶里水位到三分之一";
+  const current = shot({ description: "乌鸦把石子丢进瓶子\n画面状态：水位升到一半", prompt: "crow drops a pebble" });
+  const next = "乌鸦喝到水\n画面状态：水位到瓶口";
+
+  it("locks a keyframe to the previous shot's end state and avoids the next shot's", () => {
+    const style = resolveStylePrompt(fakeDb(), "anime");
+    const prompt = buildShotPrompt({ shot: current, characters: [], style, neighbors: { previous, next } });
+    expect(prompt).toContain("首帧状态（硬性要求）：瓶里水位到三分之一");
+    const [, negative] = prompt.split(" || negative: ");
+    expect(negative).toContain("下一镜的状态（水位到瓶口）");
+  });
+
+  it("leads a clip prompt with its start and end state and avoids the next shot's", () => {
+    const style = resolveStylePrompt(fakeDb(), "anime");
+    const prompt = buildVideoPrompt({ shot: current, characters: [], style, neighbors: { previous, next } });
+    expect(prompt.startsWith("本镜开始时（硬性要求）：瓶里水位到三分之一；本镜结束时（硬性要求）：水位升到一半，停在这个状态")).toBe(true);
+    expect(prompt).toMatch(/Avoid: .*下一镜的状态（水位到瓶口）/);
+  });
+
+  it("adds nothing when the shots carry no planned state", () => {
+    const style = resolveStylePrompt(fakeDb(), "anime");
+    const prompt = buildShotPrompt({ shot: shot(), characters: [], style, neighbors: { previous: "a", next: "b" } });
+    expect(prompt).not.toContain("硬性要求");
+    expect(prompt).not.toContain("下一镜的状态");
   });
 });
