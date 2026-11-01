@@ -3,7 +3,8 @@ import type { Toast } from "~/types/errors";
 
 interface ToastStore {
   toasts: Toast[];
-  addToast: (toast: Omit<Toast, "id">) => void;
+  /** 返回新 Toast 的 id，用于之后替换 / 关闭它 */
+  addToast: (toast: Omit<Toast, "id">) => string;
   removeToast: (id: string) => void;
   clearToasts: () => void;
 }
@@ -13,9 +14,9 @@ const MAX_TOASTS = 5;
 export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
 
-  addToast: (toast) =>
+  addToast: (toast) => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
     set((state) => {
-      const id = `toast-${Date.now()}-${Math.random()}`;
       const newToast = { ...toast, id };
 
       // 限制最多 5 个 Toast
@@ -25,7 +26,9 @@ export const useToastStore = create<ToastStore>((set) => ({
       }
 
       return { toasts };
-    }),
+    });
+    return id;
+  },
 
   removeToast: (id) =>
     set((state) => ({

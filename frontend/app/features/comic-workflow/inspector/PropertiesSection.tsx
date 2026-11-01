@@ -89,7 +89,7 @@ function ProjectDraftForm({
 			queryClient.setQueryData(
 				projectQueryKeys.project(projectId),
 				(current: typeof project | undefined) =>
-					current ? { ...current, title: updated.title, story: updated.story } : current,
+					current ? { ...current, title: updated.title, story: updated.story, revision: updated.revision } : current,
 			);
 			queryClient.invalidateQueries({ queryKey: ["project", projectId] });
 			queryClient.invalidateQueries({ queryKey: ["projects"] });

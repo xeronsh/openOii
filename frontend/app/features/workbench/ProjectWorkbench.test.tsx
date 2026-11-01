@@ -37,7 +37,7 @@ const h = vi.hoisted(() => ({
 		projectsApi: { getRegeneratePlan: vi.fn(), currentRun: vi.fn() },
 		getStaticUrl: (url?: string | null) => (url ? `http://static${url}` : null),
 	},
-	toast: { info: vi.fn(), success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+	toast: { info: vi.fn(() => "pending-toast"), success: vi.fn(), error: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
 
 vi.mock("~/features/projects/useProjectData", () => ({ useProjectData: () => h.data }));
@@ -400,6 +400,9 @@ describe("ProjectWorkbench drawers and export", () => {
 			expect(h.api.exportApi.getStatus).toHaveBeenCalledWith(PID, "e1");
 			const done = h.toast.success.mock.calls[0]![0];
 			expect(done.title).toBe("导出完成");
+			// the in-progress toast is replaced, not left on screen next to the result
+			expect(h.toast.dismiss).toHaveBeenCalledWith("pending-toast");
+			expect(h.toast.dismiss.mock.invocationCallOrder[0]!).toBeLessThan(h.toast.success.mock.invocationCallOrder[0]!);
 			done.actions[0].onClick();
 			expect(open).toHaveBeenCalledWith("http://static/exports/e1.png", "_blank");
 			await vi.waitFor(() => expect(screen.getByRole("button", { name: "导出" })).not.toBeDisabled());
@@ -414,6 +417,7 @@ describe("ProjectWorkbench drawers and export", () => {
 		renderShell();
 		fireEvent.click(screen.getByRole("button", { name: "导出" }));
 		await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith({ title: "导出失败", message: "生成失败，请重试" }));
+		expect(h.toast.dismiss).toHaveBeenCalledWith("pending-toast");
 		await waitFor(() => expect(screen.getByRole("button", { name: "导出" })).not.toBeDisabled());
 		h.api.exportApi.triggerWebtoon.mockRejectedValueOnce(new Error("没有分镜"));
 		fireEvent.click(screen.getByRole("button", { name: "导出" }));

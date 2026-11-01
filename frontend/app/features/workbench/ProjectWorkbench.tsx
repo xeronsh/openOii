@@ -409,6 +409,12 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 	const handleExportWebtoon = async () => {
 		if (exporting) return;
 		setExporting(true);
+		// 「导出中」一直显示到有结果，再被「导出完成 / 导出失败」替换，两者不叠在一起
+		let pending: string | null = null;
+		const clearPending = () => {
+			if (pending) toast.dismiss(pending);
+			pending = null;
+		};
 		try {
 			const started = await exportApi.triggerWebtoon(projectId);
 			const poll = async (exportId: string): Promise<void> => {
@@ -419,6 +425,7 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 				}
 				if (response.status === "completed" && response.download_url) {
 					const url = getStaticUrl(response.download_url);
+					clearPending();
 					toast.success({
 						title: "导出完成",
 						message: "Webtoon 长图已生成",
@@ -429,16 +436,19 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 					});
 					return;
 				}
+				clearPending();
 				toast.error({ title: "导出失败", message: "生成失败，请重试" });
 			};
-			toast.info({ title: "导出中", message: "正在生成 Webtoon 长图", duration: 4000 });
+			pending = toast.info({ title: "导出中", message: "正在生成 Webtoon 长图", duration: 0 });
 			await poll(started.export_id);
 		} catch (error) {
+			clearPending();
 			toast.error({
 				title: "导出失败",
 				message: error instanceof Error ? error.message : "未知错误",
 			});
 		} finally {
+			clearPending();
 			setExporting(false);
 		}
 	};

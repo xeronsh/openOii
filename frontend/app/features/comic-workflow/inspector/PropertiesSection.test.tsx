@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "~/types/errors";
 import type { ComicWorkflowNode } from "../graph/types";
@@ -59,6 +59,34 @@ describe("PropertiesSection · brief", () => {
 		await waitFor(() => expect(toast.success).toHaveBeenCalledWith({ title: "Brief", message: "已保存" }));
 		expect(api.projectsApi.update).toHaveBeenCalledWith(3, { expected_revision: 4, title: "新标题", story: null });
 		expect(client.getQueryData(["project", 3])).toMatchObject({ title: "新标题", story: null });
+	});
+
+	it("sends the new revision when a media option is saved right after the brief (refetch still pending)", async () => {
+		// The workbench reads the project from the query cache; the invalidate refetch is slow.
+		function CachedBrief() {
+			const { data } = useQuery({
+				queryKey: ["project", 3],
+				queryFn: () => new Promise<never>(() => {}),
+				initialData: { ...project },
+				staleTime: Infinity,
+			});
+			return <PropertiesSection projectId={3} node={{ kind: "brief", project: data } as unknown as ComicWorkflowNode} structureLocked={false} />;
+		}
+		api.projectsApi.update
+			.mockResolvedValueOnce({ ...project, title: "新标题", revision: 5 })
+			.mockResolvedValueOnce({ ...project, title: "新标题", revision: 6, media_options: { tts: true, bgm: false } });
+		render(
+			<QueryClientProvider client={client}>
+				<CachedBrief />
+			</QueryClientProvider>,
+		);
+		fireEvent.change(field("标题"), { target: { value: "新标题" } });
+		fireEvent.click(screen.getByRole("button", { name: "保存" }));
+		await waitFor(() => expect(toast.success).toHaveBeenCalledWith({ title: "Brief", message: "已保存" }));
+		fireEvent.change(field("背景音乐"), { target: { value: "off" } });
+		await waitFor(() => expect(api.projectsApi.update).toHaveBeenCalledTimes(2));
+		expect(api.projectsApi.update.mock.calls[1]![1]).toMatchObject({ expected_revision: 5 });
+		expect(client.getQueryData(["project", 3])).toMatchObject({ title: "新标题", revision: 6 });
 	});
 
 	it("keeps the old title when the field is cleared and reports a conflict", async () => {
