@@ -74,14 +74,8 @@ export function createEngineApp(dbPath: string) {
     recoveredCommand?: LegacyFullCommand,
   ): boolean {
     if (pipelines.has(runId)) return false;
-
-    const run = shared.getRun(runId);
-    if (!run || run.project_id !== request.projectId) return false;
-    if (run.workflow_version !== WORKFLOW_VERSION) {
-      throw new Error(
-        `run ${runId} workflow version ${run.workflow_version} is incompatible with engine ${WORKFLOW_VERSION}`,
-      );
-    }
+    // Callers have already checked the stored run (checkStoredRun): it exists, belongs
+    // to this project and matches WORKFLOW_VERSION. Nothing awaits in between.
 
     const leaseToken = randomUUID();
     if (!shared.acquireRunLease(runId, ownerId, leaseToken, LEASE_TTL_SECONDS)) {
@@ -188,6 +182,35 @@ export function createEngineApp(dbPath: string) {
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body));
     };
+    // POST /runs and POST /runs/:id/resume answer a missing / incompatible run the same way.
+    const checkStoredRun = (runId: number, projectId: number): boolean => {
+      const row = shared.getRun(runId);
+      if (!row || row.project_id !== projectId) {
+        send(404, {
+          error: {
+            code: "RUN_NOT_FOUND",
+            message: `运行 ${runId} 不存在或不属于项目 ${projectId}`,
+            details: { run_id: runId, project_id: projectId },
+          },
+        });
+        return false;
+      }
+      if (row.workflow_version !== WORKFLOW_VERSION) {
+        send(409, {
+          error: {
+            code: "RUN_WORKFLOW_INCOMPATIBLE",
+            message: `运行 ${runId} 使用工作流版本 ${row.workflow_version}，当前引擎是版本 ${WORKFLOW_VERSION}，无法继续；请重新生成`,
+            details: {
+              run_id: runId,
+              workflow_version: row.workflow_version,
+              engine_workflow_version: WORKFLOW_VERSION,
+            },
+          },
+        });
+        return false;
+      }
+      return true;
+    };
     const conflict = (runId: number): void => {
       send(409, {
         error: {
@@ -260,10 +283,12 @@ export function createEngineApp(dbPath: string) {
         });
         return;
       }
-      if (targetCharacterIds?.length && targetShotIds?.length) {
-        send(400, { error: "target_character_ids and target_shot_ids cannot both be provided" });
+      // isExecutionCommand already rejects both target kinds at once (RUN_COMMAND_INVALID).
+      if (pipelines.has(runId)) {
+        conflict(runId);
         return;
       }
+      if (!checkStoredRun(runId, projectId)) return;
       const invalidTargets = invalidTargetIds(shared, projectId, targetCharacterIds, targetShotIds);
       if (invalidTargets.length) {
         send(400, { error: `target IDs not found in project ${projectId}: ${invalidTargets.join(", ")}` });
@@ -302,20 +327,7 @@ export function createEngineApp(dbPath: string) {
         send(400, { error: "project_id is required" });
         return;
       }
-      const row = shared.getRun(runId);
-      if (!row || row.project_id !== projectId) {
-        send(404, { error: "run not found" });
-        return;
-      }
-      if (row.workflow_version !== WORKFLOW_VERSION) {
-        send(409, {
-          error: {
-            code: "RUN_WORKFLOW_INCOMPATIBLE",
-            message: `Run workflow version ${row.workflow_version} is incompatible with engine ${WORKFLOW_VERSION}`,
-          },
-        });
-        return;
-      }
+      if (!checkStoredRun(runId, projectId)) return;
       const context = runContext(runId);
       if (typeof context !== "object" || context === null || Array.isArray(context)) {
         send(409, {

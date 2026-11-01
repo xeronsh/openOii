@@ -550,3 +550,30 @@ async def test_stale_cancelling_run_ends_cancelled_not_failed(async_client, test
 async def test_generation_state_project_not_found(async_client):
     res = await async_client.get("/api/v1/projects/999999/runs/current")
     assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("resume", [False, True])
+async def test_dispatch_to_engine_maps_missing_run_to_404(monkeypatch, resume):
+    from fastapi import HTTPException
+
+    async def _ensure(base_url, database_url, static_dir):
+        return None
+
+    async def _missing(base_url, **kwargs):
+        raise generation_routes.EngineRunNotFoundError("运行 1 不存在或不属于项目 1")
+
+    monkeypatch.setattr(generation_routes, "ensure_engine_running", _ensure)
+    monkeypatch.setattr(generation_routes, "engine_start_run", _missing)
+    monkeypatch.setattr(generation_routes, "engine_resume_run", _missing)
+
+    from app.config import Settings
+
+    settings = Settings(database_url="sqlite+aiosqlite:///:memory:")
+    with pytest.raises(HTTPException) as exc:
+        await generation_routes._dispatch_to_engine(
+            settings=settings, project_id=1, run_id=1, resume=resume
+        )
+    assert exc.value.status_code == 404
+    assert exc.value.detail["code"] == "RUN_NOT_FOUND"
+    assert exc.value.detail["message"] == "运行 1 不存在或不属于项目 1"

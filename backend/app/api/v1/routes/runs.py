@@ -43,6 +43,7 @@ from app.schemas.project import (
 from app.services.run_timing import build_run_timing
 from app.services.engine_client import (
     EngineConflictError,
+    EngineRunNotFoundError,
     EngineUnavailableError,
     engine_active_run_ids,
     engine_cancel_run,
@@ -165,6 +166,15 @@ async def _dispatch_to_engine(
     except EngineConflictError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
+            detail={
+                "code": exc.code,
+                "message": str(exc),
+                "details": {"run_id": run_id},
+            },
+        ) from exc
+    except EngineRunNotFoundError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
             detail={
                 "code": exc.code,
                 "message": str(exc),

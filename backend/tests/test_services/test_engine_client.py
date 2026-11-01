@@ -227,3 +227,23 @@ async def test_shutdown_stops_only_the_owned_engine(monkeypatch, tmp_path, waits
     assert ec._ENGINE_PROCESS is None and ec._ENGINE_LOG_HANDLE is None
     assert log.closed
     await ec.shutdown_engine()  # nothing owned: a no-op
+
+
+@pytest.mark.asyncio
+async def test_engine_run_not_found_is_a_404_not_an_outage(engine):
+    """引擎对 POST /runs 与 resume 的缺失 run 统一回 404 RUN_NOT_FOUND：不能当成引擎不可用重试。"""
+    body = {"error": {"code": "RUN_NOT_FOUND", "message": "运行 2 不存在或不属于项目 1"}}
+    engine.routes["POST /runs"] = (404, body)
+    engine.routes["POST /runs/2/resume"] = (404, body)
+    for call in (
+        ec.engine_start_run(engine.url, project_id=1, run_id=2),
+        ec.engine_resume_run(engine.url, project_id=1, run_id=2),
+    ):
+        with pytest.raises(ec.EngineRunNotFoundError) as missing:
+            await call
+        assert (missing.value.code, str(missing.value)) == ("RUN_NOT_FOUND", "运行 2 不存在或不属于项目 1")
+    # 未知路由的 404（例如旧引擎）仍然是引擎不可用
+    engine.routes["POST /runs"] = (404, {"error": "not found"})
+    with pytest.raises(ec.EngineUnavailableError) as other:
+        await ec.engine_start_run(engine.url, project_id=1, run_id=2)
+    assert not isinstance(other.value, ec.EngineRunNotFoundError)

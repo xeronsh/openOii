@@ -38,6 +38,18 @@ class EngineConflictError(RuntimeError):
         self.code = code
 
 
+class EngineRunNotFoundError(EngineUnavailableError):
+    """The engine has no such run for this project (404 RUN_NOT_FOUND).
+
+    Subclasses EngineUnavailableError so callers that only know about outages keep
+    their behaviour; the run routes map it to a 404 instead of a retryable 503.
+    """
+
+    def __init__(self, message: str, *, code: str = "RUN_NOT_FOUND") -> None:
+        super().__init__(message)
+        self.code = code
+
+
 def engine_db_path(database_url: str) -> str | None:
     """Extract the sqlite file path from the app DATABASE_URL (None otherwise)."""
     if not database_url.startswith("sqlite"):
@@ -235,20 +247,24 @@ async def engine_owner_gone(base_url: str, lease_owner: str | None) -> bool:
     return not _pid_alive(int(match.group(1)))
 
 
+def _engine_error_body(res: httpx.Response) -> dict[str, Any]:
+    try:
+        payload = res.json()
+    except ValueError:
+        return {}
+    error = payload.get("error") if isinstance(payload, dict) else None
+    return error if isinstance(error, dict) else {}
+
+
 def _raise_engine_response_error(action: str, res: httpx.Response) -> None:
+    error = _engine_error_body(res)
     if res.status_code == 409:
-        code = "RUN_ALREADY_ACTIVE"
-        message = f"engine {action} conflict"
-        try:
-            payload = res.json()
-            if isinstance(payload, dict):
-                error = payload.get("error")
-                if isinstance(error, dict):
-                    code = str(error.get("code") or code)
-                    message = str(error.get("message") or message)
-        except ValueError:
-            pass
-        raise EngineConflictError(message, code=code)
+        raise EngineConflictError(
+            str(error.get("message") or f"engine {action} conflict"),
+            code=str(error.get("code") or "RUN_ALREADY_ACTIVE"),
+        )
+    if res.status_code == 404 and error.get("code") == "RUN_NOT_FOUND":
+        raise EngineRunNotFoundError(str(error.get("message") or f"engine {action}: run not found"))
     raise EngineUnavailableError(f"engine {action} failed: {res.status_code} {res.text[:200]}")
 
 

@@ -166,6 +166,11 @@ describe("engine sidecar server", () => {
       [{ ...base, stage: "render_shots", target_character_ids: [characterId], force_regenerate: true }, 400, "RUN_COMMAND_INVALID"],
       [{ ...base, stage: "render_shots", target_shot_ids: [shotIds[0], shotIds[0]], force_regenerate: true }, 400, "RUN_COMMAND_INVALID"],
       [{ ...base, stage: "teleport" }, 400, "RUN_COMMAND_INVALID"],
+      [
+        { ...base, stage: "render_shots", target_character_ids: [characterId], target_shot_ids: [shotIds[0]], force_regenerate: true },
+        400,
+        "RUN_COMMAND_INVALID",
+      ],
       [{ ...base, stage: "full", auto_mode: "yes" }, 400, "RUN_COMMAND_INVALID"],
       [
         { ...base, stage: "render_shots", target_shot_ids: [other.shotIds[0]], force_regenerate: true },
@@ -208,11 +213,31 @@ describe("engine sidecar server", () => {
     expect(JSON.parse(events[0]!.payload)).toMatchObject({ run_id: runId, run_ids: [runId] });
   });
 
-  it("fails a run whose workflow version the engine cannot execute", async () => {
+  it("refuses a run whose workflow version the engine cannot execute with a readable 409", async () => {
     const { projectId, runId } = seed({ workflowVersion: 1 });
     const res = await post("/runs", { project_id: projectId, run_id: runId, ...fullCommand });
-    expect(res.status).toBe(500);
-    expect(res.body.error).toContain("workflow version 1 is incompatible");
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("RUN_WORKFLOW_INCOMPATIBLE");
+    expect(res.body.error.message).toContain("工作流版本 1");
+    expect(res.body.error.details).toEqual({ run_id: runId, workflow_version: 1, engine_workflow_version: WORKFLOW_VERSION });
+    expect(calls).toHaveLength(0);
+    expect(run(runId).lease_owner).toBeNull();
+  });
+
+  it("answers a missing or foreign run with the same 404 as resume", async () => {
+    const { projectId, runId } = seed();
+    for (const body of [
+      { project_id: projectId, run_id: runId + 999, ...fullCommand },
+      { project_id: projectId + 1, run_id: runId, ...fullCommand },
+    ]) {
+      const start = await post("/runs", body);
+      const resume = await post(`/runs/${body.run_id}/resume`, { project_id: body.project_id });
+      expect(start.status, JSON.stringify(body)).toBe(404);
+      expect(start.body).toEqual(resume.body);
+      expect(start.body.error.code).toBe("RUN_NOT_FOUND");
+      expect(start.body.error.message).toContain("不存在");
+    }
+    expect(calls).toHaveLength(0);
     expect(run(runId).lease_owner).toBeNull();
   });
 
@@ -295,6 +320,9 @@ describe("engine sidecar server", () => {
       const res = await post(`/runs/${old.runId}/resume`, { project_id: old.projectId });
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe("RUN_WORKFLOW_INCOMPATIBLE");
+      // same body as POST /runs for the same run
+      const start = await post("/runs", { project_id: old.projectId, run_id: old.runId, ...fullCommand });
+      expect(start.body).toEqual(res.body);
     });
 
     it("resumes with the persisted execution command", async () => {

@@ -123,7 +123,8 @@ export function useRunController(args: {
 			if (variables?.requestToken !== requestTokenRef.current) return;
 			autoStartTriggered.current = false;
 			const apiError = error instanceof ApiError ? error : null;
-			const isConflict = apiError?.status === 409;
+			// 版本不兼容也是 409，但不是「正忙」：直接说明原因
+			const isConflict = apiError?.status === 409 && apiError.code !== "RUN_WORKFLOW_INCOMPATIBLE";
 
 			if (isConflict) {
 				const control = apiError && isRecoveryControlRead(apiError.response)
@@ -206,7 +207,8 @@ export function useRunController(args: {
 		},
 		onError: (error: Error | ApiError) => {
 			const apiError = error instanceof ApiError ? error : null;
-			const isConflict = apiError?.status === 409;
+			// 版本不兼容也是 409，但不是「正忙」：直接说明原因
+			const isConflict = apiError?.status === 409 && apiError.code !== "RUN_WORKFLOW_INCOMPATIBLE";
 			if (isConflict) {
 				const control = apiError && isRecoveryControlRead(apiError.response)
 					? apiError.response

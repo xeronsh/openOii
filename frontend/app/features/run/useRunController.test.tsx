@@ -143,6 +143,32 @@ describe("useRunController · start", () => {
 		expect(readRunState(PID).startingRun).toBe(false);
 	});
 
+	it("explains an incompatible workflow version instead of asking to wait", async () => {
+		const incompatible = () =>
+			new ApiError({
+				code: "RUN_WORKFLOW_INCOMPATIBLE",
+				message: "运行 40 使用工作流版本 1，当前引擎是版本 2，无法继续；请重新生成",
+				status: 409,
+			});
+		api.projectsApi.startRun.mockRejectedValueOnce(incompatible());
+		const { result } = setup();
+		act(() => result.current.handleGenerate());
+		await waitFor(() =>
+			expect(toast.error).toHaveBeenCalledWith(
+				expect.objectContaining({ title: "生成失败", message: expect.stringContaining("工作流版本 1") }),
+			),
+		);
+		expect(toast.warning).not.toHaveBeenCalled();
+		api.projectsApi.feedback.mockRejectedValueOnce(incompatible());
+		await act(async () => {
+			await result.current.handleFeedback("更暗");
+		});
+		expect(toast.error).toHaveBeenLastCalledWith(
+			expect.objectContaining({ title: "提交失败", message: expect.stringContaining("请重新生成") }),
+		);
+		expect(toast.info).not.toHaveBeenCalledWith(expect.objectContaining({ title: "AI 正在思考" }));
+	});
+
 	it("ignores a start response that arrives after the user cancelled", async () => {
 		let resolveStart!: (value: unknown) => void;
 		api.projectsApi.startRun.mockReturnValue(new Promise((r) => (resolveStart = r)));
