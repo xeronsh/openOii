@@ -7,7 +7,9 @@
 - 固定创作流程由 **Workflow Runtime** 决定：`engine/` 的阶段机、审批门、
   重试/恢复、失效计划、lease/fencing、durable events。
 - 只有**需要模型自主规划、工具选择和循环执行的局部能力**才进入 **Agent Runtime**。
-  17 阶段流水线本质是 workflow，不应该被强行 agent 化。
+  17 阶段流水线本质是 workflow，不应该被强行 agent 化。目前唯一的 Agent Runtime
+  用例是项目对话助手（`engine/src/agent/`，pi-agent-core，ADR 0011）：工具只调用
+  backend 的产品 API，写操作要用户确认，审批门只能由人操作；workflow 阶段不得调用它。
 - FastAPI 的定位只有两个：**Product Backend** 与 **engine 的 northbound
   gateway**。它负责鉴权、校验、持久化 ownership、HTTP/WSS 契约、把请求
   转发给 engine、把 engine 事件翻译成客户端契约；**不负责决定「下一步做什么」**。

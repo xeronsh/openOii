@@ -105,7 +105,7 @@ export interface LlmStreamUpdate {
 let fauxRegistration: FauxProviderRegistration | null = null;
 export const DEFAULT_FAKE_STREAM_MS = 30;
 
-function fakeStreamMs(): number {
+export function fakeStreamMs(): number {
   const raw = Number(process.env.OPENOII_FAKE_STREAM_MS ?? DEFAULT_FAKE_STREAM_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 0;
 }
@@ -305,6 +305,25 @@ export class TextLlmService {
       model: this.db.configValue("TEXT_MODEL", "TEXT_MODEL", "deepseek-chat"),
       reasoning: this.reasoningEffort(),
       endpoint: this.db.configValue("TEXT_ENDPOINT", "TEXT_ENDPOINT") ?? undefined,
+    };
+  }
+
+  /**
+   * The configured text model for the chat agent (never pinned to a run).
+   * `model` is null for the fake provider; the chat agent scripts that itself.
+   */
+  agentModel(): { model: Model<Api> | null; apiKey?: string; reasoning?: ThinkingLevel } {
+    const resolved = this.resolveProvider();
+    if (resolved.key === "fake") return { model: null };
+    if (!resolved.baseUrl) throw new Error(`provider ${resolved.key} needs a base URL`);
+    const baseUrl =
+      resolved.key === "openai"
+        ? openAiCompatibleBaseUrl(resolved.baseUrl, resolved.endpoint)
+        : resolved.baseUrl;
+    return {
+      model: this.buildModel(resolved.key, resolved.model, baseUrl, resolved.reasoning),
+      apiKey: resolved.apiKey,
+      reasoning: resolved.reasoning,
     };
   }
 

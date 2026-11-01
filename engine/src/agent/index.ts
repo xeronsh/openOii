@@ -1,174 +1,131 @@
 /**
- * Agent Runtime seam.
+ * Chat agent (ADR 0011): one long-lived pi-agent-core `Agent` per project.
  *
- * ADR 0008 divides the two kinds of work this repository does:
- *
- * - **Workflow Runtime** (`src/pipeline/`) owns the fixed 15-stage creation
- *   pipeline. It is a state machine, and a state machine is not an agent.
- * - **Agent Runtime** (this module) is for work that genuinely needs a model to
- *   choose its tools and iterate: model → tool calls → results → model.
- *
- * This module is a SEAM, not a product feature. It is deliberately not wired
- * into `pipeline/runner.ts`: there is no agentic use case yet, and building a
- * tool system nothing calls would be speculative. What it does provide is the
- * boundary the engine needs so that adding such a use case is a wiring change
- * instead of an architecture change:
- *
- * - a loop that is bounded (step budget) and cancellable (AbortSignal),
- * - tools that declare their schema and are validated before invocation,
- * - one operation identity per run (`ai-operation.ts`), so an agent's provider
- *   calls are observable and cancellable exactly like pipeline calls.
- *
- * A workflow stage must never call `runAgentLoop()`; if it needs a model it
- * calls the LLM directly. Conversely, the agent loop must never encode business
- * stages — those belong in the workflow.
+ * The 15-stage workflow (`src/pipeline/`) stays a deterministic state machine;
+ * this module only lets the user talk to the project. The model picks a tool,
+ * the tool calls the backend product API, the result goes back to the model.
+ * A workflow stage never calls into this module.
  */
-import { AiOperationError, assertOperationInFlight, type AiOperation } from "../ai-operation.js";
+import { Agent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
+import { registerFauxProvider, streamSimple, type Api, type Model } from "@earendil-works/pi-ai/compat";
+import type { EngineDatabase } from "../db.js";
+import { fakeStreamMs, type TextLlmService } from "../llm.js";
+import { fakeChatReply } from "./fake.js";
+import { readTools, type BackendFetch } from "./tools.js";
 
-export interface AgentToolCall {
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
-}
+export const SYSTEM_PROMPT = `你是 openOii 漫剧工作台里的创作助手，用简洁的中文回答。
+openOii 用一条固定的分阶段工作流做漫剧：大纲 → 角色 → 分镜 → 角色图 → 分镜画面 → 视频片段 → 成片，
+每个规划和画面阶段之后都有一个审批门，必须由用户本人在界面上点「通过」。
+你只能通过工具了解项目，回答前先用工具读取最新状态，不要编造 id 或进度。
+你永远不能替用户通过审批门；用户让你批准时，请他在审批区自己确认。`;
 
-export interface AgentToolResult {
-  callId: string;
-  name: string;
-  ok: boolean;
-  /** Serialised output handed back to the model. */
-  content: string;
-}
+/** Messages the model sees per turn; older ones stay in the saved history. */
+export const CONTEXT_MESSAGES = 40;
+/** Model turns per user message, so a looping model cannot spend tokens forever. */
+export const MAX_TURNS = 8;
 
-/**
- * A tool the agent may choose. `parameters` is a JSON Schema object so the tool
- * definition can be handed to a provider verbatim and validated locally.
- */
-export interface AgentTool {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-  execute: (args: Record<string, unknown>, operation: AiOperation) => Promise<string>;
-}
-
-/** One model turn: either final text, or the tool calls to perform next. */
-export interface AgentStep {
-  text: string | null;
-  toolCalls: AgentToolCall[];
-}
-
-/**
- * The model port. The loop owns control flow; the provider owns nothing but
- * turning a transcript into a step.
- */
-export type AgentModelCall = (input: {
-  system: string;
-  messages: AgentMessage[];
-  tools: AgentTool[];
-  operation: AiOperation;
-}) => Promise<AgentStep>;
-
-export interface AgentMessage {
-  role: "user" | "assistant" | "tool";
-  content: string;
-  toolCallId?: string;
-  toolCalls?: AgentToolCall[];
-}
-
-export interface AgentLoopOptions {
-  system: string;
-  task: string;
-  tools: AgentTool[];
-  model: AgentModelCall;
-  operation: AiOperation;
-  /** Hard ceiling on model turns. A loop without one is an outage waiting. */
-  maxSteps: number;
-  /** Optional observer, used for tracing without the loop knowing the sink. */
-  onStep?: (step: number, message: AgentMessage) => void;
-}
-
-export interface AgentLoopResult {
-  output: string;
-  steps: number;
-  toolCalls: AgentToolResult[];
-}
-
-export class AgentStepBudgetExceededError extends AiOperationError {
-  constructor(operationId: string, maxSteps: number) {
-    super(
-      "timeout",
-      operationId,
-      `agent loop exceeded its step budget of ${maxSteps} turns`,
-    );
-    this.name = "AgentStepBudgetExceededError";
+export class ChatBusyError extends Error {
+  constructor(readonly projectId: number) {
+    super(`project ${projectId} chat is already answering`);
   }
 }
 
-export class AgentToolNotFoundError extends AiOperationError {
-  constructor(operationId: string, toolName: string) {
-    super("invalid_response", operationId, `model requested unknown tool ${toolName}`);
-    this.name = "AgentToolNotFoundError";
-  }
+export interface ChatAgentDeps {
+  db: EngineDatabase;
+  llm: TextLlmService;
+  api: BackendFetch;
+  /** Tests inject a scripted model; otherwise the configured text model is used. */
+  streamFn?: StreamFn;
+  tools?: (projectId: number, api: BackendFetch) => AgentTool[];
 }
 
-/**
- * Run a bounded, cancellable agent loop.
- *
- * Every iteration re-checks the operation (deadline + cancellation), so a run
- * stopped mid-plan stops before the next provider call rather than after.
- */
-export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoopResult> {
-  const byName = new Map(options.tools.map((tool) => [tool.name, tool]));
-  const messages: AgentMessage[] = [{ role: "user", content: options.task }];
-  const toolCalls: AgentToolResult[] = [];
+let fakeChat: ReturnType<typeof registerFauxProvider> | null = null;
 
-  for (let step = 1; step <= options.maxSteps; step += 1) {
-    assertOperationInFlight(options.operation);
+/** Fake text provider: a scripted, context-driven reply streamed through pi-ai's faux provider. */
+const fakeStream: StreamFn = (model, context, options) => {
+  fakeChat!.appendResponses([(ctx) => fakeChatReply(ctx)]);
+  return streamSimple(model, context, options);
+};
 
-    const turn = await options.model({
-      system: options.system,
-      messages,
-      tools: options.tools,
-      operation: options.operation,
+function fakeChatModel(): Model<Api> {
+  if (!fakeChat) {
+    const ms = fakeStreamMs();
+    fakeChat = registerFauxProvider({
+      provider: "fake-chat",
+      models: [{ id: "fake-chat", name: "Fake chat" }],
+      tokenSize: { min: 1, max: 3 },
+      tokensPerSecond: ms > 0 ? 2000 / ms : undefined,
     });
+  }
+  return fakeChat.getModel() as unknown as Model<Api>;
+}
 
-    if (turn.toolCalls.length === 0) {
-      return { output: turn.text ?? "", steps: step, toolCalls };
-    }
+/** Keep the newest messages, starting at a user turn so no tool result is orphaned. */
+export function recentContext(messages: AgentMessage[], limit = CONTEXT_MESSAGES): AgentMessage[] {
+  if (messages.length <= limit) return messages;
+  const tail = messages.slice(-limit);
+  const start = tail.findIndex((message) => message.role === "user");
+  return start < 0 ? tail : tail.slice(start);
+}
 
-    messages.push({ role: "assistant", content: turn.text ?? "", toolCalls: turn.toolCalls });
-    for (const call of turn.toolCalls) {
-      const tool = byName.get(call.name);
-      if (!tool) throw new AgentToolNotFoundError(options.operation.operationId, call.name);
-      assertOperationInFlight(options.operation);
+export class ChatAgents {
+  private readonly sessions = new Map<number, Agent>();
+  private readonly turns = new Map<number, number>();
 
-      let result: AgentToolResult;
-      try {
-        result = {
-          callId: call.id,
-          name: call.name,
-          ok: true,
-          content: await tool.execute(call.arguments, options.operation),
-        };
-      } catch (error) {
-        // A failing tool is reported to the model, not fatal to the loop: the
-        // model can recover, and hiding the error would make it hallucinate.
-        result = {
-          callId: call.id,
-          name: call.name,
-          ok: false,
-          content: error instanceof Error ? error.message : String(error),
-        };
-      }
-      toolCalls.push(result);
-      const message: AgentMessage = {
-        role: "tool",
-        toolCallId: call.id,
-        content: result.content,
-      };
-      messages.push(message);
-      options.onStep?.(step, message);
-    }
+  constructor(private readonly deps: ChatAgentDeps) {}
+
+  history(projectId: number): AgentMessage[] {
+    return this.deps.db.chatMessages(projectId) as AgentMessage[];
   }
 
-  throw new AgentStepBudgetExceededError(options.operation.operationId, options.maxSteps);
+  busy(projectId: number): boolean {
+    return this.sessions.get(projectId)?.state.isStreaming ?? false;
+  }
+
+  /** Start answering `text`; resolves when the turn has started, not when it ends. */
+  send(projectId: number, text: string): { done: Promise<void> } {
+    if (this.busy(projectId)) throw new ChatBusyError(projectId);
+    const agent = this.session(projectId);
+    // Settings may change between messages, so the model is resolved per message.
+    const resolved = this.deps.llm.agentModel();
+    agent.state.model = resolved.model ?? fakeChatModel();
+    agent.streamFunction = this.deps.streamFn ?? (resolved.model ? streamSimple : fakeStream);
+    agent.getApiKey = () => resolved.apiKey;
+    agent.state.thinkingLevel = resolved.reasoning ?? "off";
+    this.turns.set(projectId, 0);
+    return { done: agent.prompt(text) };
+  }
+
+  abort(projectId: number): boolean {
+    const agent = this.sessions.get(projectId);
+    if (!agent?.state.isStreaming) return false;
+    agent.abort();
+    return true;
+  }
+
+  private session(projectId: number): Agent {
+    const existing = this.sessions.get(projectId);
+    if (existing) return existing;
+    const agent = new Agent({
+      initialState: {
+        systemPrompt: SYSTEM_PROMPT,
+        tools: (this.deps.tools ?? readTools)(projectId, this.deps.api),
+        messages: this.history(projectId),
+      },
+      streamFn: streamSimple,
+      transformContext: async (messages) => recentContext(messages),
+      finishTurn: () => {
+        const turns = (this.turns.get(projectId) ?? 0) + 1;
+        this.turns.set(projectId, turns);
+        return turns >= MAX_TURNS ? { action: "end" } : undefined;
+      },
+      toolExecution: "sequential",
+      sessionId: `project-${projectId}`,
+    });
+    agent.subscribe((event) => {
+      if (event.type === "message_end") this.deps.db.appendChatMessage(projectId, event.message);
+    });
+    this.sessions.set(projectId, agent);
+    return agent;
+  }
 }

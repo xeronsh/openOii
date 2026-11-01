@@ -55,6 +55,7 @@ const REQUIRED_RUNTIME_TABLES = [
   "engine_run_events",
   "engine_checkpoints",
   "engine_stage_attempts",
+  "chat_message",
 ] as const;
 
 export class EngineDatabase {
@@ -107,6 +108,20 @@ export class EngineDatabase {
       )
       .run(runId, projectId, type, JSON.stringify(payload));
     return Number(info.lastInsertRowid);
+  }
+
+  /** The project's saved chat (pi-agent-core messages, oldest first). */
+  chatMessages(projectId: number): unknown[] {
+    const rows = this.db
+      .prepare("SELECT message FROM chat_message WHERE project_id = ? ORDER BY id")
+      .all(projectId) as Array<{ message: string }>;
+    return rows.map((row) => JSON.parse(row.message) as unknown);
+  }
+
+  appendChatMessage(projectId: number, message: unknown): void {
+    this.db
+      .prepare("INSERT INTO chat_message (project_id, message) VALUES (?, ?)")
+      .run(projectId, JSON.stringify(message));
   }
 
   /** `llm_stream` frames are snapshots: keep the newest, plus error frames. */

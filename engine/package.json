@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Deterministic workflow engine sidecar using pi-ai for model calls",
+  "description": "Deterministic workflow engine sidecar (pi-ai) plus the pi-agent-core chat agent",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -11,6 +11,7 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/context-async-hooks": "^2.11.0",

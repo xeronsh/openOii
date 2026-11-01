@@ -155,6 +155,8 @@ async def ensure_engine_running(base_url: str, database_url: str, static_dir: Pa
             env["ENGINE_STATIC_DIR"] = str(static_dir)
             env.setdefault("ENGINE_PYTHON", sys.executable)
             env["ENGINE_BACKEND_DIR"] = str(_BACKEND_DIR)
+            # The chat agent's tools call this backend's product API over loopback.
+            env.setdefault("OPENOII_BACKEND_URL", f"http://127.0.0.1:{os.environ.get('PORT', '18765')}")
             node = shutil.which("node")
             tsx_cli = _ENGINE_DIR / "node_modules" / "tsx" / "dist" / "cli.mjs"
             entry = _ENGINE_DIR / "src" / "index.ts"

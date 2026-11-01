@@ -14,6 +14,8 @@ import {
   type RerunIntent,
 } from "./invalidation.js";
 import { PRODUCTION_STAGE_SEQUENCE, WORKFLOW_VERSION } from "./contract.js";
+import { ChatAgents, ChatBusyError } from "./agent/index.js";
+import { backendFetch } from "./agent/tools.js";
 
 const LEASE_TTL_SECONDS = 120;
 const LEASE_HEARTBEAT_MS = 30_000;
@@ -41,6 +43,11 @@ export function createEngineApp(dbPath: string) {
   const shared = new SharedDb(db.db);
   const pipelines = new Map<number, PipelineRunner>();
   const ownerId = `engine-${process.pid}-${randomUUID()}`;
+  const chat = new ChatAgents({
+    db,
+    llm,
+    api: backendFetch(process.env.OPENOII_BACKEND_URL ?? "http://127.0.0.1:18765"),
+  });
 
   function runContext(runId: number): RunCreativeContext {
     const row = shared.getRun(runId);
@@ -432,6 +439,37 @@ export function createEngineApp(dbPath: string) {
       return;
     }
 
+    const chatMatch = /^\/chat\/(\d+)(\/abort)?$/.exec(url.pathname);
+    if (chatMatch) {
+      const projectId = Number(chatMatch[1]);
+      if (req.method === "GET" && !chatMatch[2]) {
+        send(200, { messages: chat.history(projectId), busy: chat.busy(projectId) });
+        return;
+      }
+      if (req.method === "POST" && chatMatch[2]) {
+        send(200, { aborted: chat.abort(projectId) });
+        return;
+      }
+      if (req.method === "POST") {
+        const content = (await readJson(req)).content;
+        if (typeof content !== "string" || !content.trim()) {
+          send(422, { error: { code: "CHAT_CONTENT_REQUIRED", message: "消息不能为空" } });
+          return;
+        }
+        try {
+          chat.send(projectId, content.trim()).done.catch((err: unknown) => {
+            console.error(`chat turn failed for project ${projectId}:`, err);
+          });
+        } catch (err) {
+          if (!(err instanceof ChatBusyError)) throw err;
+          send(409, { error: { code: "CHAT_BUSY", message: "助手还在回答上一条消息" } });
+          return;
+        }
+        send(202, { accepted: true });
+        return;
+      }
+    }
+
     send(404, { error: "not found" });
   }
 
@@ -447,7 +485,7 @@ export function createEngineApp(dbPath: string) {
     });
   });
 
-  return { server, db, llm, shared, pipelines, ownerId };
+  return { server, db, llm, shared, pipelines, ownerId, chat };
 }
 
 function legacyFullCommand(

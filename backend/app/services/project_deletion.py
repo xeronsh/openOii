@@ -9,6 +9,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 
 from app.models.agent_run import AgentMessage, AgentRun
 from app.models.artifact_version import ArtifactVersion
+from app.models.chat_message import ChatMessage
 from app.models.consistency_report import ConsistencyReport
 from app.models.message import Message
 from app.models.project import Character, Project, Shot, ShotCharacterBinding
@@ -38,6 +39,9 @@ async def delete_project_data(session: AsyncSession, project_id: int) -> None:
         .where(shared_character_project_id_col == project_id)
         .values(source_project_id=None)
     )
+
+    chat_project_id_col = cast(InstrumentedAttribute[int], cast(object, ChatMessage.project_id))
+    await session.execute(delete(ChatMessage).where(chat_project_id_col == project_id))
 
     message_project_id_col = cast(InstrumentedAttribute[int], cast(object, Message.project_id))
     await session.execute(delete(Message).where(message_project_id_col == project_id))

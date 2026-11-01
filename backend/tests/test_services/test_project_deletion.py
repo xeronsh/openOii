@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.models.artifact_version import ArtifactVersion
+from app.models.chat_message import ChatMessage
 from app.models.agent_run import AgentMessage, AgentRun
 from app.models.consistency_report import ConsistencyReport
 from app.models.message import Message
@@ -55,6 +56,7 @@ async def test_delete_project_by_id_removes_related_rows(test_session):
     test_session.add(
         ConsistencyReport(project_id=project.id, run_id=run.id, report_data={"ok": True})
     )
+    test_session.add(ChatMessage(project_id=project.id, message='{"role":"user"}'))
 
 
     universe = Universe(name="Test Universe")
@@ -78,6 +80,7 @@ async def test_delete_project_by_id_removes_related_rows(test_session):
     assert (await test_session.execute(select(Message))).scalars().all() == []
     assert (await test_session.execute(select(AgentMessage))).scalars().all() == []
     assert (await test_session.execute(select(AgentRun))).scalars().all() == []
+    assert (await test_session.execute(select(ChatMessage))).scalars().all() == []
     assert (await test_session.execute(select(ShotCharacterBinding))).scalars().all() == []
     assert (await test_session.execute(select(ArtifactVersion))).scalars().all() == []
     assert (await test_session.execute(select(ConsistencyReport))).scalars().all() == []

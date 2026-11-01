@@ -70,6 +70,16 @@ export function installEngineRuntimeSchema(db: SqliteDatabase.Database): void {
     );
     CREATE INDEX IF NOT EXISTS ix_media_object_namespace_created_at
       ON media_object (namespace, created_at);
+
+    -- Migration 0033: chat agent conversation.
+    CREATE TABLE IF NOT EXISTS chat_message (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS ix_chat_message_project
+      ON chat_message (project_id, id);
   `);
 }
 

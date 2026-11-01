@@ -1,4 +1,5 @@
 from app.models.agent_run import AgentMessage, AgentRun
+from app.models.chat_message import ChatMessage
 from app.models.config_item import ConfigItem
 from app.models.export_cache import ExportCache
 from app.models.consistency_report import ConsistencyReport
@@ -11,6 +12,7 @@ __all__ = [
     "AgentMessage",
     "AgentRun",
     "Character",
+    "ChatMessage",
     "ConfigItem",
     "ExportCache",
     "ConsistencyReport",
