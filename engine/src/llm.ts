@@ -3,6 +3,7 @@ import {
   fauxAssistantMessage,
   fauxText,
   fauxThinking,
+  getCurrentSystemPrompt,
   getModels,
   registerFauxProvider,
   stream,
@@ -12,7 +13,7 @@ import {
   type Model,
   type TextContent,
   type ThinkingLevel,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai/compat";
 import type { EngineDatabase } from "./db.js";
 import { FAKE_STREAM_ERROR_TOKEN, fakeRespond, fakeThinking } from "./fake-stream.js";
 import {
@@ -126,8 +127,9 @@ function fakeModel(system: string, prompt: string): Model<Api> {
   // context it is handed; concurrent fake calls cannot swap answers.
   fauxRegistration.appendResponses([
     (context) => {
-      const sys = context.systemPrompt ?? "";
-      const first = context.messages[0];
+      // pi-ai 1.x carries the system prompt as a leading system message.
+      const sys = getCurrentSystemPrompt(context.messages);
+      const first = context.messages.find((message) => message.role !== "system");
       const input =
         first?.role === "user"
           ? typeof first.content === "string"

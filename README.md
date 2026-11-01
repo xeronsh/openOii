@@ -206,7 +206,7 @@ docs/       架构决策、服务商说明（providers.md）等文档
 
 - 前端：React 18、TypeScript、React Flow、TanStack Query、Zustand、Tailwind CSS
 - 后端：FastAPI、SQLModel、Alembic
-- 引擎：Node.js + TypeScript，模型调用用 [pi-ai](https://github.com/badlogic/pi-mono/tree/main/packages/ai)（`@mariozechner/pi-ai` 0.73）
+- 引擎：Node.js + TypeScript，模型调用用 [pi-ai](https://github.com/badlogic/pi-mono/tree/main/packages/ai)（`@earendil-works/pi-ai` 1.4）
 - 存储：单文件 SQLite（WAL）+ `/static` 媒体目录
 
 ## 🙏 致谢

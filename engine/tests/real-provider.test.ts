@@ -312,7 +312,7 @@ describe("shot critic asks for its story checks (#147)", () => {
 describe("OpenAI-compatible text endpoint", () => {
   let dir: string;
   let server: Server;
-  let seen: Array<{ path: string; body: Record<string, unknown> }>;
+  let seen: Array<{ path: string; body: Record<string, unknown>; auth?: string }>;
   let base: string;
 
   beforeEach(async () => {
@@ -320,7 +320,7 @@ describe("OpenAI-compatible text endpoint", () => {
     seen = [];
     server = createServer(async (req, res) => {
       const body = JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>;
-      seen.push({ path: req.url ?? "", body });
+      seen.push({ path: req.url ?? "", body, auth: req.headers.authorization });
       if (req.url !== "/api/v3/chat/completions") {
         res.writeHead(404).end();
         return;
@@ -368,6 +368,30 @@ describe("OpenAI-compatible text endpoint", () => {
       { type: "text", text: "review" },
       { type: "image_url", image_url: { url: `data:image/png;base64,${PNG.toString("base64")}` } },
     ]);
+    edb.close();
+  });
+
+  it("keeps the chat-completions request shape across the pi-ai upgrade", async () => {
+    // P1 upgrade guard: system prompt, key, output budget and
+    // streaming must reach an OpenAI-compatible server exactly as before.
+    const edb = newDb(dir);
+    setConfig(edb, {
+      TEXT_PROVIDER: "openai",
+      TEXT_BASE_URL: base,
+      TEXT_ENDPOINT: "/api/v3/chat/completions",
+      TEXT_MODEL: "custom-text",
+      TEXT_API_KEY: "test-key",
+    });
+    const res = await new TextLlmService(edb).generate({ system: "sys-prompt", prompt: "hello", maxTokens: 321 });
+    expect(JSON.parse(res.text)).toEqual({ score: 7 });
+    const call = seen[0]!;
+    expect(call.auth).toBe("Bearer test-key");
+    expect(call.body.stream).toBe(true);
+    expect(call.body.model).toBe("custom-text");
+    expect(call.body.max_tokens).toBe(321);
+    const messages = call.body.messages as Array<{ role: string; content: unknown }>;
+    expect(messages[0]).toMatchObject({ role: "system", content: "sys-prompt" });
+    expect(messages.find((m) => m.role === "user")?.content).toBe("hello");
     edb.close();
   });
 

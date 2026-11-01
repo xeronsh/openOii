@@ -11,7 +11,7 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "^0.73.1",
+    "@earendil-works/pi-ai": "1.4.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/context-async-hooks": "^2.11.0",
     "better-sqlite3": "^13.0.3"
@@ -24,5 +24,8 @@
     "tsx": "^4.20.0",
     "typescript": "^5.8.0",
     "vitest": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
   }
 }
