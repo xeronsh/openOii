@@ -22,7 +22,7 @@ d21a660 曾删除 `@mariozechner/pi-agent-core`：当时它是一个 `tools: []`
    `@earendil-works/pi-ai` 同版本升级）。FastAPI 只做 gateway：鉴权、校验、持久化读取、转发、
    把 engine 事件翻译成 WS 契约。
 2. **工具只包装现有的确定性能力**：查询项目/run 状态、读非敏感设置、启动/恢复/取消 run、
-   定向重画、重新合成、编辑大纲/角色/镜头、导出。工具不复制阶段逻辑；WorkflowRunner 的
+   定向重画、重新合成、编辑大纲/角色/镜头（导出暂未做成工具，仍在界面里操作）。工具不复制阶段逻辑；WorkflowRunner 的
    15 个阶段和 6 个审批门仍是 run 状态唯一真相。
 3. **所有写操作都需要用户确认**：`beforeToolCall` 拦下每个写工具，生成确认卡片，用户确认后
    才执行；拒绝或超时则把结果作为工具错误交还模型。
@@ -51,3 +51,12 @@ d21a660 曾删除 `@mariozechner/pi-agent-core`：当时它是一个 `tools: []`
 - 助手与用户手动编辑可能并发修改同一资源，依赖现有 `revision` compare-and-set，冲突回报给模型。
 - pi 1.x 的 `stream`/`getModels` 旧接口位于 `@earendil-works/pi-ai/compat`，该入口被上游标为临时，
   后续需迁到 `createModels()`。
+
+## 实施记录
+
+- P1 #170：升级到 `@earendil-works/pi-ai` 1.4.0（Node ≥ 22.19）。
+- P2 #171：engine 内的 pi-agent-core 助手 + 只读工具，会话存 SQLite。
+- P3 #172：写工具、`beforeToolCall` 确认卡片、`/projects/{id}/chat` API。
+- P4 #173：工作台「助手」标签页：流式回复、停止、确认卡片；输入框的非审批消息发给助手。
+- P5：删除 `ReviewAgent`、`/runs/feedback`，以及已无调用方的 Python 图像/视频服务、文本/图像/视频工厂和 `FakeTextService`（fake 文本模型只在 engine 里）；
+  旧库中没有执行命令的反馈 run 不再作为可恢复运行出现。

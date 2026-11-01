@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from app.api.v1.routes.skills import SkillRead
 from app.schemas.project import (
-    FeedbackRequest,
-    GenerateRequest,
     ProjectCreate,
     ProjectRead,
     ProjectUpdate,
@@ -13,14 +11,6 @@ from app.schemas.project import (
 from app.schemas.universe import ImportSharedCastRead, UniverseTimelineRead
 from app.schemas.ws import DataClearedEventData, ProjectUpdatedPayload, WsEventType
 from app.skills.catalog import list_skills
-
-
-def test_generate_and_feedback_share_entity_focus_fields():
-    gen = set(GenerateRequest.model_fields)
-    fb = set(FeedbackRequest.model_fields)
-    for key in ("entity_type", "entity_id", "entity_ids"):
-        assert key in gen
-        assert key in fb
 
 
 def test_project_create_update_share_skill_id():

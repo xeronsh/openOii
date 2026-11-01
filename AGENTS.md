@@ -7,7 +7,7 @@
 - 固定创作流程由 **Workflow Runtime** 决定：`engine/` 的阶段机、审批门、
   重试/恢复、失效计划、lease/fencing、durable events。
 - 只有**需要模型自主规划、工具选择和循环执行的局部能力**才进入 **Agent Runtime**。
-  17 阶段流水线本质是 workflow，不应该被强行 agent 化。目前唯一的 Agent Runtime
+  15 阶段流水线本质是 workflow，不应该被强行 agent 化。目前唯一的 Agent Runtime
   用例是项目对话助手（`engine/src/agent/`，pi-agent-core，ADR 0011）：工具只调用
   backend 的产品 API，写操作要用户确认，审批门只能由人操作；workflow 阶段不得调用它。
 - FastAPI 的定位只有两个：**Product Backend** 与 **engine 的 northbound
@@ -34,8 +34,8 @@
   为准。Python 保留的实现仅作为被 Engine 调用的专用 helper 与 Product API。
 - Engine 通过 `engine_media_cli` 调用现有图像拼接、TTS/BGM 与 InsightFace helper；
   Engine 持有工作流时机和 SQLite 写入，不要在 TS 再实现一套 face model。
-- `backend/app/agents/review_rules.py` **不算违规**：它只把反馈分类成 rerun
-  起始阶段，不运行 agent loop。
+- Python 里已没有任何 agent：反馈分类用的 `ReviewAgent` 和 `/runs/feedback` 已随
+  ADR 0011 退役，backend 只剩产品 API、网关和被 engine 调用的媒体 helper。
 
 ### 部署形态约束
 
@@ -54,7 +54,7 @@ Node 20 上 segfault，exit 139 且无 stderr）。
 ## 先看这个
 - openOii 是“故事想法 → 漫剧成片”的长链路生成应用；改动生成、恢复、进度推送时，优先保 resumability 和现有执行流。
 - **架构边界见本文件顶部「架构约束（不可协商）」**（ADR 0008）：openOii Engine 是唯一 orchestration runtime，FastAPI 只做 Product Backend + northbound gateway。任何新增能力先问它该在哪一层。
-- 这是三包仓库，没有根级统一脚本：后端在 `backend/` 用 `uv`，前端在 `frontend/` 用 `pnpm`，生成引擎 sidecar 在 `engine/` 用 `pnpm`（TypeScript workflow runtime，模型调用用 `pi-ai`）。
+- 这是三包仓库，没有根级统一脚本：后端在 `backend/` 用 `uv`，前端在 `frontend/` 用 `pnpm`，生成引擎 sidecar 在 `engine/` 用 `pnpm`（TypeScript workflow runtime，模型调用用 `pi-ai`；项目对话助手用 `pi-agent-core`）。
 - 编排引擎只有 pi sidecar 一种：首次触发生成时由后端自动拉起（loopback 18766），共享同一个 SQLite 文件；本地开发零容器。`AGENT_ENGINE=langgraph` 回滚开关已移除（ADR 0004 → 见 `docs/adr/0005-remove-langgraph-postgres.md`）。
 - 数据库只有单文件 SQLite（`sqlite+aiosqlite:///./data/openoii.db`，WAL）——PostgreSQL / Redis 均已删除，不再有存储分支。
 - 当前 GitHub Actions 只有镜像构建/推送：`.github/workflows/docker-publish.yml`。本地要自己跑测试/构建，CI 不会替你兜底。
@@ -62,7 +62,8 @@ Node 20 上 segfault，exit 139 且无 stderr）。
 ## 关键入口
 - 后端 FastAPI 入口：`backend/app/main.py`。
 - API 聚合：`backend/app/api/v1/router.py`，默认前缀 `/api/v1`。
-- 生成链路 HTTP 入口：`backend/app/api/v1/routes/runs.py`。run 是一等资源：`POST /projects/{id}/runs` 创建、`GET /projects/{id}/runs/current` 水合、`POST /runs/{run_id}/resume|cancel` 按 run 寻址、`POST /projects/{id}/runs/feedback` 反馈。
+- 生成链路 HTTP 入口：`backend/app/api/v1/routes/runs.py`。run 是一等资源：`POST /projects/{id}/runs` 创建、`GET /projects/{id}/runs/current` 水合、`POST /runs/{run_id}/resume|cancel|confirm|gate-feedback` 按 run 寻址（审批门只由人操作）。
+- 项目对话助手：`backend/app/api/v1/routes/chat.py`（`/projects/{id}/chat`、`/chat/abort`、`/chat/confirm`）只转发给 engine 的 `engine/src/agent/`。
 - 真正的编排/持久化逻辑在 `backend/app/orchestration.py` 与 pi sidecar（`engine/`）；API 层只负责建 run、下发/转发、回传控制面——**不得承载 agent loop**（见上「架构约束」）。
 - WebSocket 入口：`/ws/projects/{project_id}`。
 - 前端入口：`frontend/app/main.tsx`；路由在 `frontend/app/App.tsx`。
@@ -134,5 +135,5 @@ docker-compose down
 - `backend/Dockerfile` 会执行 `uv sync --frozen --no-dev --no-install-project`；InsightFace 依赖目前仍服务于手动 embedding 与一致性 API，迁移前不要删。
 
 ## 测试分布
-- 后端测试在 `backend/tests/`，重点是 `test_api/`、`test_orchestration/`、`test_services/`、`test_agents/`，另有 `test_migrations.py` 和 `integration/`。
+- 后端测试在 `backend/tests/`，重点是 `test_api/`、`test_orchestration/`、`test_services/`，另有 `test_migrations.py` 和 `integration/`。
 - 前端单测与组件同目录；E2E 在 `frontend/tests/e2e/`。

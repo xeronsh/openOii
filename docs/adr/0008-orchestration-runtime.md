@@ -65,6 +65,9 @@ outline → approve → characters → approve → shots → approve
 4. `agents/review_rules.py` **不算违规**:它只把反馈分类成 rerun 起始阶段,
    不跑 agent loop。
 
+> 修订(2026-11-01,ADR 0011):决策 3 的接缝已接线为项目对话助手(pi-agent-core);
+> 决策 4 的 `ReviewAgent` 与 `/runs/feedback` 已删除,backend 不再有任何 agent。
+
 ## 后果
 
 正:

@@ -5,7 +5,6 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel import select
 
 from app.api.deps import get_app_settings, get_db_session, get_ws_manager
-from app.agents.review_rules import ReviewAgent
 from app.api.v1.routes import runs as generation_routes
 from app.db.utils import utcnow
 from app.main import create_app
@@ -381,109 +380,6 @@ async def test_cancel_live_run_is_cancelling_until_executor_ack(async_client, te
 
 
 @pytest.mark.asyncio
-async def test_feedback_project_success(async_client, test_session, monkeypatch):
-    monkeypatch.setattr(
-        generation_routes,
-        "resolve_project_provider_settings_async",
-        lambda project, settings: _return_resolution(
-            project,
-            settings,
-            _provider_resolution_deterministic(),
-        ),
-    )
-
-    # ReviewAgent 的路由决策由 LLM 承担；此处只验路由契约，不调外部模型。
-    async def _fake_route(**_kwargs) -> tuple[str, dict[str, list[int]], bool]:
-        return "plan_characters", {"character_ids": [], "shot_ids": []}, False
-
-    monkeypatch.setattr(generation_routes, "_route_feedback_to_stage", _fake_route)
-
-    project = await create_project(test_session)
-    res = await async_client.post(
-        f"/api/v1/projects/{project.id}/runs/feedback",
-        json={"content": "Please adjust tone"},
-    )
-    assert res.status_code == 202
-    data = res.json()
-    run = await test_session.get(AgentRun, data["run_id"])
-    assert run is not None
-    assert run.status == "queued"
-    assert (
-        run.provider_snapshot
-        == _provider_resolution_deterministic()
-        .as_project_provider_settings()
-        .model_dump(mode="json")
-    )
-
-    from app.models.message import Message
-
-    res = await test_session.execute(select(Message).where(Message.run_id == run.id))
-    messages = res.scalars().all()
-    assert len(messages) == 1
-    assert messages[0].content == "Please adjust tone"
-
-
-@pytest.mark.asyncio
-async def test_feedback_project_returns_409_for_active_conflict(async_client, test_session):
-    project = await create_project(test_session)
-    await create_run(test_session, project_id=project.id, status="running")
-
-    res = await async_client.post(
-        f"/api/v1/projects/{project.id}/runs/feedback",
-        json={"content": "Please adjust tone"},
-    )
-
-    assert res.status_code == 409
-    body = res.json()
-    assert "run" in body or "state" in body or "kind" in body
-
-
-@pytest.mark.asyncio
-async def test_review_agent_routes_shot_feedback_to_render(test_session, test_settings):
-    import json
-
-    from tests.agent_fixtures import FakeLLM, make_context
-
-    project = await create_project(test_session)
-    run = await create_run(test_session, project_id=project.id)
-    llm = FakeLLM(
-        json.dumps(
-            {
-                "agent": "review",
-                "analysis": {
-                    "feedback_type": "shot",
-                    "summary": "重渲染镜头",
-                    "target_items": [],
-                    "suggested_changes": "重画",
-                },
-                "routing": {
-                    "start_agent": "render",
-                    "mode": "incremental",
-                    "reason": "shot image redo",
-                },
-                "target_ids": {"character_ids": [], "shot_ids": []},
-            },
-            ensure_ascii=False,
-        )
-    )
-    ctx = await make_context(
-        test_session,
-        test_settings,
-        project=project,
-        run=run,
-        llm=llm,
-    )
-    ctx.user_feedback = "请重新渲染这个镜头"
-    ctx.feedback_type = "shot"
-
-    routing = await ReviewAgent().run(ctx)
-
-    assert routing["start_agent"] == "render"
-    assert routing["mode"] == "incremental"
-    assert len(llm.calls) == 1
-
-
-@pytest.mark.asyncio
 async def test_resume_unknown_run_returns_404(async_client, test_session):
     """按 run id 寻址后，「run 属于别的项目」不再是一个概念：只有存在与否。"""
     res = await async_client.post("/api/v1/runs/424242/resume")
@@ -577,3 +473,36 @@ async def test_dispatch_to_engine_maps_missing_run_to_404(monkeypatch, resume):
     assert exc.value.status_code == 404
     assert exc.value.detail["code"] == "RUN_NOT_FOUND"
     assert exc.value.detail["message"] == "运行 1 不存在或不属于项目 1"
+
+
+@pytest.mark.asyncio
+async def test_retired_feedback_entry_is_gone(async_client, test_session):
+    """The chat assistant replaced POST /runs/feedback (ADR 0011)."""
+    project = await create_project(test_session)
+    res = await async_client.post(f"/api/v1/projects/{project.id}/runs/feedback", json={"content": "x"})
+    assert res.status_code in (404, 405)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["pending", "needs_target"])
+async def test_legacy_feedback_run_is_not_offered_for_resume(async_client, test_session, state):
+    project = await create_project(test_session)
+    run = await create_run(test_session, project_id=project.id, status="failed")
+    run.context_snapshot = {**(run.context_snapshot or {}), "pending_feedback": {"state": state, "content": "x"}}
+    test_session.add(run)
+    await test_session.commit()
+    res = await async_client.get(f"/api/v1/projects/{project.id}/runs/current")
+    assert res.status_code == 200
+    assert res.json() is None
+
+
+@pytest.mark.asyncio
+async def test_classified_legacy_feedback_run_stays_resumable(async_client, test_session):
+    project = await create_project(test_session)
+    run = await create_run(test_session, project_id=project.id, status="failed")
+    run.context_snapshot = {**(run.context_snapshot or {}), "pending_feedback": {"state": "classified"}}
+    test_session.add(run)
+    await test_session.commit()
+    res = await async_client.get(f"/api/v1/projects/{project.id}/runs/current")
+    assert res.status_code == 200
+    assert res.json()["active_run"]["id"] == run.id

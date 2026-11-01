@@ -106,9 +106,9 @@ async def probe_text_provider(settings: Settings) -> TextProviderCapability:
     elif probe_settings.text_provider == "openai":
         service = TextService(probe_settings, max_retries=TEXT_PROBE_MAX_RETRIES)
     elif probe_settings.text_provider == "fake":
-        from app.services.fake_text import FakeTextService
-
-        service = FakeTextService(probe_settings)  # type: ignore[assignment]
+        # The engine owns the fake text model; the backend only reports it as usable.
+        result = TextProviderCapability(status="valid", generate=True, stream=True)
+        return set_cached_provider_capability(cache_key, result, ttl_s=_text_probe_cache_ttl(result))
     else:
         result = TextProviderCapability(
             status="invalid",

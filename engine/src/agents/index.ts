@@ -858,7 +858,7 @@ export async function runRenderShots(ctx: StageContext): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Critic agent (critic.py + review_rules port)
+// Critic agent
 // ---------------------------------------------------------------------------
 
 export interface CritiqueOutcome {

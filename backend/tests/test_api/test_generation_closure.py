@@ -1,4 +1,4 @@
-"""Route-level contract for generation/resume/cancel/feedback.
+"""Route-level contract for generation/resume/cancel.
 
 编排已迁移到 pi engine sidecar：路由不再自己跑后台闭包，而是
 `_dispatch_to_engine` → loopback HTTP。测试用 stub 替换 `ensure_engine_running`
@@ -283,70 +283,7 @@ async def test_cancel_live_run_notifies_engine_and_waits_for_ack(closure_client)
     assert last_event["data"]["cancelled_count"] == 1
 
 # ---------------------------------------------------------------------------
-# feedback
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_feedback_returns_404_when_project_missing(closure_client):
-    client, _ctx, _engine = closure_client
-    res = await client.post("/api/v1/projects/99999/runs/runs/feedback", json={"content": "fix tone"})
-    assert res.status_code == 404
-
-@pytest.mark.asyncio
-async def test_feedback_routes_through_review_then_dispatches(closure_client, monkeypatch):
-    """反馈必须经 ReviewAgent 决定起点，再由引擎从该阶段起跑。"""
-    client, ctx, engine = closure_client
-
-    async def fake_route(**_kwargs) -> tuple[str, dict[str, list[int]], bool]:
-        return "render_characters", {"character_ids": [], "shot_ids": []}, False
-
-    monkeypatch.setattr(generation_routes, "_route_feedback_to_stage", fake_route)
-
-    async with ctx["session_maker"]() as session:
-        project = await create_project(session)
-
-    res = await client.post(f"/api/v1/projects/{project.id}/runs/feedback", json={"content": "fix tone"})
-    assert res.status_code == 202
-    body = res.json()
-    assert body["status"] == "accepted"
-
-    assert len(engine.start) == 1
-    assert engine.start[0]["stage"] == "render_characters"
-    assert engine.start[0]["user_feedback"] == "fix tone"
-    assert engine.start[0]["auto_mode"] is False
-
-    async with ctx["session_maker"]() as session:
-        run = await session.get(AgentRun, body["run_id"])
-        assert run is not None
-        assert run.status == "queued"
-
-@pytest.mark.asyncio
-async def test_feedback_returns_503_when_engine_unavailable(closure_client, monkeypatch):
-    client, ctx, engine = closure_client
-    engine.unavailable = True
-    monkeypatch.setattr(
-        generation_routes, "_route_feedback_to_stage", lambda **_kw: _async_return(("plan_characters", {"character_ids": [], "shot_ids": []}, False))
-    )
-
-    async with ctx["session_maker"]() as session:
-        project = await create_project(session)
-
-    res = await client.post(f"/api/v1/projects/{project.id}/runs/feedback", json={"content": "fix tone"})
-    assert res.status_code == 503
-
-@pytest.mark.asyncio
-async def test_feedback_returns_409_when_run_active(closure_client):
-    client, ctx, _engine = closure_client
-
-    async with ctx["session_maker"]() as session:
-        project = await create_project(session)
-        await create_run(session, project_id=project.id, status="running")
-
-    res = await client.post(f"/api/v1/projects/{project.id}/runs/feedback", json={"content": "fix tone"})
-    assert res.status_code == 409
-
-# ---------------------------------------------------------------------------
-# route-level helpers
+# helpers
 # ---------------------------------------------------------------------------
 
 def test_require_run_id_raises_when_missing():
@@ -358,8 +295,8 @@ def test_require_run_id_returns_id_when_present():
     run = AgentRun(id=42, project_id=1, status="queued")
     assert require_run_id(run) == 42
 
-def test_feedback_agent_to_stage_map_targets_real_stages():
-    from app.orchestration import PHASE2_STAGE_ORDER
+def test_agent_to_stage_map_targets_real_stages():
+    from app.orchestration import GRAPH_STAGE_FOR_AGENT, PHASE2_STAGE_ORDER
 
-    for agent, stage in generation_routes.GRAPH_STAGE_FOR_AGENT.items():
+    for agent, stage in GRAPH_STAGE_FOR_AGENT.items():
         assert stage in PHASE2_STAGE_ORDER, f"{agent} → {stage} 不在阶段表内"

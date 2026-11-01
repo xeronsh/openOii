@@ -5,9 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from app.config import Settings
 from app.services.provider_resolution import VIDEO_PROVIDER_KEYS
-from app.services.video_factory import EngineOnlyVideoService, create_video_service
 from app.services.video_vendor_probe import probe_video_vendor
 
 KEY = "vendor-secret-key-123"
@@ -127,11 +125,9 @@ async def test_missing_key_or_base_url():
     assert no_base.message == "缺少 Base URL"
 
 
-def test_vendor_keys_are_supported_and_engine_only():
+def test_vendor_keys_are_supported():
     for key in ("kling", "vidu", "zhipu", "minimax", "dashscope", "veo"):
         assert key in VIDEO_PROVIDER_KEYS
-        service = create_video_service(Settings(video_provider=key))
-        assert isinstance(service, EngineOnlyVideoService)
 
 
 @pytest.mark.asyncio

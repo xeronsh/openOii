@@ -11,7 +11,6 @@ from app.services.creative_control import (
     invalidate_shot_clip_output,
     invalidate_shot_storyboard_outputs,
     apply_character_rerun_edits,
-    infer_feedback_targets,
 )
 
 
@@ -20,23 +19,6 @@ def test_blocking_clip_reason_maps_known_states():
     assert _blocking_clip_reason("generating") == "当前分镜视频仍在生成中"
     assert _blocking_clip_reason("failed") == "当前分镜视频生成失败"
     assert _blocking_clip_reason("anything") == "当前分镜视频不可用于最终拼接"
-
-
-def test_infer_feedback_targets_returns_none_for_unmatched_items():
-    data = {"feedback": "无关内容"}
-    assert infer_feedback_targets(data, {"characters": [], "shots": []}) is None
-
-
-def test_infer_feedback_targets_from_free_text_feedback():
-    data = {"feedback": "把阿宁的发色改深一点，镜头 3 重画夜景"}
-    state = {
-        "characters": [{"id": 10, "name": "阿宁"}, {"id": 11, "name": "路人"}],
-        "shots": [{"id": 20, "order": 2}, {"id": 21, "order": 3}],
-    }
-    result = infer_feedback_targets(data, state)
-    assert result is not None
-    assert result.character_ids == [10]
-    assert result.shot_ids == [21]
 
 
 @pytest.mark.asyncio

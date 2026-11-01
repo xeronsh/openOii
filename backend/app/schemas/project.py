@@ -361,13 +361,6 @@ class RestoreVersionResponse(BaseModel):
     restored: bool
 
 
-class FeedbackAcceptedResponse(BaseModel):
-    """反馈已受理；run_id 是本次反馈触发的 run。"""
-
-    status: Literal["accepted"] = "accepted"
-    run_id: int
-
-
 class GenerateRequest(BaseModel):
     seed: int | None = None
     notes: str | None = None
@@ -473,17 +466,6 @@ class GateFeedbackAcceptedResponse(BaseModel):
     # Round number at this gate, counted from the persisted receipts.
     round: int | None = None
     status: Literal["accepted"] = "accepted"
-
-
-class FeedbackRequest(BaseModel):
-    content: str = Field(min_length=1)
-    run_id: int | None = None
-    feedback_type: str | None = None
-    entity_type: str | None = None
-    entity_id: int | None = None
-    """Primary selected entity (back-compat)."""
-    entity_ids: list[int] | None = None
-    """Multi-select 九宫格 / cast binding — all targeted entity ids."""
 
 
 class FillEmptyShotsRequest(BaseModel):
