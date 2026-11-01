@@ -10,11 +10,7 @@ import httpx
 
 from app.config import Settings
 from app.services.llm import LLMResponse
-from app.services.text_capabilities import (
-    TextProviderCapability,
-    build_provider_capability_cache_key,
-    get_cached_provider_capability,
-)
+from app.services.text_capabilities import TextProviderCapability
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +39,7 @@ class TextServiceServerError(TextServiceError):
 
 
 class TextService:
-    """文本生成服务（OpenAI 兼容接口，支持流式与非流式输出）"""
+    """Connectivity probe for an OpenAI-compatible text provider (generation itself runs in the engine)."""
 
     def __init__(self, settings: Settings, *, max_retries: int = 3):
         self.settings = settings
@@ -221,25 +217,6 @@ class TextService:
 
         self._raise_for_status(last_exc, last_status, last_body, context="Text generation stream")
 
-    def _extract_text_from_response(self, data: dict[str, Any]) -> str:
-        choices = data.get("choices", [])
-        if not isinstance(choices, list) or not choices:
-            raise RuntimeError(f"Text API response missing choices: {data}")
-
-        first = choices[0] if isinstance(choices[0], dict) else {}
-        if self._is_chat_endpoint():
-            message = first.get("message", {})
-            if isinstance(message, dict):
-                content = message.get("content")
-                if isinstance(content, str):
-                    return content
-            raise RuntimeError(f"Text chat response missing message.content: {data}")
-
-        text = first.get("text")
-        if isinstance(text, str):
-            return text
-        raise RuntimeError(f"Text completions response missing choices[0].text: {data}")
-
     def _extract_text_from_stream_chunk(self, chunk: dict[str, Any]) -> str:
         choices = chunk.get("choices", [])
         if not isinstance(choices, list) or not choices:
@@ -315,11 +292,6 @@ class TextService:
         payload["stream"] = stream
         return payload
 
-    async def _generate_from_payload(self, payload: dict[str, Any]) -> LLMResponse:
-        data = await self._post_json_with_retry(self._build_url(), payload)
-        text = self._extract_text_from_response(data)
-        return LLMResponse(text=text, tool_calls=[], raw=data)
-
     async def _stream_native_events(self, payload: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         full_text: list[str] = []
 
@@ -339,13 +311,6 @@ class TextService:
         if not detail:
             return "文本 Provider 流式不可用，已自动回退非流式生成。"
         return f"文本 Provider 流式不可用，已自动回退非流式生成。原始错误：{detail[:200]}"
-
-    def _should_fallback_from_stream(self, exc: TextServiceError) -> bool:
-        if isinstance(
-            exc, (TextServiceAuthError, TextServiceRateLimitError, TextServiceServerError)
-        ):
-            return False
-        return str(exc).startswith("Text generation stream failed after")
 
     def _is_retryable_probe_generate_error(self, exc: Exception) -> bool:
         if not isinstance(exc, TextServiceError):
@@ -377,19 +342,6 @@ class TextService:
 
         if last_exc is not None:
             raise last_exc
-
-    def _capability_cache_key(self) -> str:
-        return build_provider_capability_cache_key(
-            provider=self.settings.text_provider,
-            text_base_url=self.settings.text_base_url,
-            text_model=self.settings.text_model,
-            text_endpoint=self.settings.text_endpoint,
-            anthropic_base_url=self.settings.anthropic_base_url,
-            anthropic_model=self.settings.anthropic_model,
-            secret=self.settings.text_api_key
-            or self.settings.anthropic_api_key
-            or self.settings.anthropic_auth_token,
-        )
 
     async def probe(self) -> TextProviderCapability:
         probe_messages = [{"role": "user", "content": "Reply with OK only."}]
@@ -425,105 +377,3 @@ class TextService:
             )
 
         return TextProviderCapability(status="valid", generate=True, stream=True)
-
-    async def generate(
-        self,
-        *,
-        messages: list[dict[str, Any]] | None = None,
-        prompt: str | None = None,
-        system: str | None = None,
-        max_tokens: int = 1024,
-        temperature: float | None = None,
-        **kwargs: Any,
-    ) -> LLMResponse:
-        """生成文本（兼容 LLMService 接口）
-
-        Args:
-            messages: 消息列表（优先使用）
-            prompt: 提示词（向后兼容）
-            system: 系统提示（可选）
-            max_tokens: 最大 token 数
-            temperature: 温度参数
-            **kwargs: 其他参数
-
-        Returns:
-            LLMResponse 对象（与 LLMService 兼容）
-        """
-        payload = self._build_payload(
-            messages=messages,
-            prompt=prompt,
-            system=system,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stream=False,
-            **kwargs,
-        )
-        return await self._generate_from_payload(payload)
-
-    async def stream(
-        self,
-        *,
-        messages: list[dict[str, Any]] | None = None,
-        prompt: str | None = None,
-        system: str | None = None,
-        max_tokens: int = 1024,
-        temperature: float | None = None,
-        **kwargs: Any,
-    ) -> AsyncIterator[dict[str, Any]]:
-        """流式生成文本（兼容 LLMService 接口）
-
-        Args:
-            messages: 消息列表（优先使用）
-            prompt: 提示词（向后兼容）
-            system: 系统提示（可选）
-            max_tokens: 最大 token 数
-            temperature: 温度参数
-            **kwargs: 其他参数
-
-        Yields:
-            事件字典（与 LLMService 兼容）:
-            - {"type": "text", "text": "..."}  # 增量文本
-            - {"type": "final", "response": LLMResponse(...)}  # 最终响应
-        """
-        payload = self._build_payload(
-            messages=messages,
-            prompt=prompt,
-            system=system,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stream=True,
-            **kwargs,
-        )
-
-        cached_capability = get_cached_provider_capability(self._capability_cache_key())
-        if (
-            cached_capability is not None
-            and cached_capability.generate
-            and not cached_capability.stream
-        ):
-            fallback_payload = dict(payload)
-            fallback_payload["stream"] = False
-            response = await self._generate_from_payload(fallback_payload)
-            if response.text:
-                yield {"type": "text", "text": response.text}
-            yield {"type": "final", "response": response}
-            return
-
-        emitted_any = False
-        try:
-            async for event in self._stream_native_events(payload):
-                if event.get("type") == "text" and event.get("text"):
-                    emitted_any = True
-                yield event
-            return
-        except TextServiceError as exc:
-            if emitted_any or not self._should_fallback_from_stream(exc):
-                raise
-            logger.warning("Text stream failed; falling back to non-stream generate: %s", exc)
-
-        fallback_payload = dict(payload)
-        fallback_payload["stream"] = False
-        response = await self._generate_from_payload(fallback_payload)
-        if response.text:
-            yield {"type": "text", "text": response.text}
-        yield {"type": "final", "response": response}

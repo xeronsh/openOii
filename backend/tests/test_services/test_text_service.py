@@ -13,7 +13,6 @@ from app.services.text import (
     TextServiceRateLimitError,
     TextServiceServerError,
 )
-from app.services.text_capabilities import TextProviderCapability
 
 
 class StubResponse:
@@ -85,54 +84,6 @@ def test_build_url():
 
 
 @pytest.mark.asyncio
-async def test_generate_chat_completions(monkeypatch):
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_endpoint="/chat/completions",
-        text_api_key="test",
-        text_model="gpt-test",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        assert url == "https://text.example.com/chat/completions"
-        assert payload["model"] == "gpt-test"
-        assert payload["messages"] == [{"role": "user", "content": "hi"}]
-        assert payload["stream"] is False
-        return {"choices": [{"message": {"content": "hello"}}]}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    response = await service.generate(prompt="hi")
-    assert response.text == "hello"
-
-
-@pytest.mark.asyncio
-async def test_generate_completions(monkeypatch):
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com/",
-        text_endpoint="/completions",
-        text_api_key="test",
-        text_model="gpt-test",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        assert url == "https://text.example.com/completions"
-        assert payload["model"] == "gpt-test"
-        assert payload["prompt"] == "hi"
-        assert payload["stream"] is False
-        return {"choices": [{"text": "hello"}]}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    response = await service.generate(prompt="hi")
-    assert response.text == "hello"
-
-
-@pytest.mark.asyncio
 async def test_stream_chat_completions_sse(monkeypatch):
     settings = Settings(
         database_url="sqlite+aiosqlite:///:memory:",
@@ -157,7 +108,7 @@ async def test_stream_chat_completions_sse(monkeypatch):
     monkeypatch.setattr(text_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
 
     parts: list[str] = []
-    async for part in service.stream(prompt="hi"):
+    async for part in service._stream_native_events(service._build_payload(prompt="hi", stream=True)):
         parts.append(
             part.get("text", "") if isinstance(part, dict) and part.get("type") == "text" else ""
         )
@@ -190,7 +141,7 @@ async def test_stream_completions_sse(monkeypatch):
     monkeypatch.setattr(text_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
 
     parts: list[str] = []
-    async for part in service.stream(prompt="hi"):
+    async for part in service._stream_native_events(service._build_payload(prompt="hi", stream=True)):
         parts.append(
             part.get("text", "") if isinstance(part, dict) and part.get("type") == "text" else ""
         )
@@ -199,41 +150,6 @@ async def test_stream_completions_sse(monkeypatch):
     assert client.last_json is not None
     assert client.last_json["prompt"] == "hi"
     assert client.last_json["stream"] is True
-
-
-@pytest.mark.asyncio
-async def test_stream_falls_back_to_generate_when_native_stream_fails(monkeypatch):
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_endpoint="/chat/completions",
-        text_api_key="test",
-        text_model="gpt-test",
-    )
-    service = TextService(settings)
-
-    async def fake_stream_native_events(payload):
-        raise TextServiceError("Text generation stream failed after 3 retries")
-        yield payload  # pragma: no cover
-
-    async def fake_generate_from_payload(payload):
-        assert payload["stream"] is False
-        return LLMResponse(text="fallback text", tool_calls=[], raw={"mode": "generate"})
-
-    monkeypatch.setattr(service, "_stream_native_events", fake_stream_native_events)
-    monkeypatch.setattr(service, "_generate_from_payload", fake_generate_from_payload)
-
-    events = []
-    async for event in service.stream(prompt="hi"):
-        events.append(event)
-
-    assert events == [
-        {"type": "text", "text": "fallback text"},
-        {
-            "type": "final",
-            "response": LLMResponse(text="fallback text", tool_calls=[], raw={"mode": "generate"}),
-        },
-    ]
 
 
 @pytest.mark.asyncio
@@ -341,112 +257,6 @@ async def test_probe_accepts_openai_compatible_reasoning_response_without_conten
 
 
 @pytest.mark.asyncio
-async def test_generate_401_unauthorized(monkeypatch):
-    """测试 401 认证失败"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_api_key="invalid",
-    )
-    service = TextService(settings, max_retries=0)
-
-    async def fake_post(url, payload):
-        raise TextServiceAuthError("Authentication failed (HTTP 401)", status_code=401)
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    with pytest.raises(TextServiceAuthError) as exc_info:
-        await service.generate(prompt="hi")
-
-    assert exc_info.value.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_generate_429_rate_limit(monkeypatch):
-    """测试 429 限流"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-    )
-    service = TextService(settings, max_retries=0)
-
-    async def fake_post(url, payload):
-        raise TextServiceRateLimitError("Rate limit exceeded (HTTP 429)", status_code=429)
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    with pytest.raises(TextServiceRateLimitError) as exc_info:
-        await service.generate(prompt="hi")
-
-    assert exc_info.value.status_code == 429
-
-
-@pytest.mark.asyncio
-async def test_generate_500_server_error(monkeypatch):
-    """测试 500 服务器错误"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-    )
-    service = TextService(settings, max_retries=0)
-
-    async def fake_post(url, payload):
-        raise TextServiceServerError("Server error (HTTP 500)", status_code=500)
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    with pytest.raises(TextServiceServerError) as exc_info:
-        await service.generate(prompt="hi")
-
-    assert exc_info.value.status_code == 500
-
-
-@pytest.mark.asyncio
-async def test_generate_timeout(monkeypatch):
-    """测试超时"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_endpoint="/chat/completions",
-        request_timeout_s=0.1,
-    )
-    service = TextService(settings, max_retries=0)
-
-    class TimeoutClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def post(self, *args, **kwargs):
-            raise httpx.TimeoutException("timed out")
-
-    monkeypatch.setattr(text_module.httpx, "AsyncClient", lambda *args, **kwargs: TimeoutClient())
-
-    with pytest.raises(TextServiceError):
-        await service.generate(prompt="hi")
-
-
-@pytest.mark.asyncio
-async def test_generate_invalid_response_format(monkeypatch):
-    """测试无效响应格式"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        return {"invalid": "response"}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    with pytest.raises(RuntimeError, match="missing choices"):
-        await service.generate(prompt="hi")
-
-
-@pytest.mark.asyncio
 async def test_stream_error_in_chunk(monkeypatch):
     """测试流式响应中的错误"""
     settings = Settings(
@@ -463,78 +273,13 @@ async def test_stream_error_in_chunk(monkeypatch):
     monkeypatch.setattr(text_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
 
     with pytest.raises(TextServiceError, match="Stream error"):
-        async for _ in service.stream(prompt="hi"):
+        async for _ in service._stream_native_events(service._build_payload(prompt="hi", stream=True)):
             pass
 
 
 # ============================================
 # 边界条件测试
 # ============================================
-
-
-@pytest.mark.asyncio
-async def test_generate_with_messages_in_kwargs(monkeypatch):
-    """测试 kwargs 中的 messages 不被覆盖"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_endpoint="/chat/completions",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        # 验证 messages 保持原样
-        assert payload["messages"] == [
-            {"role": "system", "content": "You are helpful"},
-            {"role": "user", "content": "hi"},
-        ]
-        return {"choices": [{"message": {"content": "hello"}}]}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    await service.generate(
-        prompt="ignored",
-        messages=[
-            {"role": "system", "content": "You are helpful"},
-            {"role": "user", "content": "hi"},
-        ],
-    )
-
-
-@pytest.mark.asyncio
-async def test_generate_with_temperature_none(monkeypatch):
-    """测试 temperature=None 不添加到 payload"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        assert "temperature" not in payload
-        return {"choices": [{"message": {"content": "hello"}}]}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    await service.generate(prompt="hi", temperature=None)
-
-
-@pytest.mark.asyncio
-async def test_extract_text_empty_choices(monkeypatch):
-    """测试空 choices 数组"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        return {"choices": []}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    with pytest.raises(RuntimeError, match="missing choices"):
-        await service.generate(prompt="hi")
 
 
 @pytest.mark.asyncio
@@ -556,7 +301,7 @@ async def test_sse_done_with_whitespace(monkeypatch):
     monkeypatch.setattr(text_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
 
     parts: list[str] = []
-    async for part in service.stream(prompt="hi"):
+    async for part in service._stream_native_events(service._build_payload(prompt="hi", stream=True)):
         parts.append(
             part.get("text", "") if isinstance(part, dict) and part.get("type") == "text" else ""
         )
@@ -1399,102 +1144,6 @@ async def test_stream_emitted_then_http_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_extract_text_non_dict_choice(monkeypatch):
-    """测试 choices 包含非字典元素"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_endpoint="/chat/completions",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        return {"choices": ["not a dict"]}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    with pytest.raises(RuntimeError, match="missing message.content"):
-        await service.generate(prompt="hi")
-
-
-@pytest.mark.asyncio
-async def test_extract_text_non_dict_message(monkeypatch):
-    """测试 message 不是字典"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_endpoint="/chat/completions",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        return {"choices": [{"message": "not a dict"}]}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    with pytest.raises(RuntimeError, match="missing message.content"):
-        await service.generate(prompt="hi")
-
-
-@pytest.mark.asyncio
-async def test_extract_text_non_string_content(monkeypatch):
-    """测试 content 不是字符串"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_endpoint="/chat/completions",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        return {"choices": [{"message": {"content": 123}}]}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    with pytest.raises(RuntimeError, match="missing message.content"):
-        await service.generate(prompt="hi")
-
-
-@pytest.mark.asyncio
-async def test_completions_missing_text(monkeypatch):
-    """测试 completions 端点缺少 text 字段"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_endpoint="/completions",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        return {"choices": [{"not_text": "value"}]}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    with pytest.raises(RuntimeError, match="missing choices\\[0\\].text"):
-        await service.generate(prompt="hi")
-
-
-@pytest.mark.asyncio
-async def test_generate_with_temperature(monkeypatch):
-    """测试带 temperature 参数的生成"""
-    settings = Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
-        text_base_url="https://text.example.com",
-        text_endpoint="/chat/completions",
-    )
-    service = TextService(settings)
-
-    async def fake_post(url, payload):
-        assert payload["temperature"] == 0.7
-        return {"choices": [{"message": {"content": "hello"}}]}
-
-    monkeypatch.setattr(service, "_post_json_with_retry", fake_post)
-
-    response = await service.generate(prompt="hi", temperature=0.7)
-    assert response.text == "hello"
-
-
-@pytest.mark.asyncio
 async def test_stream_with_temperature(monkeypatch):
     """测试带 temperature 参数的流式生成"""
     settings = Settings(
@@ -1511,7 +1160,7 @@ async def test_stream_with_temperature(monkeypatch):
     monkeypatch.setattr(service, "_post_stream_with_retry", fake_stream)
 
     parts = []
-    async for part in service.stream(prompt="hi", temperature=0.8):
+    async for part in service._stream_native_events(service._build_payload(prompt="hi", temperature=0.8, stream=True)):
         parts.append(
             part.get("text", "") if isinstance(part, dict) and part.get("type") == "text" else ""
         )
@@ -1538,7 +1187,7 @@ async def test_stream_chunk_empty_choices(monkeypatch):
     monkeypatch.setattr(text_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
 
     parts = []
-    async for part in service.stream(prompt="hi"):
+    async for part in service._stream_native_events(service._build_payload(prompt="hi", stream=True)):
         parts.append(
             part.get("text", "") if isinstance(part, dict) and part.get("type") == "text" else ""
         )
@@ -1565,7 +1214,7 @@ async def test_stream_chunk_not_list_choices(monkeypatch):
     monkeypatch.setattr(text_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
 
     parts = []
-    async for part in service.stream(prompt="hi"):
+    async for part in service._stream_native_events(service._build_payload(prompt="hi", stream=True)):
         parts.append(
             part.get("text", "") if isinstance(part, dict) and part.get("type") == "text" else ""
         )
@@ -1846,6 +1495,14 @@ def test_build_payload_sends_reasoning_effort_but_no_enable_thinking():
     assert "enable_thinking" not in payload
 
 
+def test_build_payload_messages_win_over_prompt_and_temperature_is_optional():
+    svc = TextService(make_settings())
+    messages = [{"role": "system", "content": "You are helpful"}, {"role": "user", "content": "hi"}]
+    payload = svc._build_payload(prompt="ignored", messages=messages, stream=False)
+    assert payload["messages"] == messages
+    assert "temperature" not in payload
+
+
 def test_build_payload_temperature():
     settings = make_settings()
     svc = TextService(settings)
@@ -1926,39 +1583,6 @@ def test_stream_fallback_message_empty_detail():
     svc = TextService(make_settings())
     msg = svc._stream_fallback_message(Exception(""))
     assert "已自动回退" in msg
-
-
-# --- _should_fallback_from_stream ---
-
-
-def test_should_fallback_auth_error():
-    svc = TextService(make_settings())
-    assert svc._should_fallback_from_stream(TextServiceAuthError("auth")) is False
-
-
-def test_should_fallback_rate_limit():
-    svc = TextService(make_settings())
-    assert svc._should_fallback_from_stream(TextServiceRateLimitError("rate")) is False
-
-
-def test_should_fallback_server_error():
-    svc = TextService(make_settings())
-    assert svc._should_fallback_from_stream(TextServiceServerError("server")) is False
-
-
-def test_should_fallback_stream_failed():
-    svc = TextService(make_settings())
-    assert (
-        svc._should_fallback_from_stream(
-            TextServiceError("Text generation stream failed after retries")
-        )
-        is True
-    )
-
-
-def test_should_fallback_other_error():
-    svc = TextService(make_settings())
-    assert svc._should_fallback_from_stream(TextServiceError("something else")) is False
 
 
 # --- _is_retryable_probe_generate_error ---
@@ -2045,36 +1669,4 @@ async def test_probe_returns_invalid_when_generate_fails(monkeypatch):
     assert result.reason_code == "provider_generate_unavailable"
 
 
-# --- stream() cached capability fallback ---
 
-
-@pytest.mark.asyncio
-async def test_stream_falls_back_when_cached_stream_disabled(monkeypatch):
-    """stream() falls back to non-stream when cached capability says stream=False."""
-    svc = TextService(make_settings())
-
-    cap = TextProviderCapability(
-        status="degraded",
-        generate=True,
-        stream=False,
-        reason_code="test",
-        reason_message="test",
-    )
-    monkeypatch.setattr(text_module, "get_cached_provider_capability", lambda key: cap)
-
-    fake_result = {"choices": [{"message": {"content": "Hello"}}]}
-
-    async def fake_post_json(self_inner, url, payload):
-        assert payload["stream"] is False  # must have been switched off
-        return fake_result
-
-    monkeypatch.setattr(TextService, "_post_json_with_retry", fake_post_json)
-
-    events = []
-    async for event in svc.stream(messages=[{"role": "user", "content": "hi"}]):
-        events.append(event)
-
-    assert events[0]["type"] == "text"
-    assert events[0]["text"] == "Hello"
-    assert events[1]["type"] == "final"
-    assert events[1]["response"].text == "Hello"
