@@ -41,8 +41,9 @@ def _cleanup_global_sandbox_db():
     _TEST_GLOBAL_DB.unlink(missing_ok=True)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def test_settings() -> Settings:
+    # Function-scoped: many tests mutate it, and a shared instance leaks state between files.
     return Settings(
         database_url="sqlite+aiosqlite:///:memory:",
         text_provider="anthropic",
