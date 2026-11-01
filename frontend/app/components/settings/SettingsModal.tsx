@@ -331,7 +331,7 @@ export function SettingsModal() {
 								<SvgIcon name="info" size={16} className="shrink-0" />
 								<span className="truncate" id="settings-footer-hint">
 									{testServiceFor(activeTab)
-										? "大部分配置保存后立即生效，数据库/Redis 配置需重启"
+										? "大部分配置保存后立即生效，数据库配置需重启"
 										: "这一类没有外部服务可测，测试连接只对文本、图像、视频服务可用"}
 								</span>
 							</div>

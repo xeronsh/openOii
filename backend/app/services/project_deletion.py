@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, inspect, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -53,6 +53,7 @@ async def delete_project_data(session: AsyncSession, project_id: int) -> None:
     )
     run_ids_subq = select(agent_run_id_col).where(agent_run_project_id_col == project_id)
     await session.execute(delete(AgentMessage).where(agent_message_run_id_col.in_(run_ids_subq)))
+    await _delete_engine_rows(session, project_id)
 
     artifact_version_project_id_col = cast(
         InstrumentedAttribute[int], cast(object, ArtifactVersion.project_id)
@@ -92,6 +93,26 @@ async def delete_project_data(session: AsyncSession, project_id: int) -> None:
     await session.execute(delete(Shot).where(shot_project_id_col == project_id))
     await session.execute(delete(Character).where(character_project_id_col == project_id))
 
+
+# Engine-owned tables (created by Alembic, written by the Node engine; no ORM models).
+# engine_run_events is keyed by project (chat events use run_id 0); the others by run.
+_ENGINE_ROW_DELETES = {
+    "engine_run_events": "DELETE FROM engine_run_events WHERE project_id = :pid",
+    "engine_checkpoints": (
+        "DELETE FROM engine_checkpoints WHERE run_id IN (SELECT id FROM agentrun WHERE project_id = :pid)"
+    ),
+    "engine_stage_attempts": (
+        "DELETE FROM engine_stage_attempts WHERE run_id IN (SELECT id FROM agentrun WHERE project_id = :pid)"
+    ),
+}
+
+
+async def _delete_engine_rows(session: AsyncSession, project_id: int) -> None:
+    tables = set(await session.run_sync(lambda s: inspect(s.connection()).get_table_names()))
+    for table, sql in _ENGINE_ROW_DELETES.items():
+        # Schemas built from ORM metadata alone (unit tests) lack these tables.
+        if table in tables:
+            await session.execute(text(sql), {"pid": project_id})
 
 
 async def delete_project_by_id(session: AsyncSession, project_id: int) -> None:

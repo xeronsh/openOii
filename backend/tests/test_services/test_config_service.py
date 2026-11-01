@@ -97,6 +97,20 @@ def test_load_env_file_skips_blank_keys(monkeypatch, tmp_path):
     assert data["VALID"] == "value"
 
 
+
+@pytest.mark.asyncio
+async def test_retired_env_keys_are_not_seeded_or_listed(monkeypatch, tmp_path, test_session):
+    env_path = tmp_path / "old.env"
+    env_path.write_text("FAKE_TEXT_RESPONSE=stale\nTEXT_MODEL=m\n", encoding="utf-8")
+    monkeypatch.setenv("ENV_FILE", str(env_path))
+    service = ConfigService(test_session)
+
+    await service.ensure_initialized()
+
+    keys = {item["key"] for item in await service.list_effective()}
+    assert "TEXT_MODEL" in keys
+    assert "FAKE_TEXT_RESPONSE" not in keys
+
 @pytest.mark.asyncio
 async def test_config_service_list_effective_and_get_raw_value(test_session, monkeypatch, tmp_path):
     monkeypatch.setenv("ENV_FILE", str(tmp_path / ".env"))

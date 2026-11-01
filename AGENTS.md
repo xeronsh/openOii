@@ -55,7 +55,7 @@ Node 20 上 segfault，exit 139 且无 stderr）。
 - openOii 是“故事想法 → 漫剧成片”的长链路生成应用；改动生成、恢复、进度推送时，优先保 resumability 和现有执行流。
 - **架构边界见本文件顶部「架构约束（不可协商）」**（ADR 0008）：openOii Engine 是唯一 orchestration runtime，FastAPI 只做 Product Backend + northbound gateway。任何新增能力先问它该在哪一层。
 - 这是三包仓库，没有根级统一脚本：后端在 `backend/` 用 `uv`，前端在 `frontend/` 用 `pnpm`，生成引擎 sidecar 在 `engine/` 用 `pnpm`（TypeScript workflow runtime，模型调用用 `pi-ai`；项目对话助手用 `pi-agent-core`）。
-- 编排引擎只有 pi sidecar 一种：首次触发生成时由后端自动拉起（loopback 18766），共享同一个 SQLite 文件；本地开发零容器。`AGENT_ENGINE=langgraph` 回滚开关已移除（ADR 0004 → 见 `docs/adr/0005-remove-langgraph-postgres.md`）。
+- 编排引擎只有 pi sidecar 一种：首次触发生成时由后端自动拉起（loopback 18766），共享同一个 SQLite 文件；本地开发零容器。
 - 数据库只有单文件 SQLite（`sqlite+aiosqlite:///./data/openoii.db`，WAL）——PostgreSQL / Redis 均已删除，不再有存储分支。
 - 当前 GitHub Actions 只有镜像构建/推送：`.github/workflows/docker-publish.yml`。本地要自己跑测试/构建，CI 不会替你兜底。
 

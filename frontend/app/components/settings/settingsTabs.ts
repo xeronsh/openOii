@@ -5,7 +5,7 @@ import "~/components/ui/icons/settingsIcons";
 
 export const TAB_CONFIG: Record<string, { icon: IconName; title: string; desc: string }> = {
 	basic: { icon: "tools", title: "基础", desc: "应用名称、环境、日志级别等基础配置" },
-	database: { icon: "database", title: "数据库", desc: "数据库和 Redis 连接配置" },
+	database: { icon: "database", title: "数据库", desc: "数据库连接配置" },
 	text: {
 		icon: "sparks",
 		title: "文本生成",
@@ -92,7 +92,8 @@ export const PROVIDER_TABS: Record<string, ProviderTab> = {
 			{
 				title: "Fake 本地测试配置",
 				providers: ["fake"],
-				match: (k) => k.startsWith("fake_text_"),
+				// The fake text model has no settings; the group only shows its note.
+				match: () => false,
 				note: "启用后生成链路不会调用外部文本生成 API。",
 			},
 		],

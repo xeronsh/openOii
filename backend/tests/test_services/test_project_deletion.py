@@ -107,3 +107,46 @@ async def test_delete_projects_by_ids_ignores_missing(test_session):
     await project_deletion.delete_projects_by_ids(test_session, [project.id, 99999])
 
     assert await test_session.get(Project, project.id) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_project_removes_engine_rows_and_keeps_other_projects(test_session):
+    from sqlalchemy import text
+
+    for ddl in (
+        "CREATE TABLE engine_run_events (seq INTEGER PRIMARY KEY, run_id INTEGER, project_id INTEGER, type TEXT)",
+        "CREATE TABLE engine_checkpoints (run_id INTEGER, stage TEXT)",
+        "CREATE TABLE engine_stage_attempts (run_id INTEGER, stage TEXT)",
+    ):
+        await test_session.execute(text(ddl))
+    doomed = await create_project(test_session)
+    kept = await create_project(test_session)
+    for project in (doomed, kept):
+        run = await create_run(test_session, project_id=project.id, status="succeeded")
+        params = {"pid": project.id, "rid": run.id}
+        # run_id 0 rows are the project's chat events.
+        await test_session.execute(
+            text("INSERT INTO engine_run_events (run_id, project_id, type) VALUES (:rid, :pid, 'x'), (0, :pid, 'chat')"),
+            params,
+        )
+        await test_session.execute(text("INSERT INTO engine_checkpoints VALUES (:rid, 'plan')"), params)
+        await test_session.execute(text("INSERT INTO engine_stage_attempts VALUES (:rid, 'plan')"), params)
+        test_session.add(ChatMessage(project_id=project.id, message="{}"))
+    await test_session.commit()
+
+    await project_deletion.delete_project_by_id(test_session, doomed.id)
+
+    async def count(sql: str, pid: int) -> int:
+        return (await test_session.execute(text(sql), {"pid": pid})).scalar_one()
+
+    by_run = "SELECT COUNT(*) FROM {t} WHERE run_id IN (SELECT id FROM agentrun WHERE project_id = :pid)"
+    events = "SELECT COUNT(*) FROM engine_run_events WHERE project_id = :pid"
+    chats = "SELECT COUNT(*) FROM chat_message WHERE project_id = :pid"
+    assert await count(events, doomed.id) == 0
+    assert await count(chats, doomed.id) == 0
+    assert (await test_session.execute(text("SELECT COUNT(*) FROM engine_checkpoints"))).scalar_one() == 1
+    assert (await test_session.execute(text("SELECT COUNT(*) FROM engine_stage_attempts"))).scalar_one() == 1
+    assert await count(events, kept.id) == 2
+    assert await count(chats, kept.id) == 1
+    assert await count(by_run.format(t="engine_checkpoints"), kept.id) == 1
+    assert await count(by_run.format(t="engine_stage_attempts"), kept.id) == 1

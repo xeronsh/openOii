@@ -181,3 +181,65 @@ def test_alembic_stamp_adopts_existing_create_all_database(tmp_path: Path) -> No
     assert {"project", "agentrun", "character", "shot"}.issubset(tables)
     # legacy lineage tables no longer exist (dropped in 0027)
     assert not {"run", "stage", "artifact"} & tables
+
+
+def test_cleanup_migration_drops_retired_setting_and_orphan_rows(tmp_path: Path) -> None:
+    """0034: rows of already-deleted projects and the retired FAKE_TEXT_RESPONSE go; live rows stay."""
+    from sqlalchemy import text
+
+    db_url = f"sqlite+pysqlite:///{tmp_path / 'cleanup.db'}"
+    command.upgrade(_alembic_config(db_url), "0033_chat_message")
+    engine = create_engine(db_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO project (id, title, story, style, status, created_at, updated_at) "
+                    "VALUES (1, 't', 's', 'anime', 'draft', '2026-10-29', '2026-10-29')"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO agentrun (id, project_id, status, progress, confirm_requested, workflow_version, "
+                    "execution_attempt, created_at, updated_at) VALUES (1, 1, 'succeeded', 0, 0, 2, 0, '2026-10-29', '2026-10-29')"
+                )
+            )
+            for key in ("FAKE_TEXT_RESPONSE", "TEXT_MODEL"):
+                conn.execute(
+                    text(
+                        "INSERT INTO configitem (key, value, is_sensitive, created_at, updated_at) "
+                        "VALUES (:k, 'v', 0, '2026-10-29', '2026-10-29')"
+                    ),
+                    {"k": key},
+                )
+            for run_id, project_id in ((1, 1), (0, 1), (9, 2)):
+                conn.execute(
+                    text("INSERT INTO engine_run_events (run_id, project_id, type, payload) VALUES (:r, :p, 'x', '{}')"),
+                    {"r": run_id, "p": project_id},
+                )
+            for run_id in (1, 9):
+                conn.execute(
+                    text("INSERT INTO engine_checkpoints (run_id, stage, state_json) VALUES (:r, 'plan', '{}')"),
+                    {"r": run_id},
+                )
+            for project_id in (1, 2):
+                conn.execute(
+                    text("INSERT INTO chat_message (project_id, message) VALUES (:p, '{}')"), {"p": project_id}
+                )
+    finally:
+        engine.dispose()
+
+    command.upgrade(_alembic_config(db_url), "head")
+
+    engine = create_engine(db_url)
+    try:
+        with engine.connect() as conn:
+            def rows(sql: str) -> list:
+                return [tuple(r) for r in conn.execute(text(sql)).all()]
+
+            assert rows("SELECT key FROM configitem") == [("TEXT_MODEL",)]
+            assert rows("SELECT run_id, project_id FROM engine_run_events ORDER BY seq") == [(1, 1), (0, 1)]
+            assert rows("SELECT run_id FROM engine_checkpoints") == [(1,)]
+            assert rows("SELECT project_id FROM chat_message") == [(1,)]
+    finally:
+        engine.dispose()

@@ -6,7 +6,7 @@ const SERVICE_BY_TAB: Record<string, Service> = { text: "llm", image: "image", v
 
 // The backend rejects non-whitelisted override keys with 400.
 const SERVICE_PREFIXES: Record<Service, string[]> = {
-	llm: ["text_", "anthropic_", "fake_text_"],
+	llm: ["text_", "anthropic_"],
 	image: ["image_", "fake_image_", "enable_image_to_image"],
 	vision: ["critique_vision_"],
 	tts: ["tts_provider", "tts_base_url", "tts_api_key", "tts_model", "tts_default_voice"],

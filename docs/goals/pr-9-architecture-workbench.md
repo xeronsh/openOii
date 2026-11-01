@@ -1,5 +1,7 @@
 # openOii PR #9 — Architecture Completion & AI Workbench Redesign Goal
 
+> 历史文档：PR #9 当时的目标与执行记录，不代表现行架构；现行架构见 `AGENTS.md`、ADR 0008 与 ADR 0011。
+
 > Status: complete. Phases A–F and the full DoD audit are complete; Workbench layout was visually checked at 1366, 1440, and 1920 px. `git diff --check` passed. Automated tests/build were not run per `AGENTS.md`. Branch: `refactor/pi-only-simplification`.
 > Execution rule: 严格按 Phase A → F 顺序执行，不允许跨阶段顺手重构。
 

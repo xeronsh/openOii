@@ -27,7 +27,6 @@ const LABELS: Record<string, string> = {
 	ANTHROPIC_MODEL: "Claude 模型",
 	ANTHROPIC_API_KEY: "官方 API Key",
 	ANTHROPIC_AUTH_TOKEN: "中转站 Token",
-	FAKE_TEXT_RESPONSE: "固定返回内容",
 
 	IMAGE_PROVIDER: "图像服务类型",
 	IMAGE_BASE_URL: "接口地址（Base URL）",

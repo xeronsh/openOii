@@ -24,7 +24,6 @@ export const LOCAL_GATEWAY_CONFIG: Item[] = [
 	item("ANTHROPIC_BASE_URL", ""),
 	item("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
 	item("ANTHROPIC_AUTH_TOKEN", "****", true),
-	item("FAKE_TEXT_RESPONSE", "fake"),
 	item("IMAGE_PROVIDER", "openai"),
 	item("IMAGE_BASE_URL", "http://127.0.0.1:18790"),
 	item("IMAGE_ENDPOINT", "/v1/images/generations"),

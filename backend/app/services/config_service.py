@@ -42,7 +42,6 @@ SETTINGS_DEFAULTS = Settings()
 PROVIDER_CONFIG_PREFIXES = (
     "ANTHROPIC_",
     "TEXT_",
-    "FAKE_TEXT_",
     "IMAGE_",
     "FAKE_IMAGE_",
     "VIDEO_",
@@ -96,6 +95,10 @@ def _unquote(value: str) -> str:
     return value
 
 
+# Keys that used to exist and may linger in old .env files; never seed or list them.
+RETIRED_CONFIG_KEYS = frozenset({"FAKE_TEXT_RESPONSE"})
+
+
 def _load_env_file() -> dict[str, str]:
     path = _resolve_env_path()
     if not path.exists():
@@ -111,7 +114,7 @@ def _load_env_file() -> dict[str, str]:
             continue
         key, value = line.split("=", 1)
         key = key.strip()
-        if not key:
+        if not key or key in RETIRED_CONFIG_KEYS:
             continue
         value = _strip_inline_comment(value.strip())
         value = _unquote(value.strip())
@@ -259,7 +262,7 @@ class ConfigService:
         """Persist reusable generation-provider interface settings into DB.
 
         Keep the scope to text/image/video/TTS/BGM provider settings. Database,
-        Redis, admin and deployment settings stay environment-owned unless the
+        admin and deployment settings stay environment-owned unless the
         user explicitly saves them.
         """
         env_values = _load_effective_env_values()

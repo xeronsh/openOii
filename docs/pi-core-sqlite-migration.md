@@ -1,5 +1,7 @@
 # 迁移 Goal:后端 Agent 框架 → pi-agent-core,存储 → SQLite
 
+> 历史文档:2026-09 的迁移记录,不代表现行架构;现行架构见 `AGENTS.md`、ADR 0008 与 ADR 0011。
+
 > 状态:DONE(2026-09-13 执行完毕) · 日期:2026-09-13
 > 执行记录:Phase 0-7 全部完成;commit 62e6dbf(Phase 1)/ 8996784(Phase 2)/ 4c6377a(Phase 3)/ 52394ce(Phase 4+5)/ 4183f76(Phase 6)/ Phase 7(默认切换 + ADR 0004)
 > 决策记录:docs/adr/0004-pi-engine-sqlite.md

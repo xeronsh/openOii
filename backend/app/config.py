@@ -59,10 +59,6 @@ class Settings(BaseSettings):
         default="anthropic",
         description="文本生成服务提供商：anthropic / openai / fake（本地开发/测试，不调用外部 API）",
     )
-    fake_text_response: str | None = Field(
-        default=None,
-        description="Fake 文本 Provider 使用的固定响应（仅用于本地开发/测试）",
-    )
 
     # OpenAI 兼容接口
     text_base_url: str = Field(

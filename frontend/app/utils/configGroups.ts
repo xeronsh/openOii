@@ -32,8 +32,7 @@ export function groupConfigs(configs: ConfigItem[]): ConfigSection[] {
 		// 文本生成服务配置（Anthropic + OpenAI 兼容）
 		else if (
 			key.startsWith("anthropic_") ||
-			key.startsWith("text_") ||
-			key.startsWith("fake_text_")
+			key.startsWith("text_")
 		) {
 			groups.text.push(config);
 		}

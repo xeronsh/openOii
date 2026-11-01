@@ -21,7 +21,6 @@ export function getConfigDescription(key: string): string {
 		// 文本生成服务
 		TEXT_PROVIDER:
 			"文本生成服务提供商：anthropic（Claude）/ openai（OpenAI 兼容）/ fake（本地测试，不调用外部 API）",
-		FAKE_TEXT_RESPONSE: "Fake 文本 Provider 固定返回内容（可选）",
 		TEXT_BASE_URL: "文本生成服务地址（OpenAI 兼容接口）",
 		TEXT_API_KEY: "文本生成 API 密钥（OpenAI 兼容）",
 		TEXT_MODEL: "文本生成模型名称（OpenAI 兼容），如 deepseek-flash、qwen3.8-max",
