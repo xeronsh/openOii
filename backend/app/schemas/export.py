@@ -1,10 +1,11 @@
 """导出相关 Schema"""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from app.db.utils import UtcDatetime, utcnow
 
 
 class ExportRequest(BaseModel):
@@ -23,7 +24,7 @@ class ExportResponse(BaseModel):
     format: str
     status: Literal["processing", "completed", "failed"]
     download_url: str | None = None
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: UtcDatetime = Field(default_factory=utcnow)
 
 
 class ExportCompletedEventData(BaseModel):

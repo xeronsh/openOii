@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from sqlalchemy import select
@@ -39,7 +39,9 @@ async def _store_export_status(export_resp: ExportResponse) -> None:
 
     try:
         async with async_session_maker() as session:
-            session.add(
+            # merge, not add: the same export is written again when it finishes,
+            # and an insert would hit the primary key and leave "processing" behind.
+            await session.merge(
                 ExportCache(
                     export_id=export_resp.export_id,
                     payload=export_resp.model_dump_json(),
@@ -146,7 +148,6 @@ async def _run_export_task(
             format=format,
             status="completed",
             download_url=download_url,
-            created_at=datetime.now(),
         )
         await _store_export_status(export_resp)
 
@@ -177,7 +178,6 @@ async def _run_export_task(
             project_id=project_id,
             format=format,
             status="failed",
-            created_at=datetime.now(),
         )
         await _store_export_status(export_resp)
 
@@ -217,7 +217,6 @@ async def export_pdf(
         project_id=project_id,
         format="pdf",
         status="processing",
-        created_at=datetime.now(),
     )
     await _store_export_status(export_resp)
 
@@ -257,7 +256,6 @@ async def export_webtoon(
         project_id=project_id,
         format="webtoon",
         status="processing",
-        created_at=datetime.now(),
     )
     await _store_export_status(export_resp)
 
