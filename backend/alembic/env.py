@@ -19,7 +19,8 @@ from app.models import agent_run, config_item, consistency_report, message, proj
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers created before the migration (pytest caplog, app modules) working.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = SQLModel.metadata
 
