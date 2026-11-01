@@ -8,7 +8,7 @@ import {
   fauxToolCall,
   type AssistantMessage,
   type TranscriptContext,
-} from "@earendil-works/pi-ai/compat";
+} from "@earendil-works/pi-ai";
 
 const text = (content: unknown): string =>
   typeof content === "string"

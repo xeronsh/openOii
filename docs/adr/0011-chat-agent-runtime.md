@@ -60,3 +60,4 @@ d21a660 曾删除 `@mariozechner/pi-agent-core`：当时它是一个 `tools: []`
 - P4 #173：工作台「助手」标签页：流式回复、停止、确认卡片；输入框的非审批消息发给助手。
 - P5：删除 `ReviewAgent`、`/runs/feedback`，以及已无调用方的 Python 图像/视频服务、文本/图像/视频工厂和 `FakeTextService`（fake 文本模型只在 engine 里）；
   旧库中没有执行命令的反馈 run 不再作为可恢复运行出现。
+- 收尾：engine 不再用 pi-ai 的临时 `compat` 入口；工作流文本调用、视觉审查、对话助手和 fake 模型共用 `engine/src/pi-models.ts` 里的一个 `createModels()` 注册表（anthropic / OpenAI 兼容 / faux）。

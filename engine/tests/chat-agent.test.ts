@@ -12,9 +12,8 @@ import {
   fauxAssistantMessage,
   fauxText,
   fauxToolCall,
-  registerFauxProvider,
-  streamSimple,
-} from "@earendil-works/pi-ai/compat";
+} from "@earendil-works/pi-ai";
+import { piModels, registerFake } from "../src/pi-models.js";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { EngineDatabase } from "../src/db.js";
 import { TextLlmService } from "../src/llm.js";
@@ -163,10 +162,10 @@ describe("chat agent", () => {
   });
 
   it("is busy while answering, and stop aborts the turn", async () => {
-    const slow = registerFauxProvider({ provider: "slow-chat", models: [{ id: "slow" }], tokensPerSecond: 20 });
+    const slow = registerFake({ provider: "slow-chat", models: [{ id: "slow" }], tokensPerSecond: 20 });
     const streamFn: StreamFn = (model, context, options) => {
       slow.appendResponses([fauxAssistantMessage(fauxText("很长的回答".repeat(200)))]);
-      return streamSimple(slow.getModel(), context, options);
+      return piModels.streamSimple(slow.getModel(), context, options);
     };
     const chat = new ChatAgents({ db, llm: new TextLlmService(db), api: fixtureApi(), streamFn });
     expect(chat.abort(1)).toBe(false);
@@ -179,19 +178,19 @@ describe("chat agent", () => {
     expect(chat.busy(1)).toBe(false);
     expect(saved(db).at(-1)).toMatchObject({ role: "assistant", stopReason: "aborted" });
     expect(chat.history(1).at(-1)).toMatchObject({ role: "assistant", error: "已停止" });
-    slow.unregister();
+    piModels.deleteProvider(slow.provider.id);
   });
 
   it("stops a model that keeps calling tools after MAX_TURNS turns", async () => {
-    const loop = registerFauxProvider({ provider: "loop-chat", models: [{ id: "loop" }] });
+    const loop = registerFake({ provider: "loop-chat", models: [{ id: "loop" }] });
     const streamFn: StreamFn = (model, context, options) => {
       loop.appendResponses([fauxAssistantMessage(fauxToolCall("get_run_status", {}), { stopReason: "toolUse" })]);
-      return streamSimple(loop.getModel(), context, options);
+      return piModels.streamSimple(loop.getModel(), context, options);
     };
     const chat = new ChatAgents({ db, llm: new TextLlmService(db), api: fixtureApi(), streamFn });
     await chat.send(1, "一直查").done;
     expect(saved(db).filter((m) => m.role === "assistant")).toHaveLength(MAX_TURNS);
-    loop.unregister();
+    piModels.deleteProvider(loop.provider.id);
   });
 
   it("runs a write tool only after the user confirms it, and says what it will do", async () => {

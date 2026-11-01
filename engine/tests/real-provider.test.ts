@@ -395,6 +395,54 @@ describe("OpenAI-compatible text endpoint", () => {
     edb.close();
   });
 
+  it("sends the configured key, falls back to OPENAI_API_KEY, and never logs either", async () => {
+    const logged: string[] = [];
+    const capture = (...args: unknown[]) => void logged.push(args.map(String).join(" "));
+    const spies = (["log", "info", "warn", "error", "debug"] as const).map((name) =>
+      vi.spyOn(console, name).mockImplementation(capture),
+    );
+    const out = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => (capture(chunk), true));
+    const err = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => (capture(chunk), true));
+    vi.stubEnv("OPENAI_API_KEY", "env-key-456");
+    const edb = newDb(dir);
+    try {
+      setConfig(edb, {
+        TEXT_PROVIDER: "openai",
+        TEXT_BASE_URL: base,
+        TEXT_ENDPOINT: "/api/v3/chat/completions",
+        TEXT_MODEL: "custom-text",
+        TEXT_API_KEY: "cfg-key-123",
+      });
+      await new TextLlmService(edb).generate({ system: "s", prompt: "p" });
+      edb.db.prepare("UPDATE configitem SET value = '' WHERE key = 'TEXT_API_KEY'").run();
+      await new TextLlmService(edb).generate({ system: "s", prompt: "p" });
+    } finally {
+      edb.close();
+      vi.unstubAllEnvs();
+      for (const spy of [...spies, out, err]) spy.mockRestore();
+    }
+    expect(seen.map((entry) => entry.auth)).toEqual(["Bearer cfg-key-123", "Bearer env-key-456"]);
+    expect(logged.join("\n")).not.toMatch(/cfg-key-123|env-key-456/);
+  });
+
+  it("answers a chat message with the configured model and key", async () => {
+    const { ChatAgents } = await import("../src/agent/index.js");
+    const edb = newDb(dir);
+    setConfig(edb, {
+      TEXT_PROVIDER: "openai",
+      TEXT_BASE_URL: base,
+      TEXT_ENDPOINT: "/api/v3/chat/completions",
+      TEXT_MODEL: "custom-text",
+      TEXT_API_KEY: "chat-key",
+    });
+    const agents = new ChatAgents({ db: edb, llm: new TextLlmService(edb), api: async () => ({}) });
+    await agents.send(1, "你好").done;
+    expect(seen[0]!.auth).toBe("Bearer chat-key");
+    expect((seen[0]!.body.tools as unknown[]).length).toBeGreaterThan(0);
+    expect(agents.history(1).map((item) => item.role)).toEqual(["user", "assistant"]);
+    edb.close();
+  });
+
   it("sends TEXT_REASONING_EFFORT as reasoning_effort on workflow calls", async () => {
     const edb = newDb(dir);
     setConfig(edb, {

@@ -14,7 +14,7 @@
  */
 import { Agent, type AgentMessage, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
+import { piModels, registerFake, requestKey } from "../pi-models.js";
 import type { EngineDatabase } from "../db.js";
 import { fakeStreamMs, type TextLlmService } from "../llm.js";
 import { fakeChatReply } from "./fake.js";
@@ -76,18 +76,21 @@ export interface ChatAgentDeps {
   confirmTimeoutMs?: number;
 }
 
-let fakeChat: ReturnType<typeof registerFauxProvider> | null = null;
+let fakeChat: ReturnType<typeof registerFake> | null = null;
+
+/** The configured model, through the shared pi-ai registry. */
+const modelStream: StreamFn = (model, context, options) => piModels.streamSimple(model, context, options);
 
 /** Fake text provider: a scripted, context-driven reply streamed through pi-ai's faux provider. */
 const fakeStream: StreamFn = (model, context, options) => {
   fakeChat!.appendResponses([(ctx) => fakeChatReply(ctx)]);
-  return streamSimple(model, context, options);
+  return modelStream(model, context, options);
 };
 
 function fakeChatModel(): Model<Api> {
   if (!fakeChat) {
     const ms = fakeStreamMs();
-    fakeChat = registerFauxProvider({
+    fakeChat = registerFake({
       provider: "fake-chat",
       models: [{ id: "fake-chat", name: "Fake chat" }],
       tokenSize: { min: 1, max: 3 },
@@ -177,8 +180,8 @@ export class ChatAgents {
     // Settings may change between messages, so the model is resolved per message.
     const resolved = this.deps.llm.agentModel();
     agent.state.model = resolved.model ?? fakeChatModel();
-    agent.streamFunction = this.deps.streamFn ?? (resolved.model ? streamSimple : fakeStream);
-    agent.getApiKey = () => resolved.apiKey;
+    agent.streamFunction = this.deps.streamFn ?? (resolved.model ? modelStream : fakeStream);
+    agent.getApiKey = () => requestKey(resolved.apiKey);
     agent.state.thinkingLevel = resolved.reasoning ?? "off";
     this.turns.set(projectId, 0);
     return { done: agent.prompt(text) };
@@ -236,7 +239,7 @@ export class ChatAgents {
         tools,
         messages: this.deps.db.chatMessages(projectId).map((row) => row.message as AgentMessage),
       },
-      streamFn: streamSimple,
+      streamFn: modelStream,
       transformContext: async (messages) => recentContext(messages),
       beforeToolCall: async ({ toolCall, args }, signal) => {
         const tool = tools.find((entry) => entry.name === toolCall.name);

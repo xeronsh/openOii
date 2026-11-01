@@ -5,16 +5,14 @@ import {
   fauxThinking,
   getCurrentSystemPrompt,
   type Api,
-  type FauxProviderRegistration,
+  type FauxProviderHandle,
   type ImageContent,
   type Model,
   type TextContent,
   type ThinkingLevel,
 } from "@earendil-works/pi-ai";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
-// Only the global stream + faux registry still come from the temporary compat
-// entry; moving them means a createModels() provider setup (see ADR 0011).
-import { registerFauxProvider, stream } from "@earendil-works/pi-ai/compat";
+import { piModels, registerFake, requestKey } from "./pi-models.js";
 import type { EngineDatabase } from "./db.js";
 import { FAKE_STREAM_ERROR_TOKEN, fakeRespond, fakeThinking } from "./fake-stream.js";
 import {
@@ -98,12 +96,12 @@ export interface LlmStreamUpdate {
 
 /**
  * The fake provider is pi-ai's own faux provider, so fake runs go through the
- * same `stream()` call, event shapes and abort handling as real providers.
+ * same `piModels.stream()` call, event shapes and abort handling as real providers.
  * `OPENOII_FAKE_STREAM_MS` is the average delay per chunk (chunks are 1–3
  * pi-ai "tokens", i.e. 4–12 characters, so delays jitter with chunk size);
  * 0 streams without delay.
  */
-let fauxRegistration: FauxProviderRegistration | null = null;
+let fauxRegistration: FauxProviderHandle | null = null;
 export const DEFAULT_FAKE_STREAM_MS = 30;
 
 export function fakeStreamMs(): number {
@@ -114,7 +112,7 @@ export function fakeStreamMs(): number {
 function fakeModel(system: string, prompt: string): Model<Api> {
   if (!fauxRegistration) {
     const ms = fakeStreamMs();
-    fauxRegistration = registerFauxProvider({
+    fauxRegistration = registerFake({
       provider: "fake",
       models: [{ id: "fake", name: "Fake", reasoning: true }],
       tokenSize: { min: 1, max: 3 },
@@ -517,8 +515,8 @@ export class TextLlmService {
         "gen_ai.request.model": resolved.model,
       },
       async (span) => {
-        const events = stream(model, context, {
-          apiKey: resolved.apiKey,
+        const events = piModels.stream(model, context, {
+          apiKey: requestKey(resolved.apiKey),
           maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
           // `stream()` takes provider options; `reasoning` is only read by
           // `streamSimple()`, so the effort has to go in the provider's field.
