@@ -40,6 +40,9 @@ export default defineConfig(({ command }) => ({
     // 代码分割优化
     rollupOptions: {
       output: {
+        // 把 10 KB 以下的公共小块并进会一起加载的块：路由仍按页懒加载，
+        // 但少了十几个小文件各自的 gzip 开销，JS 总量约少 5.4 KB
+        experimentalMinChunkSize: 10_000,
         manualChunks(id) {
           const normalizedId = id.replace(/\\/g, "/");
           if (!normalizedId.includes("/node_modules/")) return;
