@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel, Field, model_validator
+
+from app.db.utils import UtcDatetime
 
 
 class UniverseCreate(BaseModel):
@@ -38,7 +38,7 @@ class UniverseProjectLinkRead(BaseModel):
     chapter_number: int | None = None
     chapter_title: str | None = None
     is_main_story: bool = True
-    created_at: datetime
+    created_at: UtcDatetime
     # joined from project
     project_title: str | None = None
 
@@ -81,8 +81,8 @@ class SharedCharacterRead(BaseModel):
     source_character_id: int | None = None
     version: int = 1
     is_active: bool = True
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
     # computed helpers
     reference_images_count: int = 0
@@ -113,8 +113,8 @@ class UniverseRead(BaseModel):
     style_rules: str | None = None
     cover_image_url: str | None = None
     is_active: bool = True
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
     # computed
     projects_count: int = 0
     shared_characters_count: int = 0

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.db.utils import UtcDatetime
 
 TextProviderKey = Literal["anthropic", "openai", "fake"]
 ImageProviderKey = Literal["modelscope", "openai", "fake"]
@@ -166,8 +166,8 @@ class ProjectRead(BaseModel):
     reference_images: list[str] = Field(default_factory=list)
     exports: list[str] = Field(default_factory=list)
     provider_settings: ProjectProviderSettingsRead
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
     universe_id: int | None = None
     chapter_number: int | None = None
     chapter_title: str | None = None
@@ -196,7 +196,7 @@ class CharacterRead(BaseModel):
     voice: str | None = None
     approval_state: Literal["draft", "approved", "superseded"]
     approval_version: int
-    approved_at: datetime | None
+    approved_at: UtcDatetime | None
     approved_name: str | None
     approved_description: str | None
     approved_image_url: str | None
@@ -249,7 +249,7 @@ class ShotRead(BaseModel):
     character_ids: list[int]
     approval_state: Literal["draft", "approved", "superseded"]
     approval_version: int
-    approved_at: datetime | None = None
+    approved_at: UtcDatetime | None = None
     approved_description: str | None = None
     approved_prompt: str | None = None
     approved_image_prompt: str | None = None
@@ -396,9 +396,9 @@ class AgentRunRead(BaseModel):
     provider_snapshot: ProjectProviderSettingsRead | None = None
     workflow_version: int = 1
     execution_attempt: int = 0
-    started_at: datetime | None = None
-    created_at: datetime
-    updated_at: datetime
+    started_at: UtcDatetime | None = None
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class RunStageTimingRead(BaseModel):
@@ -415,7 +415,7 @@ class RunTimingRead(BaseModel):
     run_id: int
     status: str
     active: bool
-    started_at: datetime | None = None
+    started_at: UtcDatetime | None = None
     # 从开始执行到现在（结束的运行到结束），含在闸门等待的时间
     elapsed_seconds: float
     current_stage: str | None = None
@@ -504,7 +504,7 @@ class MessageRead(BaseModel):
     summary: str | None
     progress: float | None
     is_loading: bool
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class AssetCreate(BaseModel):
@@ -532,8 +532,8 @@ class AssetRead(BaseModel):
     metadata_json: str | None
     source_project_id: int | None
     tags: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class AssetListRead(BaseModel):

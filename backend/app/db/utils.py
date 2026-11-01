@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
+
+from pydantic import PlainSerializer
 
 
 def utcnow() -> datetime:
@@ -18,6 +21,16 @@ def as_naive_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
     return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _iso_utc(value: datetime) -> str:
+    aware = value if value.tzinfo else value.replace(tzinfo=UTC)
+    return aware.isoformat().replace("+00:00", "Z")
+
+
+# Naive UTC rows must leave the API with a "Z": the browser reads an
+# offset-less ISO string as local time and shows it hours off.
+UtcDatetime = Annotated[datetime, PlainSerializer(_iso_utc, return_type=str, when_used="json")]
 
 
 def redact_credentials(conn_str: str) -> str:

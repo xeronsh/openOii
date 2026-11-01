@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.db.utils import UtcDatetime
 
 EntityType = Literal["character", "shot"]
 
@@ -17,7 +18,7 @@ class ArtifactVersionRead(BaseModel):
     version: int
     snapshot: dict[str, Any] = Field(default_factory=dict)
     trigger: str
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class VersionListRead(BaseModel):

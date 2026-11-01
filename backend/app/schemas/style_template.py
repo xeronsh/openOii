@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.db.utils import UtcDatetime
 
 
 class StyleTemplateRead(BaseModel):
@@ -20,8 +21,8 @@ class StyleTemplateRead(BaseModel):
     preview_image_url: Optional[str] = None
     sort_order: int = 0
     is_active: bool = True
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class StyleTemplateListRead(BaseModel):

@@ -404,7 +404,7 @@ def create_app() -> FastAPI:
                     from app.db.session import async_session_maker
                     from app.models.agent_run import AgentRun
                     from app.services.run_signals import GRAPH_STAGE_FOR_AGENT
-                    from sqlalchemy import select
+                    from sqlalchemy import select, text
 
                     async with async_session_maker() as session:
                         stmt = (
@@ -428,9 +428,25 @@ def create_app() -> FastAPI:
                                     {"type": "run_awaiting_confirm", "data": payload},
                                 )
                                 continue
+                            # current_agent alone is ambiguous ("render" covers both
+                            # character and shot images); the engine's last stage event
+                            # is exact.
                             mapped_stage = GRAPH_STAGE_FOR_AGENT.get(
                                 run.current_agent or "", run.current_agent or "plan_outline"
                             )
+                            try:
+                                last = await session.execute(
+                                    text(
+                                        "SELECT json_extract(payload, '$.current_stage') "
+                                        "FROM engine_run_events WHERE run_id = :run_id "
+                                        "AND json_extract(payload, '$.current_stage') IS NOT NULL "
+                                        "ORDER BY seq DESC LIMIT 1"
+                                    ),
+                                    {"run_id": run.id},
+                                )
+                                mapped_stage = last.scalar() or mapped_stage
+                            except Exception:  # noqa: BLE001 - no engine events table yet
+                                pass
                             await _send_connection_event(
                                 project_id,
                                 websocket,

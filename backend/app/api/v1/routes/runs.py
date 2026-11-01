@@ -789,12 +789,14 @@ async def resume_run(
     ws: ConnectionManager = WsManagerDep,
 ):
     run = await get_or_404(session, AgentRun, run_id)
-    if run.status == "succeeded":
+    if run.status in ("succeeded", "cancelled"):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail={
                 "code": "RUN_NOT_RESUMABLE",
-                "message": "已完成的 run 不能恢复",
+                "message": "已完成的 run 不能恢复"
+                if run.status == "succeeded"
+                else "已停止的 run 不能恢复，请重新生成",
                 "details": {"run_id": run_id},
             },
         )

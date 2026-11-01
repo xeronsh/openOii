@@ -29,26 +29,22 @@ def _shot_read(shot: Shot) -> dict[str, Any]:
 
 
 def _validate_shot_approval_ready(shot: Shot) -> None:
+    # prompt / image_prompt are rebuilt at render time (an edit clears them) and
+    # the planner never writes motion_note, so neither can block approval.
     missing = []
     if not shot.description:
-        missing.append("description")
-    if not shot.prompt:
-        missing.append("prompt")
-    if not shot.image_prompt:
-        missing.append("image_prompt")
+        missing.append("描述")
     if shot.duration is None:
-        missing.append("duration")
+        missing.append("时长")
     if not shot.camera:
-        missing.append("camera")
-    if not shot.motion_note:
-        missing.append("motion_note")
+        missing.append("镜头")
     if not shot.character_ids:
-        missing.append("character_ids")
+        missing.append("出场角色")
 
     if missing:
         raise HTTPException(
             status_code=400,
-            detail="Shot approval requires structured intent, duration, camera, motion note, and bound cast",
+            detail=f"批准镜头前请先补全：{'、'.join(missing)}",
         )
 
 
@@ -130,6 +126,11 @@ async def update_shot(
         for field in ("image_prompt", "prompt"):
             if not _changed(shot, data, field):
                 data[field] = None
+        # The existing image/video still shows the old description, so its
+        # visual review no longer applies.
+        if shot.image_url or shot.video_url:
+            data["review_status"] = "unchecked"
+            data["review_note"] = "描述已修改，画面还没按新描述重画"
     for k, v in data.items():
         setattr(shot, k, v)
 

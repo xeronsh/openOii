@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel, Field
+
+from app.db.utils import UtcDatetime
 
 
 class FaceMatchDetailRead(BaseModel):
@@ -35,7 +35,7 @@ class ProjectConsistencyRead(BaseModel):
     project_id: int
     overall_score: float = Field(ge=0.0, le=100.0)
     character_reports: list[CharacterConsistencyRead] = Field(default_factory=list)
-    evaluated_at: datetime
+    evaluated_at: UtcDatetime
     # 由 ConsistencyEvalService 在报告落库后回填，持久化的 report_data 中不含该字段
     eval_id: int | None = None
 
@@ -53,5 +53,5 @@ class ConsistencyReportRead(BaseModel):
     id: int
     project_id: int
     overall_score: float
-    created_at: datetime
+    created_at: UtcDatetime
     report_data: ProjectConsistencyRead | None = None
