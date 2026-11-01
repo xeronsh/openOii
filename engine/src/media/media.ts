@@ -533,6 +533,8 @@ export function videoTaskPollUrls(baseUrl: string, endpoint: string, taskId: str
   return [...new Set(urls)];
 }
 
+const PROVIDER_SLOW_NOTICE_MS = 60_000;
+
 /** A gateway error page or a cut-off body must not surface as a raw JSON.parse message. */
 async function readProviderJson(response: Response, kind: "image" | "video"): Promise<Record<string, unknown>> {
   try {
@@ -662,19 +664,28 @@ export class MediaService {
       this.throwIfAborted();
       let response: Response | null = null;
       let error: unknown = null;
+      // A slow synchronous provider says nothing until it answers (undici gives
+      // up after 5 minutes): tell the user it is still waiting.
+      const slow = setTimeout(() => {
+        void Promise.resolve(this.retryNotice?.("上游 1 分钟还没返回，继续等待（最长约 5 分钟）")).catch(() => undefined);
+      }, PROVIDER_SLOW_NOTICE_MS);
       try {
         response = await fetch(endpoint, this.requestInit(init));
       } catch (caught) {
         if (this.abortSignal?.aborted) throw caught;
         error = caught;
+      } finally {
+        clearTimeout(slow);
       }
+      const code = String((error as { cause?: { code?: unknown } } | null)?.cause?.code ?? "");
+      // Retrying a request that already waited minutes only multiplies the wait.
+      if (code.includes("TIMEOUT")) throw new Error("media provider request timed out (no response)");
       const retryable = response ? RETRYABLE_PROVIDER_STATUS.has(response.status) : true;
       if (!retryable || attempt >= PROVIDER_MAX_RETRIES) {
         if (response) return response;
         throw error;
       }
-      const code = String((error as { cause?: { code?: unknown } } | null)?.cause?.code ?? "");
-      const reason = response ? `HTTP ${response.status}` : code.includes("TIMEOUT") ? "响应超时" : "连接失败";
+      const reason = response ? `HTTP ${response.status}` : "连接失败";
       console.warn(
         `media provider ${response ? `returned ${response.status}` : "request failed"}; retry ${attempt + 1}/${PROVIDER_MAX_RETRIES}`,
       );
