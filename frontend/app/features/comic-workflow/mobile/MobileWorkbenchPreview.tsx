@@ -33,6 +33,8 @@ interface MobileWorkbenchPreviewProps {
 	inbox?: ReactNode;
 	/** 最近动态（页面最底部）。 */
 	activity?: ReactNode;
+	/** 项目助手对话；没有对话时组件自己不渲染 */
+	chat?: ReactNode;
 	/** 状态卡唯一的操作（生成中是「停止」）；闸门、恢复的按钮在待处理卡里 */
 	primaryAction?: ReactNode;
 	/** 运行中的计时条（本步 / 共 / 剩余约 · 完成后通知我） */
@@ -47,6 +49,7 @@ export function MobileWorkbenchPreview({
 	characters,
 	inbox,
 	activity,
+	chat,
 	primaryAction,
 	timing,
 }: MobileWorkbenchPreviewProps) {
@@ -204,6 +207,8 @@ export function MobileWorkbenchPreview({
 					</ul>
 				</div>
 			) : null}
+
+			{chat ? <div className="flex max-h-96 flex-col overflow-hidden rounded-lg border border-line empty:hidden">{chat}</div> : null}
 
 			{activity ? (
 				<div>

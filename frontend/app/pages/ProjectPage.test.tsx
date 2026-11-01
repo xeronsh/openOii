@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectPage } from './ProjectPage';
-import { projectsApi, runsApi } from '~/services/api';
+import { chatApi, projectsApi, runsApi } from '~/services/api';
 import type { AgentRun, Project, RecoveryControlRead } from '~/types';
 import { ApiError } from '~/types/errors';
 import { toast } from '~/utils/toast';
@@ -309,8 +309,8 @@ vi.mock('~/services/api', () => ({
     getMessages: vi.fn(),
     startRun: vi.fn(),
     currentRun: vi.fn(),
-    feedback: vi.fn(),
   },
+  chatApi: { get: vi.fn(), send: vi.fn() },
   runsApi: {
     cancel: vi.fn(),
     resume: vi.fn(),
@@ -364,8 +364,8 @@ vi.mock('~/features/comic-workflow/inspector/InspectorPanel', () => ({
 }));
 
 vi.mock('~/features/workbench/PromptBar', () => ({
-  PromptBar: ({ onSendFeedback }: { onSendFeedback?: (content: string) => void }) => (
-    <button type="button" onClick={() => onSendFeedback?.('继续调整故事节奏')}>
+  PromptBar: ({ onSend }: { onSend?: (content: string) => void }) => (
+    <button type="button" onClick={() => onSend?.('继续调整故事节奏')}>
       发送反馈
     </button>
   ),
@@ -457,7 +457,7 @@ describe('ProjectPage live hydration', () => {
 		id: 77,
 		provider_snapshot: providerSnapshotSample,
 	} as never);
-    vi.mocked(projectsApi.feedback).mockResolvedValue({ id: 88 } as never);
+    vi.mocked(chatApi.send).mockResolvedValue({ accepted: true });
     vi.mocked(runsApi.cancel).mockResolvedValue(undefined as never);
     vi.mocked(runsApi.resume).mockResolvedValue({
       id: 55,
@@ -927,78 +927,15 @@ describe('ProjectPage live hydration', () => {
     expect(readRunState(9).currentStage).toBe('storyboard');
   });
 
-  it('submits feedback through the API when no active run is in progress', async () => {
+  it('sends the prompt bar message to the project assistant', async () => {
     const user = userEvent.setup();
-    seedRunState({ isGenerating: false });
+    seedRunState({ isGenerating: false, currentRunId: null });
     renderWithProviders(<ProjectPage />);
-    seedRunState({ currentRunId: null });
 
     await user.click(screen.getByRole('button', { name: '发送反馈' }));
 
     await waitFor(() => {
-      expect(projectsApi.feedback).toHaveBeenCalledWith(
-        9,
-        '继续调整故事节奏',
-        undefined,
-        'plan',
-        undefined,
-        undefined,
-        undefined,
-      );
-    });
-    expect(appendMessage).toHaveBeenCalledWith(
-      9,
-      expect.objectContaining({
-        agent: 'user',
-        role: 'user',
-        content: '继续调整故事节奏',
-      })
-    );
-  });
-
-  it('routes feedback to render when the current workflow stage is render', async () => {
-    const user = userEvent.setup();
-    seedRunState({ isGenerating: false });
-    seedRunState({ currentRunId: null });
-    renderWithProviders(<ProjectPage />);
-    seedRunState({ currentStage: 'render' });
-    seedRunState({ currentAgent: 'orchestrator' });
-
-    await user.click(screen.getByRole('button', { name: '发送反馈' }));
-
-    await waitFor(() => {
-      expect(projectsApi.feedback).toHaveBeenCalledWith(
-        9,
-        '继续调整故事节奏',
-        undefined,
-        'render',
-        undefined,
-        undefined,
-        undefined,
-      );
-    });
-  });
-
-  it('routes feedback to compose when the current workflow stage is compose', async () => {
-    const user = userEvent.setup();
-    seedRunState({ isGenerating: false });
-    seedRunState({ currentRunId: null });
-    renderWithProviders(<ProjectPage />);
-    seedRunState({ currentStage: 'compose' });
-    seedRunState({ currentAgent: 'render' });
-
-    await user.click(screen.getByRole('button', { name: '发送反馈' }));
-
-    await waitFor(() => {
-      expect(projectsApi.feedback).toHaveBeenCalledWith(
-        9,
-        '继续调整故事节奏',
-        undefined,
-        'compose',
-        undefined,
-        undefined,
-        undefined,
-      );
+      expect(chatApi.send).toHaveBeenCalledWith(9, '继续调整故事节奏');
     });
   });
 
@@ -1016,7 +953,7 @@ describe('ProjectPage live hydration', () => {
     expect(runsApi.confirm).not.toHaveBeenCalled();
     await waitFor(() => expect(resyncRunState).toHaveBeenCalledWith(9));
     expect(sendMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'confirm' }));
-    expect(projectsApi.feedback).not.toHaveBeenCalled();
+    expect(chatApi.send).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(readRunState(9).feedbackReceipt).toMatchObject({ id: 'fb1', state: 'received', content: '请微调这一版' });
     });
@@ -1347,43 +1284,6 @@ describe('ProjectPage live hydration', () => {
         expect.objectContaining({
           title: '请稍等片刻',
           message: '另一个任务正在进行，完成后再试',
-        })
-      );
-    });
-  });
-
-  it('handles feedback conflict and generic error paths', async () => {
-    const user = userEvent.setup();
-    seedRunState({ isGenerating: false });
-
-    vi.mocked(projectsApi.feedback).mockRejectedValueOnce(
-      new ApiError({
-        code: 'conflict',
-        message: '409 conflict',
-        status: 409,
-      })
-    );
-
-    renderWithProviders(<ProjectPage />);
-
-    await user.click(screen.getByRole('button', { name: '发送反馈' }));
-
-    await waitFor(() => {
-      expect(toast.info).toHaveBeenCalledWith({
-        title: 'AI 正在思考',
-        message: '请等待当前任务完成',
-      });
-    });
-
-    vi.mocked(projectsApi.feedback).mockRejectedValueOnce(new Error('feedback failed'));
-
-    await user.click(screen.getByRole('button', { name: '发送反馈' }));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: '提交失败',
-          message: 'feedback failed',
         })
       );
     });

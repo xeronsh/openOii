@@ -18,6 +18,7 @@ import { canvasEvents } from "~/components/canvas/canvasEvents";
 import { buildComicWorkflow } from "~/features/comic-workflow/graph/buildComicWorkflow";
 import { AgentPanel, type AgentPanelTab } from "~/features/comic-workflow/agent/AgentPanel";
 import { InboxPanel, type InboxActions } from "~/features/comic-workflow/agent/InboxPanel";
+import { AssistantChat } from "~/components/chat/AssistantChat";
 import { ChatPanel } from "~/components/chat/ChatPanel";
 import { deriveInboxItems } from "~/features/comic-workflow/agent/inboxItems";
 import { InspectorPanel } from "~/features/comic-workflow/inspector/InspectorPanel";
@@ -165,7 +166,7 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 
 	const {
 		handleGenerate,
-		handleFeedback,
+		handleChat,
 		handleConfirm,
 		handleCancel,
 		handleResume,
@@ -179,7 +180,6 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 		project,
 		characters,
 		shots,
-		currentStage: runCurrentStage,
 		currentRunId: runCurrentRunId,
 		isGenerating: runIsGenerating,
 		recoveryControl: runRecoveryControl,
@@ -332,6 +332,13 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 			setAgentTab("activity");
 		}
 	}, [inboxItems, runModePreference]);
+
+	// 输入框发给助手：桌面端顺手切到「助手」页签，回答就在眼前
+	const sendToAssistant = (content: string) => {
+		setAgentTab("chat");
+		setAgentCollapsed(false);
+		return handleChat(content);
+	};
 
 	const openInbox = useCallback(() => {
 		setAgentTab("inbox");
@@ -580,6 +587,7 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 								<InboxPanel items={inboxItems} actions={inboxActions} />
 							) : null
 						}
+						chat={<AssistantChat projectId={projectId} hideEmpty />}
 						activity={<ChatPanel projectId={projectId} isGenerating={hasActiveRun} limit={5} />}
 						timing={hasActiveRun ? <RunTimingBar projectId={projectId} inline /> : null}
 						primaryAction={
@@ -648,8 +656,7 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 								onRemoveSelection={removeSelection}
 								gateLabel={gateLabel}
 								awaitingConfirm={runAwaitingConfirm}
-								isGenerating={hasActiveRun}
-								onSendFeedback={handleFeedback}
+								onSend={sendToAssistant}
 								onConfirm={handleConfirm}
 							/>
 						</div>
@@ -663,8 +670,7 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 					selection={selectionChips}
 					gateLabel={gateLabel}
 					awaitingConfirm={runAwaitingConfirm}
-					isGenerating={hasActiveRun}
-					onSendFeedback={handleFeedback}
+					onSend={handleChat}
 					onConfirm={handleConfirm}
 				/>
 			) : null}

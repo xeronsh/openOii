@@ -359,7 +359,7 @@ test("comic workflow canvas supports core review interactions", async ({ page })
 	await expect(agentPanel).toBeVisible();
 	await agentPanel.getByRole("button", { name: "收起活动面板" }).click();
 	await expect(agentPanel).toHaveCount(0);
-	await expect(page.getByPlaceholder("描述如何调整所选内容…")).toBeVisible();
+	await expect(page.getByPlaceholder("让助手调整所选内容…")).toBeVisible();
 
 	expect(consoleErrors).toEqual([]);
 });

@@ -348,14 +348,14 @@ test("mobile names the step and shows where it is in the six", async ({ page }) 
 	await expect(page.getByLabel("第 3 步，共 6 步")).toBeVisible();
 });
 
-test("mobile while running: one status card with the only 停止, and the input says when feedback is possible", async ({ page }) => {
+test("mobile while running: one status card with the only 停止, and the input talks to the assistant", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await mockServer(page, control("running"));
 	await page.goto("/project/7");
 
 	await expect(page.getByRole("heading", { name: /^生成中/ })).toBeVisible();
 	await expect(page.getByRole("button", { name: "停止生成" })).toHaveCount(1);
-	await expect(page.getByPlaceholder("生成中，到下一个确认点时可以提修改意见")).toBeVisible();
+	await expect(page.getByPlaceholder("问助手，或让它重画、修改…")).toBeVisible();
 	await expect(page.getByPlaceholder(/待审批后可提交修改/)).toHaveCount(0);
 });
 

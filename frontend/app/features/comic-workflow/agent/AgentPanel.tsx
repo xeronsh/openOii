@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { AssistantChat } from "~/components/chat/AssistantChat";
 import { ChatPanel } from "~/components/chat/ChatPanel";
 import { IconButton } from "~/components/ui/IconButton";
 import { PlainButton } from "~/components/ui/PlainButton";
@@ -7,7 +8,7 @@ import type { InboxItem } from "./inboxItems";
 import { SvgIcon } from "~/components/ui/SvgIcon";
 import "~/components/ui/icons/workbenchIcons";
 
-export type AgentPanelTab = "activity" | "inbox";
+export type AgentPanelTab = "chat" | "activity" | "inbox";
 
 interface AgentPanelProps {
 	projectId: number;
@@ -23,7 +24,7 @@ interface AgentPanelProps {
 
 /**
  * Agent 面板：浮在画布左侧（360px），默认展开，可收成胶囊。
- * 只承载与选中无关的活动流；资产在画布工具条，宇宙时间线在 Inspector 的项目视图。
+ * 三个页签：助手对话、活动流、待处理；资产在画布工具条，宇宙时间线在 Inspector 的项目视图。
  */
 export function AgentPanel({
 	projectId,
@@ -65,6 +66,7 @@ export function AgentPanel({
 				<div className="flex items-center gap-1" role="tablist" aria-label="Agent 面板">
 					{(
 						[
+							["chat", "助手"],
 							["activity", "活动"],
 							["inbox", "待处理"],
 						] as const
@@ -106,6 +108,8 @@ export function AgentPanel({
 			>
 				{tab === "inbox" ? (
 					<InboxPanel items={inboxItems} actions={inboxActions} />
+				) : tab === "chat" ? (
+					<AssistantChat projectId={projectId} />
 				) : (
 					<ChatPanel
 						projectId={projectId}

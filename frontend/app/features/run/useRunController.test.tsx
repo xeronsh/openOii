@@ -13,7 +13,8 @@ import type { Character, Project, RecoveryControlRead, Shot } from "~/types";
 import { useRunController } from "./useRunController";
 
 const api = vi.hoisted(() => ({
-	projectsApi: { startRun: vi.fn(), feedback: vi.fn(), recompose: vi.fn() },
+	projectsApi: { startRun: vi.fn(), recompose: vi.fn() },
+	chatApi: { send: vi.fn() },
 	runsApi: { confirm: vi.fn(), gateFeedback: vi.fn(), cancel: vi.fn(), resume: vi.fn(), restorePrevious: vi.fn() },
 }));
 const send = vi.hoisted(() => vi.fn());
@@ -67,7 +68,6 @@ function setup(overrides: Partial<Args> = {}, url = "/project/7") {
 		project,
 		characters,
 		shots,
-		currentStage: "plan",
 		currentRunId: null,
 		isGenerating: false,
 		recoveryControl: null,
@@ -159,14 +159,6 @@ describe("useRunController · start", () => {
 			),
 		);
 		expect(toast.warning).not.toHaveBeenCalled();
-		api.projectsApi.feedback.mockRejectedValueOnce(incompatible());
-		await act(async () => {
-			await result.current.handleFeedback("更暗");
-		});
-		expect(toast.error).toHaveBeenLastCalledWith(
-			expect.objectContaining({ title: "提交失败", message: expect.stringContaining("请重新生成") }),
-		);
-		expect(toast.info).not.toHaveBeenCalledWith(expect.objectContaining({ title: "AI 正在思考" }));
 	});
 
 	it("ignores a start response that arrives after the user cancelled", async () => {
@@ -192,66 +184,42 @@ describe("useRunController · start", () => {
 	});
 });
 
-describe("useRunController · feedback", () => {
-	it("targets the selected shots and labels the message only after the server accepts", async () => {
-		api.projectsApi.feedback.mockResolvedValue({ run_id: 50 });
-		const { result } = setup({ currentStage: "render", selectedNodeIds: ["shot:12"] });
+describe("useRunController · assistant chat", () => {
+	it.each([
+		[[], null, "改"],
+		[["shot:12"], null, "改\n（选中：分镜 #12（第 2 镜））"],
+		[[], "character:21", "改\n（选中：角色 #21（林夏））"],
+		[["shot:99", "character:22", "brief:1"], null, "改\n（选中：分镜 #99、角色 #22）"],
+	])("sends the message with selection %j / %s as context", async (ids, single, sent) => {
+		api.chatApi.send.mockResolvedValue({ accepted: true });
+		const { result } = setup({ selectedNodeIds: ids, selectedNodeId: single });
 		let ok = false;
 		await act(async () => {
-			ok = await result.current.handleFeedback("更亮");
+			ok = await result.current.handleChat("改");
 		});
 		expect(ok).toBe(true);
-		expect(api.projectsApi.feedback).toHaveBeenCalledWith(PID, "更亮", undefined, "render", "shot", 12, [12]);
-		expect(readMessageFeed(PID).at(-1)?.content).toBe("更亮\n（格 · 镜头 2）");
-		expect(readRunState(PID)).toMatchObject({ currentRunId: 50, currentStage: "review", isGenerating: true });
+		expect(api.chatApi.send).toHaveBeenCalledWith(PID, sent);
 	});
 
-	it.each([
-		[["character:21"], "character", "（角色：林夏）"],
-		[["character:22"], "character", "（1 个角色）"],
-		[["character:21", "character:22"], "character", "（2 个角色）"],
-		[["shot:11", "shot:12"], "shot", "（2 个分镜格）"],
-	])("labels selection %j", async (ids, type, label) => {
-		api.projectsApi.feedback.mockResolvedValue({});
-		const { result } = setup({ currentStage: "compose", selectedNodeIds: ids });
-		await act(async () => {
-			await result.current.handleFeedback("改");
-		});
-		expect(api.projectsApi.feedback.mock.calls[0]![3]).toBe("compose");
-		expect(api.projectsApi.feedback.mock.calls[0]![4]).toBe(type);
-		expect(readMessageFeed(PID).at(-1)?.content).toBe(`改\n${label}`);
-	});
-
-	it("sends mixed or empty selections as whole-stage feedback", async () => {
-		api.projectsApi.feedback.mockResolvedValue({});
-		const { result } = setup({ selectedNodeId: "shot:11", selectedNodeIds: ["shot:11", "character:21"] });
-		await act(async () => {
-			await result.current.handleFeedback("整体更暗");
-		});
-		expect(api.projectsApi.feedback).toHaveBeenCalledWith(PID, "整体更暗", undefined, "plan", undefined, undefined, undefined);
-		expect(readMessageFeed(PID).at(-1)?.content).toBe("整体更暗");
-	});
-
-	it("keeps the draft (returns false) and explains conflicts and failures", async () => {
+	it("keeps the draft when the assistant is busy or the request fails", async () => {
 		const { result } = setup();
-		api.projectsApi.feedback.mockRejectedValueOnce(conflict(control("active")));
+		api.chatApi.send.mockRejectedValueOnce(conflict());
 		let ok = true;
 		await act(async () => {
-			ok = await result.current.handleFeedback("a");
+			ok = await result.current.handleChat("a");
 		});
 		expect(ok).toBe(false);
-		expect(toast.info).toHaveBeenLastCalledWith(expect.objectContaining({ title: "已有任务进行中" }));
-		expect(readRunState(PID).currentRunId).toBe(40);
-		api.projectsApi.feedback.mockRejectedValueOnce(conflict());
+		expect(toast.info).toHaveBeenLastCalledWith(expect.objectContaining({ message: "助手还在回答上一条消息" }));
+		api.chatApi.send.mockRejectedValueOnce(new Error("offline"));
 		await act(async () => {
-			await result.current.handleFeedback("b");
+			await result.current.handleChat("b");
 		});
-		expect(toast.info).toHaveBeenLastCalledWith(expect.objectContaining({ title: "AI 正在思考" }));
-		api.projectsApi.feedback.mockRejectedValueOnce(new Error("offline"));
+		expect(toast.error).toHaveBeenLastCalledWith(expect.objectContaining({ title: "发送失败", message: "offline" }));
+		api.chatApi.send.mockRejectedValueOnce("boom");
 		await act(async () => {
-			await result.current.handleFeedback("c");
+			await result.current.handleChat("c");
 		});
-		expect(toast.error).toHaveBeenLastCalledWith(expect.objectContaining({ title: "提交失败", message: "offline" }));
+		expect(toast.error).toHaveBeenLastCalledWith(expect.objectContaining({ message: "请重试" }));
 		expect(readMessageFeed(PID)).toEqual([]);
 	});
 });

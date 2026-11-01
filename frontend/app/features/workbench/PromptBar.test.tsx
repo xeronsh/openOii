@@ -10,8 +10,7 @@ const base = {
 	selection: [],
 	gateLabel: null,
 	awaitingConfirm: false,
-	isGenerating: false,
-	onSendFeedback: vi.fn(),
+	onSend: vi.fn(),
 	onConfirm: vi.fn(),
 };
 
@@ -23,7 +22,7 @@ describe("PromptBar", () => {
 	it("shows [整个项目] without a selection", () => {
 		render(<PromptBar {...base} />);
 		expect(screen.getByText("整个项目")).toBeInTheDocument();
-		expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "描述你想生成的内容…");
+		expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "问助手，或让它重画、修改…");
 	});
 
 	it("shows one chip per selected object and removes one", async () => {
@@ -42,32 +41,32 @@ describe("PromptBar", () => {
 		expect(screen.queryByText("整个项目")).not.toBeInTheDocument();
 		expect(screen.getByText("分镜 S01")).toBeInTheDocument();
 		expect(screen.getByText("角色 小猫")).toBeInTheDocument();
-		expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "描述如何调整所选内容…");
+		expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "让助手调整所选内容…");
 
 		await userEvent.click(screen.getByRole("button", { name: "移除 分镜 S01" }));
 		expect(onRemoveSelection).toHaveBeenCalledWith("shot:1");
 	});
 
 	it("sends with Enter and keeps Shift+Enter for a new line", async () => {
-		const onSendFeedback = vi.fn();
-		render(<PromptBar {...base} onSendFeedback={onSendFeedback} />);
+		const onSend = vi.fn();
+		render(<PromptBar {...base} onSend={onSend} />);
 
 		await userEvent.type(screen.getByRole("textbox"), "第一行{Shift>}{Enter}{/Shift}第二行{Enter}");
-		expect(onSendFeedback).toHaveBeenCalledWith("第一行\n第二行");
+		expect(onSend).toHaveBeenCalledWith("第一行\n第二行");
 	});
 
-	it("puts the draft back when the feedback was not sent", async () => {
-		const onSendFeedback = vi.fn().mockResolvedValue(false);
-		render(<PromptBar {...base} onSendFeedback={onSendFeedback} />);
+	it("puts the draft back when the message was not sent", async () => {
+		const onSend = vi.fn().mockResolvedValue(false);
+		render(<PromptBar {...base} onSend={onSend} />);
 
 		await userEvent.type(screen.getByRole("textbox"), "重画这一格{Enter}");
-		expect(onSendFeedback).toHaveBeenCalledWith("重画这一格");
+		expect(onSend).toHaveBeenCalledWith("重画这一格");
 		expect(await screen.findByDisplayValue("重画这一格")).toBeInTheDocument();
 	});
 
 	it("shows the gate chip and sends feedback to the gate", async () => {
 		const onConfirm = vi.fn();
-		render(<PromptBar {...base} awaitingConfirm isGenerating gateLabel="规划" onConfirm={onConfirm} />);
+		render(<PromptBar {...base} awaitingConfirm gateLabel="规划" onConfirm={onConfirm} />);
 
 		expect(screen.getByText("规划 · 待确认")).toBeInTheDocument();
 		expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "说明需要修改的地方…");

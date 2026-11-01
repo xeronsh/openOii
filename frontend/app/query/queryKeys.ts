@@ -9,6 +9,8 @@ export const projectQueryKeys = {
   runState: (projectId: number) => ["run-state", projectId] as const,
   runTiming: (runId: number) => ["run-timing", runId] as const,
   projects: () => ["projects"] as const,
+  /** Project assistant conversation (GET /chat, patched by chat_* WS events). */
+  chat: (projectId: number) => ["chat", projectId] as const,
   /** 重新生成确认框的计划 + 上一版（GET runs/regenerate-plan）。 */
   regeneratePlan: (projectId: number) => ["regenerate-plan", projectId] as const,
 };

@@ -7,6 +7,9 @@ import type { InboxItem } from "./inboxItems";
 vi.mock("~/components/chat/ChatPanel", () => ({
 	ChatPanel: () => <div data-testid="chat-panel" />,
 }));
+vi.mock("~/components/chat/AssistantChat", () => ({
+	AssistantChat: () => <div data-testid="assistant-chat" />,
+}));
 
 const gate: InboxItem = { kind: "gate", id: "gate", title: "规划已完成，等待确认", detail: null, gate: null };
 const failed: InboxItem = { kind: "failed", id: "failed", title: "最近一次生成失败", detail: "可以重试" };
@@ -68,5 +71,15 @@ describe("AgentPanel", () => {
 		rerender(<AgentPanel {...base} tab="inbox" inboxItems={[gate]} collapsed={false} onCollapsedChange={vi.fn()} />);
 		expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
 		expect(screen.getByText("规划已完成，等待确认")).toBeInTheDocument();
+	});
+
+	it("renders the assistant on the chat tab", async () => {
+		const onTabChange = vi.fn();
+		render(<AgentPanel {...base} tab="chat" onTabChange={onTabChange} collapsed={false} onCollapsedChange={vi.fn()} />);
+		expect(screen.getByRole("tab", { name: "助手" })).toHaveAttribute("aria-selected", "true");
+		expect(screen.getByTestId("assistant-chat")).toBeInTheDocument();
+		expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
+		await userEvent.click(screen.getByRole("tab", { name: "活动" }));
+		expect(onTabChange).toHaveBeenCalledWith("activity");
 	});
 });

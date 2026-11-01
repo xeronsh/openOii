@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { appendMessage, clearMessageFeed } from "~/query/messageFeed";
+import { sendChat } from "~/query/assistantChat";
 import { appQueryClient } from "~/query/client";
 import { projectQueryKeys } from "~/query/queryKeys";
 import { patchRunState, readRunState, resetRunState } from "~/query/runState";
@@ -16,14 +17,11 @@ import type {
 	Project,
 	RecoveryControlRead,
 	Shot,
-	WorkflowStage,
 } from "~/types";
 import { ApiError } from "~/types/errors";
 import { toast } from "~/utils/toast";
 import { toSimplifiedStage } from "~/utils/workflowStage";
 import type { LastRunTerminalStatus } from "../comic-workflow/state/deriveStudioStatus";
-
-type FeedbackType = "plan" | "render" | "compose";
 
 function isRecoveryControlRead(value: unknown): value is RecoveryControlRead {
 	if (typeof value !== "object" || value === null) return false;
@@ -34,18 +32,11 @@ function isRecoveryControlRead(value: unknown): value is RecoveryControlRead {
 	);
 }
 
-function feedbackTypeForStage(stage: WorkflowStage): FeedbackType {
-	if (stage === "render" || stage === "render_approval") return "render";
-	if (stage === "compose") return "compose";
-	return "plan";
-}
-
 export function useRunController(args: {
 	projectId: number;
 	project: Project | undefined;
 	characters: Character[];
 	shots: Shot[];
-	currentStage: WorkflowStage;
 	currentRunId: number | null;
 	isGenerating: boolean;
 	recoveryControl: RecoveryControlRead | null;
@@ -59,7 +50,6 @@ export function useRunController(args: {
 		project,
 		characters,
 		shots,
-		currentStage,
 		currentRunId,
 		isGenerating,
 		recoveryControl,
@@ -174,74 +164,6 @@ export function useRunController(args: {
 			void appQueryClient.invalidateQueries({ queryKey: projectQueryKeys.regeneratePlan(projectId) });
 			resyncRunState(projectId, { project: true });
 		},
-	});
-
-	const feedbackMutation = useMutation({
-		mutationFn: (payload: {
-			content: string;
-			entityType?: string;
-			entityId?: number;
-			entityIds?: number[];
-		}) =>
-			projectsApi.feedback(
-				projectId,
-				payload.content,
-				undefined,
-				feedbackTypeForStage(currentStage),
-				payload.entityType,
-				payload.entityId,
-				payload.entityIds?.length ? payload.entityIds : undefined,
-			),
-		onSuccess: (result) => {
-			if (result?.run_id) {
-				patchRunState(projectId, {
-					currentRunId: result.run_id,
-					isGenerating: true,
-					currentAgent: "review",
-					currentStage: "review",
-					progress: 0,
-					recoveryControl: null,
-					recoverySummary: null,
-				});
-			}
-		},
-		onError: (error: Error | ApiError) => {
-			const apiError = error instanceof ApiError ? error : null;
-			// 版本不兼容也是 409，但不是「正忙」：直接说明原因
-			const isConflict = apiError?.status === 409 && apiError.code !== "RUN_WORKFLOW_INCOMPATIBLE";
-			if (isConflict) {
-				const control = apiError && isRecoveryControlRead(apiError.response)
-					? apiError.response
-					: undefined;
-				if (control?.active_run && control.recovery_summary) {
-					patchRunState(projectId, {
-						recoveryControl: control,
-						recoverySummary: control.recovery_summary,
-						isGenerating: control.state === "active",
-						...(control.state === "active"
-							? {
-								currentRunId: control.active_run.id,
-								currentAgent: control.active_run.current_agent,
-								progress: control.active_run.progress,
-							}
-							: {}),
-					});
-					const stage = toSimplifiedStage(
-						control.recovery_summary.next_stage ?? control.recovery_summary.current_stage,
-					);
-					if (stage) patchRunState(projectId, { currentStage: stage });
-					toast.info({ title: "已有任务进行中", message: "已恢复当前运行控制，请先确认或停止" });
-					return;
-				}
-				toast.info({ title: "AI 正在思考", message: "请等待当前任务完成" });
-				return;
-			}
-			toast.error({
-				title: "提交失败",
-				message: apiError?.message || error.message || "无法发送反馈，请重试",
-			});
-		},
-		onSettled: () => resyncRunState(projectId, { project: true }),
 	});
 
 	/** 闸门处的两个决定：批准，或要求修改（重做本阶段后回到同一闸门）。 */
@@ -449,52 +371,23 @@ export function useRunController(args: {
 		});
 	};
 
-	const handleFeedback = (content: string): Promise<boolean> => {
-		setLastRunStatus(null);
+	/** 输入框（非审批门）发给项目助手；选中的分镜/角色作为一行上下文附在后面。 */
+	const handleChat = (content: string): Promise<boolean> => {
 		const ids = selectedNodeIds.length > 0 ? selectedNodeIds : selectedNodeId ? [selectedNodeId] : [];
-		const shotIds = ids
-			.filter((id) => id.startsWith("shot:"))
-			.map((id) => Number(id.split(":")[1]))
-			.filter(Number.isFinite);
-		const characterIds = ids
-			.filter((id) => id.startsWith("character:"))
-			.map((id) => Number(id.split(":")[1]))
-			.filter(Number.isFinite);
-
-		let entityType: string | undefined;
-		let entityId: number | undefined;
-		let entityIds: number[] | undefined;
-		let contextLabel = "";
-		if (shotIds.length > 0 && characterIds.length === 0) {
-			entityType = "shot";
-			entityId = shotIds[0];
-			entityIds = shotIds;
-			contextLabel = shotIds.length === 1
-				? `（格 · 镜头 ${shots.find((shot) => shot.id === shotIds[0])?.order ?? shotIds[0]}）`
-				: `（${shotIds.length} 个分镜格）`;
-		} else if (characterIds.length > 0 && shotIds.length === 0) {
-			entityType = "character";
-			entityId = characterIds[0];
-			entityIds = characterIds;
-			const character = characters.find((item) => item.id === characterIds[0]);
-			contextLabel = characterIds.length === 1
-				? character?.name ? `（角色：${character.name}）` : "（1 个角色）"
-				: `（${characterIds.length} 个角色）`;
-		}
-
-		// 只有服务端接受后才写进对话流；失败时由 PromptBar 保留草稿
-		return feedbackMutation.mutateAsync({ content, entityType, entityId, entityIds }).then(
-			() => {
-				appendMessage(projectId, {
-					agent: "user",
-					role: "user",
-					content: contextLabel ? `${content}\n${contextLabel}` : content,
-					timestamp: new Date().toISOString(),
-				});
-				return true;
-			},
-			() => false,
-		);
+		const picked = ids.flatMap((id) => {
+			const [kind, raw] = id.split(":");
+			const entityId = Number(raw);
+			if (kind === "shot") {
+				const order = shots.find((shot) => shot.id === entityId)?.order;
+				return [`分镜 #${entityId}${order ? `（第 ${order} 镜）` : ""}`];
+			}
+			if (kind === "character") {
+				const name = characters.find((item) => item.id === entityId)?.name;
+				return [`角色 #${entityId}${name ? `（${name}）` : ""}`];
+			}
+			return [];
+		});
+		return sendChat(projectId, picked.length > 0 ? `${content}\n（选中：${picked.join("、")}）` : content);
 	};
 
 	/**
@@ -600,7 +493,7 @@ export function useRunController(args: {
 
 	return {
 		handleGenerate,
-		handleFeedback,
+		handleChat,
 		handleConfirm,
 		handleCancel,
 		handleResume,

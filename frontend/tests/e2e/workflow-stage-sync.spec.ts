@@ -35,7 +35,8 @@ const baseProject = {
 type MockServer = {
 	generateCalls: number;
 	resumeCalls: number;
-	feedbackCalls: number;
+	chatSends: unknown[];
+	chatConfirms: unknown[];
 	/** What GET runs/current answers: the server's view of the run. */
 	current: JsonValue;
 };
@@ -139,7 +140,8 @@ async function mockProjectPageApis(
 	const state: MockServer = {
 		generateCalls: 0,
 		resumeCalls: 0,
-		feedbackCalls: 0,
+		chatSends: [],
+		chatConfirms: [],
 		current: null,
 	};
 
@@ -241,8 +243,17 @@ async function mockProjectPageApis(
 			);
 		}
 
-		if (path === "/api/v1/projects/7/runs/feedback" && method === "POST") {
-			state.feedbackCalls += 1;
+		if (path === "/api/v1/projects/7/chat" && method === "GET") {
+			return fulfillJson({ messages: [], busy: false, text: "", pending: null });
+		}
+
+		if (path === "/api/v1/projects/7/chat" && method === "POST") {
+			state.chatSends.push(route.request().postDataJSON());
+			return fulfillJson({ accepted: true }, 202);
+		}
+
+		if (path === "/api/v1/projects/7/chat/confirm" && method === "POST") {
+			state.chatConfirms.push(route.request().postDataJSON());
 			return fulfillJson({ ok: true });
 		}
 
@@ -594,28 +605,25 @@ test("full business flow: generate → plan → confirm → render → confirm �
 	await expect(page.getByText("活动记录", { exact: true })).toBeVisible();
 });
 
-test("feedback sends with correct feedback_type for plan feedback", async ({ page }) => {
+test("the prompt bar talks to the assistant and a proposed change runs only after 确认", async ({ page }) => {
 	const routes = await mockProjectPageApis(page);
 
 	await page.goto("/project/7");
 	await page.waitForLoadState("networkidle");
+	await expect.poll(() => page.evaluate(() => window.__mockWs.count())).toBeGreaterThan(0);
 
+	await page.getByPlaceholder("问助手，或让它重画、修改…").fill("重画第2镜");
+	await page.getByRole("button", { name: "发送" }).click();
+	await expect.poll(() => routes.chatSends).toEqual([{ content: "重画第2镜" }]);
+	await expect(page.getByRole("tab", { name: "助手" })).toHaveAttribute("aria-selected", "true");
+
+	await push(page, routes, { type: "chat_message", data: { message: { id: 1, role: "user", text: "重画第2镜" } } });
 	await push(page, routes, {
-		type: "run_completed",
-		data: {
-			run_id: 901,
-			current_stage: "compose",
-			message: "完成",
-		},
+		type: "chat_status",
+		data: { busy: true, text: "", pending: { tool_call_id: "call-1", tool: "重画分镜", summary: "重画第 2 镜的画面" } },
 	});
-
-	await openChatPanel(page);
-
-	const chatInput = page.getByPlaceholder(/你的想法|反馈|修改/i);
-	if (await chatInput.isVisible()) {
-		await chatInput.fill("请修改剧本，增加更多悬念");
-		await page.getByRole("button", { name: /发送|提交/ }).click();
-	}
-
-	await expect.poll(() => routes.feedbackCalls).toBeGreaterThanOrEqual(0);
+	const card = page.getByTestId("chat-confirm");
+	await expect(card).toContainText("重画第 2 镜的画面");
+	await card.getByRole("button", { name: "确认" }).click();
+	await expect.poll(() => routes.chatConfirms).toEqual([{ tool_call_id: "call-1", approved: true }]);
 });

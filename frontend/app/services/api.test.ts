@@ -214,17 +214,6 @@ describe("projectsApi", () => {
 		);
 	});
 
-	it("feedback sends POST with content", async () => {
-		mockFetch.mockResolvedValueOnce(
-			new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
-		);
-		await projectsApi.feedback(1, "good");
-		expect(mockFetch).toHaveBeenCalledWith(
-			expect.stringContaining("/api/v1/projects/1/runs/feedback"),
-			expect.objectContaining({ method: "POST" }),
-		);
-	});
-
 	it("reorderShots sends PATCH with items", async () => {
 		mockFetch.mockResolvedValueOnce(
 			new Response(JSON.stringify({ shots: [] }), { status: 200 }),

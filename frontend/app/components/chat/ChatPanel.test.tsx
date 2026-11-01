@@ -62,8 +62,7 @@ function renderChatPanel(isGenerating = false) {
 				selection={[]}
 				gateLabel="规划"
 				awaitingConfirm={runState.awaitingConfirm}
-				isGenerating={isGenerating}
-				onSendFeedback={onSendFeedback}
+				onSend={onSendFeedback}
 				onConfirm={onConfirm}
 			/>
 		</>,
@@ -178,7 +177,7 @@ describe("ChatPanel", () => {
 		expect(screen.queryByText(/已完成/)).not.toBeInTheDocument();
 	});
 
-	it("sends feedback through onSendFeedback outside generating and confirm states", async () => {
+	it("sends the message to the assistant outside a gate", async () => {
 		const user = userEvent.setup();
 
 		renderChatPanel(false);
@@ -189,19 +188,17 @@ describe("ChatPanel", () => {
 		expect(onSendFeedback).toHaveBeenLastCalledWith("  这里有建议  ");
 	});
 
-	it("does not treat mid-run messages as confirm when not awaiting a gate", async () => {
+	it("sends mid-run messages to the assistant, never to the gate", async () => {
 		const user = userEvent.setup();
 		seedRunState({ currentRunId: 99, awaitingConfirm: false });
-		toastInfo.mockClear();
 
 		renderChatPanel(true);
 
-		await user.type(screen.getByRole("textbox"), "中途反馈");
+		await user.type(screen.getByRole("textbox"), "进度怎么样");
 		await user.click(screen.getByRole("button", { name: "发送" }));
 
 		expect(onConfirm).not.toHaveBeenCalled();
-		expect(onSendFeedback).not.toHaveBeenCalled();
-		expect(toastInfo).toHaveBeenCalled();
+		expect(onSendFeedback).toHaveBeenLastCalledWith("进度怎么样");
 	});
 
 	it("names the step it is on while a run is active", () => {

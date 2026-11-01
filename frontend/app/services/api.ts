@@ -228,6 +228,23 @@ export const runsApi = {
 /** 项目数组 + 全库计数（数组形态，便于与 list() 互换消费） */
 export type ProjectListPage = Project[] & { total?: number; readyTotal?: number };
 
+/** Project assistant (ADR 0011): replies arrive as chat_message / chat_status WS events. */
+export const chatApi = {
+	get: (projectId: number) => fetchApi<import("~/types").ChatState>(`/api/v1/projects/${projectId}/chat`),
+	send: (projectId: number, content: string) =>
+		fetchApi<{ accepted: boolean }>(`/api/v1/projects/${projectId}/chat`, {
+			method: "POST",
+			body: JSON.stringify({ content }),
+		}),
+	abort: (projectId: number) =>
+		fetchApi<{ aborted: boolean }>(`/api/v1/projects/${projectId}/chat/abort`, { method: "POST" }),
+	confirm: (projectId: number, toolCallId: string, approved: boolean) =>
+		fetchApi<{ ok: boolean }>(`/api/v1/projects/${projectId}/chat/confirm`, {
+			method: "POST",
+			body: JSON.stringify({ tool_call_id: toolCallId, approved }),
+		}),
+};
+
 export const projectsApi = {
 	list: async () => {
 		const data = await fetchApi<{ items: Project[]; total: number }>(
@@ -348,30 +365,6 @@ export const projectsApi = {
 	currentRun: (id: number) =>
 		fetchApi<import("~/types").RecoveryControlRead | null>(
 			`/api/v1/projects/${id}/runs/current`,
-		),
-
-	feedback: (
-		id: number,
-		content: string,
-		runId?: number,
-		feedbackType?: string,
-		entityType?: string,
-		entityId?: number,
-		entityIds?: number[],
-	) =>
-		fetchApi<{ status: string; run_id?: number }>(
-			`/api/v1/projects/${id}/runs/feedback`,
-			{
-				method: "POST",
-				body: JSON.stringify({
-					content,
-					run_id: runId,
-					feedback_type: feedbackType,
-					entity_type: entityType,
-					entity_id: entityId,
-					entity_ids: entityIds?.length ? entityIds : undefined,
-				}),
-			},
 		),
 };
 

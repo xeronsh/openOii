@@ -557,6 +557,31 @@ export type WsEventType =
 	| "chat_message"
 	| "chat_status";
 
+/** One saved message of the project assistant (ADR 0011), as the engine shows it. */
+export interface ChatItem {
+	id: number;
+	role: "user" | "assistant" | "tool";
+	text: string;
+	tool?: string | null;
+	ok?: boolean | null;
+	error?: string | null;
+}
+
+/** A change the assistant wants to make; it runs only after the user confirms. */
+export interface ChatConfirmCard {
+	tool_call_id: string;
+	tool: string;
+	summary: string;
+}
+
+export interface ChatState {
+	messages: ChatItem[];
+	busy: boolean;
+	/** The reply streaming so far. */
+	text: string;
+	pending: ChatConfirmCard | null;
+}
+
 export interface LlmStreamEventData {
 	stream_id: string;
 	agent: string;

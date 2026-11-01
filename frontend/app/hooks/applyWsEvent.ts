@@ -5,6 +5,7 @@ import type { RunMode } from "~/stores/editorStore";
 import type {
 	AgentMessage,
 	AgentThinkingEventData,
+	ChatItem,
 	FeedbackReceipt,
 	RunFeedbackEventData,
 	LlmStreamEventData,
@@ -25,6 +26,7 @@ import { resolveEventStage } from "~/utils/workflowStage";
 import { rememberFailedStream } from "~/features/comic-workflow/agent/liveStream";
 import { clearGateTitleBadge, notifyRunEvent } from "~/utils/runNotifications";
 import { appQueryClient } from "~/query/client";
+import { applyChatMessage, applyChatStatus } from "~/query/assistantChat";
 import { projectQueryKeys } from "~/query/queryKeys";
 
 function cachedProjectTitle(projectId: number): string | null {
@@ -169,6 +171,14 @@ export function applyWsEvent(
 	// store; everything else in this reducer writes to the query cache.
 	switch (event.type) {
 		case "connected":
+			break;
+
+		// Project assistant (ADR 0011): its own cache entry, separate from the workflow feed.
+		case "chat_message":
+			applyChatMessage(projectId, (event.data as { message: ChatItem }).message);
+			break;
+		case "chat_status":
+			applyChatStatus(projectId, event.data as Parameters<typeof applyChatStatus>[1]);
 			break;
 
 		case "error": {
@@ -543,9 +553,6 @@ export function applyWsEvent(
 
 		// The consistency report UI was removed; the backend may still emit this.
 		case "consistency_eval_completed":
-		// Chat assistant events belong to the chat panel, not the workflow store.
-		case "chat_message":
-		case "chat_status":
 		case "pong":
 		case "echo":
 			break;

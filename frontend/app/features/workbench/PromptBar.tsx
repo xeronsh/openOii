@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { MessageInput } from "~/components/chat/MessageInput";
 import { PlainButton } from "~/components/ui/PlainButton";
 import { useEditorStore } from "~/stores/editorStore";
-import { toast } from "~/utils/toast";
 import { SvgIcon } from "~/components/ui/SvgIcon";
 
 export interface PromptChip {
@@ -17,9 +16,8 @@ interface PromptBarProps {
 	/** 审批门名称（如“规划”）；处于审批门时出现 [规划 · 待确认] chip，发送即提修改意见。 */
 	gateLabel: string | null;
 	awaitingConfirm: boolean;
-	isGenerating: boolean;
-	/** 返回 false 表示没发出去，草稿会放回输入框 */
-	onSendFeedback: (content: string) => Promise<boolean> | void;
+	/** 发给项目助手（ADR 0011）；返回 false 表示没发出去，草稿会放回输入框 */
+	onSend: (content: string) => Promise<boolean> | void;
 	/** 审批门：无参数 = 批准；带意见 = 要求修改。返回 false 表示没提交成功。 */
 	onConfirm: (feedback?: string) => Promise<boolean> | void;
 	/** 桌面：浮在画布底部居中；手机：留在页面底部。 */
@@ -34,8 +32,7 @@ export function PromptBar({
 	onRemoveSelection,
 	gateLabel,
 	awaitingConfirm,
-	isGenerating,
-	onSendFeedback,
+	onSend,
 	onConfirm,
 	floating = false,
 }: PromptBarProps) {
@@ -67,27 +64,18 @@ export function PromptBar({
 			});
 			return;
 		}
-		if (isGenerating) {
-			toast.info({
-				title: "请稍候",
-				message: "当前阶段进行中；待审阅确认后再反馈，或先停止任务。",
-			});
-			return;
-		}
 		const draft = input;
 		setInput("");
-		void Promise.resolve(onSendFeedback(draft)).then((sent) => {
+		void Promise.resolve(onSend(draft)).then((sent) => {
 			if (sent === false) setInput((current) => current || draft);
 		});
 	};
 
 	const placeholder = awaitingConfirm
 		? "说明需要修改的地方…"
-		: isGenerating
-			? "生成中，到下一个确认点时可以提修改意见"
-			: selection.length > 0
-				? "描述如何调整所选内容…"
-				: "描述你想生成的内容…";
+		: selection.length > 0
+			? "让助手调整所选内容…"
+			: "问助手，或让它重画、修改…";
 
 	return (
 		<footer
