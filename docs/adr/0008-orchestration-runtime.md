@@ -1,6 +1,7 @@
 # ADR 0008: openOii Engine 是唯一 orchestration runtime
 
 - 状态:Accepted(2026-02-20)
+- 修订:决策 3、4 由 [ADR 0011](0011-chat-agent-runtime.md) 落实/修改(对话助手接入 Agent Runtime)
 - 关联:ADR 0004/0005(编排收敛到 pi 引擎 + SQLite)、ADR 0006(run 为一等资源)
 - 取代:早先的「单一 Agent Runtime」表述（原标题含 Pi Core）
 
