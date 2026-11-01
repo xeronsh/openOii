@@ -1351,11 +1351,11 @@ export const PROVIDER_PRESETS: Record<PresetService, ProviderPreset[]> = {
 };
 
 /** 每个服务的接口协议键和后端默认值 */
-const SERVICE_PROVIDER: Record<PresetService, { key: string; fallback: string }> = {
+const SERVICE_PROVIDER: Record<PresetService, { key?: string; fallback: string }> = {
 	text: { key: "TEXT_PROVIDER", fallback: "anthropic" },
 	image: { key: "IMAGE_PROVIDER", fallback: "modelscope" },
 	video: { key: "VIDEO_PROVIDER", fallback: "openai" },
-	vision: { key: "CRITIQUE_VISION_PROVIDER", fallback: "openai" },
+	vision: { fallback: "openai" },
 	tts: { key: "TTS_PROVIDER", fallback: "edge" },
 	bgm: { key: "BGM_PROVIDER", fallback: "library" },
 };
@@ -1367,6 +1367,7 @@ export function isPresetService(tab: string): tab is PresetService {
 /** 配置里的 provider；没填时按后端默认值（文本 anthropic、图像 modelscope、视频 openai） */
 export function formProvider(service: PresetService, form: Record<string, unknown>): string {
 	const { key, fallback } = SERVICE_PROVIDER[service];
+	if (!key) return fallback;
 	return (String(form[key] ?? form[key.toLowerCase()] ?? "") || fallback).toLowerCase();
 }
 
@@ -1397,7 +1398,8 @@ export function presetById(service: PresetService, id: string) {
 
 /** 预设写入哪些配置项（大写键名） */
 export interface PresetKeys {
-	provider: string;
+	/** 视觉审查只有一种接口协议，没有这个键 */
+	provider?: string;
 	baseUrl?: string;
 	endpoint?: string;
 	model?: string;
@@ -1420,7 +1422,6 @@ export function presetKeys(preset: ProviderPreset): PresetKeys {
 	}
 	if (preset.service === "vision") {
 		return {
-			provider: "CRITIQUE_VISION_PROVIDER",
 			baseUrl: "CRITIQUE_VISION_BASE_URL",
 			model: "CRITIQUE_VISION_MODEL",
 			apiKey: "CRITIQUE_VISION_API_KEY",
@@ -1472,7 +1473,7 @@ export interface PresetSelection {
  */
 export function presetConfigValues(preset: ProviderPreset, selection: PresetSelection = {}): Record<string, string> {
 	const keys = presetKeys(preset);
-	const values: Record<string, string> = { [keys.provider]: preset.provider };
+	const values: Record<string, string> = keys.provider ? { [keys.provider]: preset.provider } : {};
 	if (preset.custom) return values;
 	const region = preset.regions.find((r) => r.id === selection.regionId) ?? preset.regions[0];
 	if (keys.baseUrl && region) {

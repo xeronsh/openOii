@@ -131,6 +131,14 @@ describe("presetConfigValues", () => {
 		expect(fillBaseUrl(region, {})).toBeNull();
 	});
 
+	it("视觉审查预设只写地址和模型，没有接口协议键", () => {
+		const values = presetConfigValues(presetById("vision", "qwen-vl")!);
+		expect(values.CRITIQUE_VISION_BASE_URL).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
+		expect(Object.keys(values).some((k) => k.endsWith("_PROVIDER"))).toBe(false);
+		expect(presetConfigValues(customPreset("vision"))).toEqual({});
+		expect(detectPreset("vision", {}).preset.custom).toBe(true);
+	});
+
 	it("自定义只切换 provider，保留已有地址和模型", () => {
 		expect(presetConfigValues(presetById("text", "custom-openai")!)).toEqual({ TEXT_PROVIDER: "openai" });
 	});

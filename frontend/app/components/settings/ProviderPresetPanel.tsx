@@ -50,7 +50,7 @@ function pendingStillApplies(
 	fields: Record<string, string>,
 ): boolean {
 	const keys = presetKeys(pending);
-	if (readForm(form, keys.provider).toLowerCase() !== pending.provider) return false;
+	if (keys.provider && readForm(form, keys.provider).toLowerCase() !== pending.provider) return false;
 	if (pending.custom || !keys.baseUrl) return true;
 	const region = pending.regions.find((r) => r.id === regionId) ?? pending.regions[0];
 	const expected = region ? fillBaseUrl(region, fields) : null;

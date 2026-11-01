@@ -4,7 +4,6 @@ export function getConfigDescription(key: string): string {
 		// 基础设置
 		APP_NAME: "应用名称，用于日志和服务标识",
 		ENVIRONMENT: "运行环境：dev（开发）/ staging（预发布）/ prod（生产）",
-		LOG_LEVEL: "日志级别：DEBUG / INFO / WARNING / ERROR",
 		API_V1_PREFIX: "API 路由前缀，默认 /api/v1",
 		CORS_ORIGINS: '跨域配置，JSON 数组格式，如 ["http://localhost:3000"]',
 
@@ -25,8 +24,6 @@ export function getConfigDescription(key: string): string {
 		TEXT_API_KEY: "文本生成 API 密钥（OpenAI 兼容）",
 		TEXT_MODEL: "文本生成模型名称（OpenAI 兼容），如 deepseek-flash、qwen3.8-max",
 		TEXT_ENDPOINT: "文本生成 API 端点路径（OpenAI 兼容）",
-		TEXT_ENABLE_THINKING:
-			"是否向支持推理开关的文本模型显式传递 thinking 配置；留空表示由模型/服务默认决定。",
 		TEXT_REASONING_EFFORT:
 			"推理强度档位，支持 reasoning_effort 的 OpenAI 兼容模型可设为 low / medium / high。",
 
@@ -50,11 +47,8 @@ export function getConfigDescription(key: string): string {
 			"Critic 最多重试轮数；达到上限后为避免卡死会继续后续流程。",
 		CRITIQUE_VISION_BASE_URL:
 			"能看图片的 OpenAI 兼容视觉模型地址；审查时带图片的请求走这里。不填或服务连不上时，分镜标为「未检查」，不会当作通过。",
-		CRITIQUE_VISION_PROVIDER: "视觉审查走的接口协议；目前都是 OpenAI 兼容 chat/completions。",
 		CRITIQUE_VISION_API_KEY: "审查视觉模型的 API 密钥（本地模型可留空）",
 		CRITIQUE_VISION_MODEL: "审查视觉模型名称，需支持图片输入，如 qwen3-vl",
-		OUTLINE_ENABLED:
-			"是否启用故事大纲审批流程；开启后先生成大纲并等待确认，再继续角色和分镜规划。",
 
 		// 视频服务
 		VIDEO_PROVIDER:
@@ -76,7 +70,6 @@ export function getConfigDescription(key: string): string {
 		DOUBAO_VIDEO_MODEL: "Seedance 模型 ID，如 doubao-seedance-2-5-260628",
 		DOUBAO_VIDEO_DURATION: "豆包视频时长（秒）：openOii 目前按 5 或 10 秒提交",
 		DOUBAO_VIDEO_RATIO: "画幅比例：16:9 / 4:3 / 1:1 / 3:4 / 9:16 / 21:9 / adaptive（自适应）",
-		DOUBAO_GENERATE_AUDIO: "豆包视频是否生成音频",
 		VIDEO_IMAGE_MODE:
 			"图生视频模式：first_frame（仅首帧）/ reference（拼接参考图）",
 		VIDEO_INLINE_LOCAL_IMAGES: "未配置 PUBLIC_BASE_URL 时是否内联本地图片",

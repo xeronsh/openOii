@@ -28,7 +28,6 @@ SENSITIVE_KEY_PARTS = (
 RESTART_REQUIRED_KEYS = {
     "APP_NAME",
     "ENVIRONMENT",
-    "LOG_LEVEL",
     "API_V1_PREFIX",
     "CORS_ORIGINS",
     "DATABASE_URL",
@@ -96,7 +95,16 @@ def _unquote(value: str) -> str:
 
 
 # Keys that used to exist and may linger in old .env files; never seed or list them.
-RETIRED_CONFIG_KEYS = frozenset({"FAKE_TEXT_RESPONSE"})
+RETIRED_CONFIG_KEYS = frozenset(
+    {
+        "FAKE_TEXT_RESPONSE",
+        "LOG_LEVEL",
+        "TEXT_ENABLE_THINKING",
+        "CRITIQUE_VISION_PROVIDER",
+        "OUTLINE_ENABLED",
+        "DOUBAO_GENERATE_AUDIO",
+    }
+)
 
 
 def _load_env_file() -> dict[str, str]:

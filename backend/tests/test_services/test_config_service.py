@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
 from app.models.config_item import ConfigItem
 from app.services.config_service import (
@@ -98,18 +99,32 @@ def test_load_env_file_skips_blank_keys(monkeypatch, tmp_path):
 
 
 
+RETIRED_KEYS = (
+    "FAKE_TEXT_RESPONSE",
+    "LOG_LEVEL",
+    "TEXT_ENABLE_THINKING",
+    "CRITIQUE_VISION_PROVIDER",
+    "OUTLINE_ENABLED",
+    "DOUBAO_GENERATE_AUDIO",
+)
+
+
 @pytest.mark.asyncio
 async def test_retired_env_keys_are_not_seeded_or_listed(monkeypatch, tmp_path, test_session):
     env_path = tmp_path / "old.env"
-    env_path.write_text("FAKE_TEXT_RESPONSE=stale\nTEXT_MODEL=m\n", encoding="utf-8")
+    env_path.write_text("".join(f"{key}=stale\n" for key in RETIRED_KEYS) + "TEXT_MODEL=m\n", encoding="utf-8")
     monkeypatch.setenv("ENV_FILE", str(env_path))
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     service = ConfigService(test_session)
 
     await service.ensure_initialized()
+    await service.ensure_provider_configs_initialized()
 
     keys = {item["key"] for item in await service.list_effective()}
     assert "TEXT_MODEL" in keys
-    assert "FAKE_TEXT_RESPONSE" not in keys
+    assert not keys & set(RETIRED_KEYS)
+    stored = (await test_session.execute(select(ConfigItem.key))).scalars().all()
+    assert not set(stored) & set(RETIRED_KEYS)
 
 @pytest.mark.asyncio
 async def test_config_service_list_effective_and_get_raw_value(test_session, monkeypatch, tmp_path):

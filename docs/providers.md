@@ -108,7 +108,7 @@
 
 ## 视觉审查（写入 `CRITIQUE_VISION_*`）
 
-质量审查（Critic）要看首帧图和视频帧，所以带图片的审查请求走单独的视觉模型：`CRITIQUE_VISION_PROVIDER`（目前只有 `openai`，即 OpenAI 兼容 `chat/completions`，图片以 `image_url` 的 data URL 传入）、`CRITIQUE_VISION_BASE_URL`、`CRITIQUE_VISION_API_KEY`、`CRITIQUE_VISION_MODEL`。
+质量审查（Critic）要看首帧图和视频帧，所以带图片的审查请求走单独的视觉模型：`CRITIQUE_VISION_BASE_URL`、`CRITIQUE_VISION_API_KEY`、`CRITIQUE_VISION_MODEL`。接口固定为 OpenAI 兼容 `chat/completions`，图片以 `image_url` 的 data URL 传入。
 
 审查开始前引擎先 `GET {Base URL}/models`（5 秒超时，缓存 1 分钟）确认视觉服务在线。下面几种情况都**不再当作通过**，而是把分镜标为「未检查」（`shot.review_status = unchecked`，原因写在 `review_note`，画布上的分镜卡显示「未检查」，悬停看原因），并在对话里说明，画面保留、流程继续：
 

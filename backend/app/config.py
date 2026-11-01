@@ -14,7 +14,6 @@ class Settings(BaseSettings):
 
     app_name: str = "openOii-backend"
     environment: str = Field(default="dev", description="dev|staging|prod")
-    log_level: str = Field(default="INFO", description="Uvicorn log level")
 
     # pi engine sidecar 的 loopback 地址（编排唯一引擎）
     engine_url: str = Field(
@@ -74,10 +73,6 @@ class Settings(BaseSettings):
         default="/chat/completions",
         description="文本生成 API 端点路径（OpenAI 兼容）",
     )
-    text_enable_thinking: bool | None = Field(
-        default=None,
-        description="是否显式控制推理模型的 thinking 模式（例如 Qwen3.5）",
-    )
     text_reasoning_effort: str | None = Field(
         default=None,
         description="OpenAI 兼容推理模型的 reasoning_effort 档位，例如 low / medium / high",
@@ -125,10 +120,6 @@ class Settings(BaseSettings):
         default=2,
         description="最大审查重试轮数（超过后强制继续）",
     )
-    critique_vision_provider: str = Field(
-        default="openai",
-        description="审查用视觉模型的接口协议（目前只有 openai：OpenAI 兼容 chat/completions）",
-    )
     critique_vision_base_url: str | None = Field(
         default=None,
         description="审查用视觉模型的 OpenAI 兼容地址；不填或连不上时分镜标为「未检查」",
@@ -137,10 +128,6 @@ class Settings(BaseSettings):
     critique_vision_model: str | None = Field(
         default=None,
         description="审查用视觉模型名称（需支持图片输入）",
-    )
-    outline_enabled: bool = Field(
-        default=True,
-        description="是否启用分层故事大纲审批流程",
     )
 
     # ============================================
@@ -190,10 +177,6 @@ class Settings(BaseSettings):
     doubao_video_ratio: str = Field(
         default="adaptive",
         description="豆包视频比例：16:9, 9:16, 1:1, adaptive",
-    )
-    doubao_generate_audio: bool = Field(
-        default=True,
-        description="豆包视频是否生成音频",
     )
     video_image_mode: str = Field(
         default="first_frame",

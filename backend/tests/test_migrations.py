@@ -243,3 +243,44 @@ def test_cleanup_migration_drops_retired_setting_and_orphan_rows(tmp_path: Path)
             assert rows("SELECT project_id FROM chat_message") == [(1,)]
     finally:
         engine.dispose()
+
+
+def test_retire_noop_config_migration_drops_only_those_rows(tmp_path: Path) -> None:
+    """0035: settings that never had a runtime effect are deleted (any key case); others stay."""
+    from sqlalchemy import text
+
+    db_url = f"sqlite+pysqlite:///{tmp_path / 'retire.db'}"
+    command.upgrade(_alembic_config(db_url), "0034_cleanup_orphans")
+    keys = (
+        "LOG_LEVEL",
+        "TEXT_ENABLE_THINKING",
+        "critique_vision_provider",
+        "OUTLINE_ENABLED",
+        "DOUBAO_GENERATE_AUDIO",
+        "TEXT_MODEL",
+        "CRITIQUE_VISION_MODEL",
+        "TEXT_REASONING_EFFORT",
+    )
+    engine = create_engine(db_url)
+    try:
+        with engine.begin() as conn:
+            for key in keys:
+                conn.execute(
+                    text(
+                        "INSERT INTO configitem (key, value, is_sensitive, created_at, updated_at) "
+                        "VALUES (:k, 'v', 0, '2026-11-01', '2026-11-01')"
+                    ),
+                    {"k": key},
+                )
+    finally:
+        engine.dispose()
+
+    command.upgrade(_alembic_config(db_url), "head")
+
+    engine = create_engine(db_url)
+    try:
+        with engine.connect() as conn:
+            left = sorted(r[0] for r in conn.execute(text("SELECT key FROM configitem")))
+        assert left == ["CRITIQUE_VISION_MODEL", "TEXT_MODEL", "TEXT_REASONING_EFFORT"]
+    finally:
+        engine.dispose()

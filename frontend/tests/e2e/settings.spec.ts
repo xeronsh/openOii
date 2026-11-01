@@ -19,7 +19,6 @@ export const LOCAL_GATEWAY_CONFIG: Item[] = [
 	item("TEXT_ENDPOINT", "/chat/completions"),
 	item("TEXT_MODEL", "muse-spark"),
 	item("TEXT_API_KEY", "sk-****", true),
-	item("TEXT_ENABLE_THINKING", "false"),
 	item("TEXT_REASONING_EFFORT", ""),
 	item("ANTHROPIC_BASE_URL", ""),
 	item("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
@@ -41,7 +40,6 @@ export const LOCAL_GATEWAY_CONFIG: Item[] = [
 	item("DOUBAO_VIDEO_DURATION", "5"),
 	item("DOUBAO_VIDEO_RATIO", "adaptive"),
 	item("ENABLE_IMAGE_TO_VIDEO", "true"),
-	item("LOG_LEVEL", "INFO"),
 ];
 
 export async function mockConfig(

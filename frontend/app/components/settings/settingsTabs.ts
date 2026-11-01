@@ -4,7 +4,7 @@ import "~/components/ui/icons/settingsIcons";
 
 
 export const TAB_CONFIG: Record<string, { icon: IconName; title: string; desc: string }> = {
-	basic: { icon: "tools", title: "基础", desc: "应用名称、环境、日志级别等基础配置" },
+	basic: { icon: "tools", title: "基础", desc: "应用名称、环境等基础配置" },
 	database: { icon: "database", title: "数据库", desc: "数据库连接配置" },
 	text: {
 		icon: "sparks",
@@ -49,7 +49,8 @@ export interface ProviderGroup {
 }
 
 export interface ProviderTab {
-	providerKey: string;
+	/** 接口协议对应的配置键；省略表示只有一种协议，不显示选择 */
+	providerKey?: string;
 	defaultProvider: string;
 	icon: IconName;
 	layout: "row" | "grid";
@@ -160,7 +161,6 @@ export const PROVIDER_TABS: Record<string, ProviderTab> = {
 };
 
 PROVIDER_TABS.vision = {
-	providerKey: "critique_vision_provider",
 	defaultProvider: "openai",
 	icon: "eye",
 	layout: "row",
@@ -169,7 +169,7 @@ PROVIDER_TABS.vision = {
 		{
 			title: "视觉模型接口",
 			providers: ["openai"],
-			match: (k) => k.startsWith("critique_vision_") && k !== "critique_vision_provider",
+			match: (k) => k.startsWith("critique_vision_"),
 		},
 		{ title: "审查规则", match: (k) => k.startsWith("critique_") && !k.startsWith("critique_vision_") },
 	],

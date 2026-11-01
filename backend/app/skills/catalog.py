@@ -177,34 +177,25 @@ def resolve_skill_entry(
     skill_id: str | None,
     *,
     auto_mode: bool = False,
-    outline_enabled: bool = True,
 ) -> SkillEntryResolution:
     """Map a skill id onto graph entry parameters + creative policy."""
     skill = get_skill(skill_id)
     if skill is None:
-        start_stage: Phase2Stage = "plan_outline" if outline_enabled else "plan_characters"
-        start_agent: AgentName = "outline" if outline_enabled else "plan"
         return SkillEntryResolution(
             skill=None,
-            start_stage=start_stage,
-            start_agent=start_agent,
+            start_stage="plan_outline",
+            start_agent="outline",
             auto_mode=auto_mode,
             notes_suffix="",
         )
-
-    start_stage = skill.start_stage
-    start_agent = skill.start_agent
-    if start_agent == "outline" and not outline_enabled:
-        start_stage = "plan_characters"
-        start_agent = "plan"
 
     notes = f"[skill:{skill.id}] {skill.title}"
     if skill.directives:
         notes = f"{notes}\n{skill.directives}"
     return SkillEntryResolution(
         skill=skill,
-        start_stage=start_stage,
-        start_agent=start_agent,
+        start_stage=skill.start_stage,
+        start_agent=skill.start_agent,
         auto_mode=auto_mode or skill.prefer_auto_mode,
         notes_suffix=notes,
         directives=skill.directives,

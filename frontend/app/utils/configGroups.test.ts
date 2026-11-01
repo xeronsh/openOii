@@ -73,7 +73,7 @@ describe("groupConfigs", () => {
 		const items = [
 			makeConfig("APP_NAME"),
 			makeConfig("ENVIRONMENT"),
-			makeConfig("LOG_LEVEL"),
+			makeConfig("API_V1_PREFIX"),
 			makeConfig("CORS_ORIGINS"),
 			makeConfig("ADMIN_TOKEN"),
 			makeConfig("REQUEST_TIMEOUT_S"),

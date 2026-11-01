@@ -38,27 +38,27 @@ def test_every_skill_has_real_directives_and_entry():
 
 
 def test_resolve_skill_quick_prefers_auto_mode():
-    res = resolve_skill_entry("quick-short", auto_mode=False, outline_enabled=True)
+    res = resolve_skill_entry("quick-short", auto_mode=False)
     assert res.auto_mode is True
     assert res.start_stage == "plan_outline"
     assert res.default_target_shot_count == 5
 
 
 def test_resolve_skill_character_design_entry():
-    res = resolve_skill_entry("character-design", outline_enabled=True)
+    res = resolve_skill_entry("character-design")
     assert res.start_agent == "plan"
     assert res.start_stage == "plan_characters"
     assert "visual_notes" in res.directives or "角色" in res.directives
 
 
-def test_resolve_skill_outline_disabled_fallback():
-    res = resolve_skill_entry("story-anime", outline_enabled=False)
-    assert res.start_agent == "plan"
-    assert res.start_stage == "plan_characters"
+def test_resolve_skill_keeps_the_skill_entry_stage():
+    res = resolve_skill_entry("story-anime")
+    assert res.start_agent == "outline"
+    assert res.start_stage == "plan_outline"
 
 
 def test_resolve_unknown_skill_defaults():
-    res = resolve_skill_entry(None, outline_enabled=True)
+    res = resolve_skill_entry(None)
     assert res.skill is None
     assert res.start_agent == "outline"
 

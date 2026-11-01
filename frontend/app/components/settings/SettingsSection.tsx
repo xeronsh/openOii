@@ -99,6 +99,7 @@ function AdvancedSettings({ defaultOpen, children }: { defaultOpen: boolean; chi
 
 export function currentProvider(tab: ProviderTab, formState: Record<string, ConfigValue>) {
 	const key = tab.providerKey;
+	if (!key) return tab.defaultProvider;
 	return (formState[key.toUpperCase()] || formState[key] || tab.defaultProvider) as string;
 }
 
@@ -118,7 +119,7 @@ function ProviderBody({
 	hasProviderItem?: boolean;
 }) {
 	const provider = currentProvider(tab, formState);
-	const name = tab.providerKey.toUpperCase();
+	const name = tab.providerKey?.toUpperCase();
 	const hasProviderItem = hasProviderItemProp ?? items.some((i) => i.key.toLowerCase() === tab.providerKey);
 	return (
 		<>

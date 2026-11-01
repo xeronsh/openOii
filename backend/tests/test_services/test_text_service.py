@@ -1837,11 +1837,13 @@ async def test_stream_network_error_exhausted(monkeypatch):
 # --- _build_payload branches ---
 
 
-def test_build_payload_enable_thinking():
-    settings = make_settings(text_enable_thinking=True)
+def test_build_payload_sends_reasoning_effort_but_no_enable_thinking():
+    """The probe mirrors the engine: reasoning effort is the only thinking knob."""
+    settings = make_settings(text_enable_thinking=True, text_reasoning_effort="low")
     svc = TextService(settings)
     payload = svc._build_payload(prompt="hi", max_tokens=10, stream=False)
-    assert payload["enable_thinking"] is True
+    assert payload["reasoning_effort"] == "low"
+    assert "enable_thinking" not in payload
 
 
 def test_build_payload_temperature():

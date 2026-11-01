@@ -77,7 +77,6 @@ _ALLOWED_OVERRIDE_FIELDS = {
     "text_model",
     "text_endpoint",
     "text_provider",
-    "text_enable_thinking",
     "text_reasoning_effort",
     # 图像生成
     "image_provider",
@@ -104,9 +103,7 @@ _ALLOWED_OVERRIDE_FIELDS = {
     "doubao_video_model",
     "doubao_video_duration",
     "doubao_video_ratio",
-    "doubao_generate_audio",
     # 视觉审查
-    "critique_vision_provider",
     "critique_vision_base_url",
     "critique_vision_api_key",
     "critique_vision_model",
