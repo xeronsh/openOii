@@ -1,7 +1,7 @@
 /**
  * Fake LLM fixtures for local/no-network runs (TEXT_PROVIDER=fake).
  *
- * 关键：按 system/prompt 里出现的 agent 名回放结构化 JSON，让整条 17 阶段
+ * 关键：按 system/prompt 里出现的 agent 名回放结构化 JSON，让整条 15 阶段
  * 流水线在不联网的情况下跑通。
  */
 

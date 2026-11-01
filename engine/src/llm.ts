@@ -4,16 +4,17 @@ import {
   fauxText,
   fauxThinking,
   getCurrentSystemPrompt,
-  getModels,
-  registerFauxProvider,
-  stream,
   type Api,
   type FauxProviderRegistration,
   type ImageContent,
   type Model,
   type TextContent,
   type ThinkingLevel,
-} from "@earendil-works/pi-ai/compat";
+} from "@earendil-works/pi-ai";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
+// Only the global stream + faux registry still come from the temporary compat
+// entry; moving them means a createModels() provider setup (see ADR 0011).
+import { registerFauxProvider, stream } from "@earendil-works/pi-ai/compat";
 import type { EngineDatabase } from "./db.js";
 import { FAKE_STREAM_ERROR_TOKEN, fakeRespond, fakeThinking } from "./fake-stream.js";
 import {
@@ -410,7 +411,7 @@ export class TextLlmService {
     if (provider === "fake") {
       throw new Error("the fake provider does not build a real pi-ai model");
     }
-    const known = getModels(provider as never).find((entry) => entry.id === modelId);
+    const known = getBuiltinModels(provider as never).find((entry) => entry.id === modelId);
     if (provider === "openai") {
       const supportsReasoning = Boolean(reasoning) || Boolean(known?.reasoning);
       const compat = {
@@ -446,7 +447,7 @@ export class TextLlmService {
       } as Model<Api>;
     }
     if (!known) {
-      const available = getModels(provider as never).map((entry) => entry.id).slice(0, 8);
+      const available = getBuiltinModels(provider as never).map((entry) => entry.id).slice(0, 8);
       throw new Error(
         `unknown model ${modelId} for provider ${provider}; ` +
           `known ids include ${available.join(", ")}`,
@@ -519,7 +520,9 @@ export class TextLlmService {
         const events = stream(model, context, {
           apiKey: resolved.apiKey,
           maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-          reasoning: resolved.reasoning,
+          // `stream()` takes provider options; `reasoning` is only read by
+          // `streamSimple()`, so the effort has to go in the provider's field.
+          reasoningEffort: resolved.reasoning,
           onPayload: resolved.model.toLowerCase().startsWith("deepseek")
             ? (payload) => ({
                 ...(payload as Record<string, unknown>),

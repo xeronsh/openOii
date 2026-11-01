@@ -8,7 +8,7 @@
  * There is deliberately no tool that approves a gate.
  */
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai/compat";
+import { Type } from "@earendil-works/pi-ai";
 
 /** A chat tool; `confirm` (write tools only) says in one sentence what will happen. */
 export type ChatTool = AgentTool & { confirm?: (args: Record<string, unknown>) => string };

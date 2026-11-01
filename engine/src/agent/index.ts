@@ -13,7 +13,8 @@
  * confirmation). Only the newest `chat_status` row is kept.
  */
 import { Agent, type AgentMessage, type StreamFn } from "@earendil-works/pi-agent-core";
-import { registerFauxProvider, streamSimple, type Api, type Model } from "@earendil-works/pi-ai/compat";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
 import type { EngineDatabase } from "../db.js";
 import { fakeStreamMs, type TextLlmService } from "../llm.js";
 import { fakeChatReply } from "./fake.js";

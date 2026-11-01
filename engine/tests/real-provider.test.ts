@@ -395,6 +395,41 @@ describe("OpenAI-compatible text endpoint", () => {
     edb.close();
   });
 
+  it("sends TEXT_REASONING_EFFORT as reasoning_effort on workflow calls", async () => {
+    const edb = newDb(dir);
+    setConfig(edb, {
+      TEXT_PROVIDER: "openai",
+      TEXT_BASE_URL: base,
+      TEXT_ENDPOINT: "/api/v3/chat/completions",
+      TEXT_MODEL: "custom-text",
+      TEXT_API_KEY: "k",
+      TEXT_REASONING_EFFORT: "high",
+    });
+    await new TextLlmService(edb).generate({ system: "s", prompt: "p" });
+    expect(seen[0]!.body.reasoning_effort).toBe("high");
+    edb.close();
+  });
+
+  it("sends the pinned run's reasoning effort and omits it when unset", async () => {
+    const edb = newDb(dir);
+    setConfig(edb, { TEXT_API_KEY: "k", TEXT_REASONING_EFFORT: "high" });
+    const pinned = (reasoning_effort: string | null) =>
+      new TextLlmService(edb, {
+        provider: "openai",
+        base_url: base,
+        endpoint: "/api/v3/chat/completions",
+        model: "custom-text",
+        reasoning_effort,
+        credential_keys: ["TEXT_API_KEY"],
+      });
+    await pinned("low").generate({ system: "s", prompt: "p" });
+    expect(seen[0]!.body.reasoning_effort).toBe("low");
+    edb.db.prepare("DELETE FROM configitem WHERE key = 'TEXT_REASONING_EFFORT'").run();
+    await pinned(null).generate({ system: "s", prompt: "p" });
+    expect(seen[1]!.body).not.toHaveProperty("reasoning_effort");
+    edb.close();
+  });
+
   it("honours a pinned snapshot endpoint", () => {
     const edb = newDb(dir);
     const llm = new TextLlmService(edb, {
