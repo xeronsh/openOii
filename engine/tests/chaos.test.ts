@@ -206,6 +206,7 @@ describe("chaos matrix", () => {
 
   describe("4. provider failure", () => {
     it("propagates a provider error rather than swallowing it", async () => {
+      vi.stubEnv("OPENOII_PROVIDER_RETRY_MS", "1");
       vi.stubGlobal(
         "fetch",
         vi.fn(async () => ({ ok: false, status: 503 }) as unknown as Response),
@@ -224,6 +225,7 @@ describe("chaos matrix", () => {
 
       await expect(service.generateImageUrl({ prompt: "boom" })).rejects.toThrow(/503/);
       vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
     });
 
     it("fails loudly when a provider returns a malformed body", async () => {

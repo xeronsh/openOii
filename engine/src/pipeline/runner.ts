@@ -472,6 +472,7 @@ export class PipelineRunner {
         "normal",
       ) as "minimal" | "normal" | "verbose",
     });
+    media.setRetryNotice((message) => emitter.sendMessage("render", `⚠️ ${message}`));
 
     const fullRun = startStage === "plan_outline";
     const startAgent = agentForStage(startStage);
@@ -958,6 +959,7 @@ export class PipelineRunner {
         "normal",
       ) as "minimal" | "normal" | "verbose",
     });
+    media.setRetryNotice((message) => emitter.sendMessage("render", `⚠️ ${message}`));
     const first = stages[0]!;
     const ctx: StageContext = {
       shared: this.shared,

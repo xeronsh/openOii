@@ -536,6 +536,7 @@ export function videoTaskPollUrls(baseUrl: string, endpoint: string, taskId: str
 export class MediaService {
   private idempotencyKey: string | null = null;
   private abortSignal: AbortSignal | null = null;
+  private retryNotice: ((message: string) => Promise<void> | void) | null = null;
   private registerMedia: ((relativePath: string) => void) | null = null;
   /**
    * Current operation identity, when the caller supplied one.
@@ -566,6 +567,11 @@ export class MediaService {
    */
   setAbortSignal(signal: AbortSignal | null): void {
     this.abortSignal = signal;
+  }
+
+  /** Report each transient-failure retry to the run (shown in chat). */
+  setRetryNotice(notice: (message: string) => Promise<void> | void): void {
+    this.retryNotice = notice;
   }
 
   setMediaRegistrar(register: (relativePath: string) => void): void {
@@ -636,8 +642,8 @@ export class MediaService {
 
   /**
    * POST to a media provider, retrying transient failures the way the Python
-   * services do (408/429/5xx, plus Cloudflare's 520–524 origin timeouts and
-   * network errors). The idempotency key is reused across attempts.
+   * services do (408/429/5xx, plus Cloudflare's 520–524/530 origin errors and
+   * network errors; other 4xx are not retried). The idempotency key is reused across attempts.
    */
   private async postProvider(endpoint: string, init: RequestInit): Promise<Response> {
     const base = providerRetryBaseMs();
@@ -656,11 +662,18 @@ export class MediaService {
         if (response) return response;
         throw error;
       }
+      const reason = response ? `HTTP ${response.status}` : "连接失败";
       console.warn(
         `media provider ${response ? `returned ${response.status}` : "request failed"}; retry ${attempt + 1}/${PROVIDER_MAX_RETRIES}`,
       );
       await response?.body?.cancel().catch(() => undefined);
-      await this.wait(base * 2 ** attempt);
+      const delay = base * 3 ** attempt;
+      await Promise.resolve(
+        this.retryNotice?.(
+          `上游暂时不可用（${reason}），${Math.round(delay / 1000)} 秒后第${attempt + 1}次重试（共${PROVIDER_MAX_RETRIES}次）`,
+        ),
+      ).catch(() => undefined);
+      await this.wait(delay);
     }
   }
 
@@ -1593,12 +1606,16 @@ export class MediaService {
 
 const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
-const RETRYABLE_PROVIDER_STATUS = new Set([408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524]);
+const RETRYABLE_PROVIDER_STATUS = new Set([408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 530]);
 const PROVIDER_MAX_RETRIES = 3;
-/** Backoff base for provider retries; OPENOII_PROVIDER_RETRY_MS overrides it (tests). */
+/**
+ * Backoff base for provider retries (waits base, 3×, 9×: 5 s / 15 s / 45 s), so
+ * a gateway blip of up to about a minute does not fail the stage.
+ * OPENOII_PROVIDER_RETRY_MS overrides it (tests).
+ */
 function providerRetryBaseMs(): number {
-  const raw = Number(process.env.OPENOII_PROVIDER_RETRY_MS ?? 2_000);
-  return Number.isFinite(raw) && raw >= 0 ? raw : 2_000;
+  const raw = Number(process.env.OPENOII_PROVIDER_RETRY_MS ?? 5_000);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 5_000;
 }
 
 /** Async video task poll interval; OPENOII_VIDEO_POLL_MS overrides it (tests, slow providers). */
