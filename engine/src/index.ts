@@ -150,11 +150,17 @@ export function createEngineApp(dbPath: string) {
       }, LEASE_HEARTBEAT_MS);
       heartbeat.unref();
 
-      void runner[mode](scopedRequest).finally(() => {
-        clearInterval(heartbeat);
-        shared.releaseRunLease(runId, ownerId, leaseToken);
-        if (pipelines.get(runId) === runner) pipelines.delete(runId);
-      });
+      void runner[mode](scopedRequest)
+        .catch((error: unknown) => {
+          // A runner that rejects (lease lost while committing a failure) must not
+          // take the whole sidecar down as an unhandled rejection.
+          console.error(`run ${runId}: executor stopped with an uncaught error`, error);
+        })
+        .finally(() => {
+          clearInterval(heartbeat);
+          shared.releaseRunLease(runId, ownerId, leaseToken);
+          if (pipelines.get(runId) === runner) pipelines.delete(runId);
+        });
       return true;
     } catch (error) {
       shared.releaseRunLease(runId, ownerId, leaseToken);
@@ -419,6 +425,11 @@ export function createEngineApp(dbPath: string) {
 
   const server = createServer((req, res) => {
     handle(req, res).catch((err: unknown) => {
+      if (err instanceof InvalidJsonError) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { code: "INVALID_JSON", message: err.message } }));
+        return;
+      }
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
     });
@@ -573,6 +584,8 @@ function isExecutionCommand(value: unknown): value is ExecutionCommand {
   );
 }
 
+class InvalidJsonError extends Error {}
+
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -581,7 +594,7 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
       try {
         resolve(data ? (JSON.parse(data) as Record<string, unknown>) : {});
       } catch (err) {
-        reject(err instanceof Error ? err : new Error("bad json"));
+        reject(new InvalidJsonError(err instanceof Error ? err.message : "bad json"));
       }
     });
     req.on("error", reject);
