@@ -3,20 +3,21 @@
 <div align="center">
   <img src="./doc/logo.png?v=2" width="180" alt="openOii logo" />
 
-  <p><strong>故事想法 → 多智能体协作 → 漫剧成片</strong></p>
-  <p>一个以 pi-agent-core 编排为核心的 AI 漫剧生成学习项目。</p>
+  <p><strong>故事想法 → 分阶段生成 → 漫剧成片</strong></p>
+  <p>一个基于 <a href="https://github.com/badlogic/pi-mono">pi</a>（pi-ai）的 AI 漫剧生成学习项目：15 阶段确定性工作流 + 审批门 + 视觉审查。</p>
 
   <p>
     <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" />
     <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
     <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React 18" />
-    <img src="https://img.shields.io/badge/pi--agent--core-Orchestration-6D28D9?style=flat-square" alt="pi-agent-core" />
+    <img src="https://img.shields.io/badge/pi--ai-LLM_API-6D28D9?style=flat-square" alt="pi-ai" />
   </p>
 
 
   <p>
     <a href="#功能">功能</a> ·
     <a href="#界面预览">界面预览</a> ·
+    <a href="#架构">架构</a> ·
     <a href="#快速开始">快速开始</a> ·
     <a href="#项目结构">项目结构</a>
   </p>
@@ -50,7 +51,7 @@
 openOii 把一句故事想法变成一部带配音、字幕和背景音乐的漫剧短片：先规划大纲、角色和分镜，再出角色形象和分镜画面，经过质量审查后生成视频并合成成片。整个过程在一块画布上进行，每个阶段都可以停下来确认、反馈或重来。
 
 > [!WARNING]
-> 这是一个**多阶段编排的学习 / 演示项目**（Node 编排引擎 + FastAPI + 共享 SQLite），重点是验证阶段编排、审批门、断点恢复、实时进度和前后端协作。
+> 这是一个**多阶段工作流的学习 / 演示项目**（Node 工作流引擎 + FastAPI + 共享 SQLite），重点是验证阶段编排、审批门、断点恢复、实时进度和前后端协作。
 > **不适合直接用于生产环境。**
 
 ## 功能
@@ -179,11 +180,21 @@ cd frontend && pnpm test && pnpm build   # build 会检查 JS 体积预算
 cd frontend && pnpm e2e                  # Playwright 端到端测试
 ```
 
+## 架构
+
+openOii 不是多智能体系统，而是一条**确定性的工作流**：
+
+- **15 个阶段、6 个审批门**：大纲 → 角色 → 分镜 → 角色形象 → 分镜画面 → 视频片段 → 合成成片，每一步产出后都可以停下来审批、修改或重跑。阶段顺序由引擎里的状态机（`engine/src/pipeline/runner.ts`）决定，不由模型决定。
+- **每个阶段是一个普通函数**：大纲、角色、分镜调用文本模型并按结构化格式解析；角色形象和分镜画面调用图像模型；视频片段调用视频模型，再交给后端用 FFmpeg 拼接、加字幕、配音和背景音乐。
+- **视觉审查（critic）**：图像生成后由视觉模型检查角色一致性和画面问题，不合格的会自动重画。
+- **模型调用基于 [pi](https://github.com/badlogic/pi-mono) 的 `pi-ai`**（统一的多服务商 LLM 接口），负责文本与视觉模型的流式调用、思考强度和用量统计；图像、视频、语音走各服务商自己的接口，见 [docs/providers.md](docs/providers.md)。
+- 代码和界面里的 outline / plan / render / critic / compose 只是阶段分组的名字，不是各自循环、互相对话的独立 agent。引擎在 `engine/src/agent/` 预留了一个有步数上限、可取消的 agent loop 接口，目前没有接入流水线。
+
 ## 项目结构
 
 ```text
 backend/    FastAPI + SQLModel：HTTP / WebSocket 接口、配置、导出，以及给引擎调用的图像拼接、配音、背景音乐、人脸比对工具
-engine/     Node/TypeScript 编排引擎：阶段机、审批门、重试与恢复、运行租约和事件，是唯一决定「下一步做什么」的地方
+engine/     Node/TypeScript 工作流引擎：阶段机、审批门、重试与恢复、运行租约和事件，是唯一决定「下一步做什么」的地方
 frontend/   React 18 + TypeScript + React Flow 画布工作台
 contracts/  前后端与引擎共享的工作流契约（scripts/generate_workflow_contract.py 生成代码）
 docs/       架构决策、服务商说明（providers.md）等文档
@@ -195,7 +206,7 @@ docs/       架构决策、服务商说明（providers.md）等文档
 
 - 前端：React 18、TypeScript、React Flow、TanStack Query、Zustand、Tailwind CSS
 - 后端：FastAPI、SQLModel、Alembic
-- 引擎：Node.js + TypeScript（pi-agent-core）
+- 引擎：Node.js + TypeScript，模型调用用 [pi-ai](https://github.com/badlogic/pi-mono/tree/main/packages/ai)（`@mariozechner/pi-ai` 0.73）
 - 存储：单文件 SQLite（WAL）+ `/static` 媒体目录
 
 ## 🙏 致谢
