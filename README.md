@@ -33,7 +33,7 @@
       </a>
     </td>
     <td width="42%" valign="middle">
-      <p>也在研究像 <strong>openOii</strong> 这样的多智能体流水线？</p>
+      <p>也在研究像 <strong>openOii</strong> 这样的分阶段 AI 工作流？</p>
       <p>
         <a href="https://bloome.im/app?utm_medium=github&utm_source=Xeron2000-openOii-ivor-202607"><strong>Bloome</strong></a>
         让 Claude、ChatGPT、DeepSeek 等多个 AI 在同一对话里协作——互相质疑、交叉核对、一起把结果打磨到位。
