@@ -331,3 +331,23 @@ async def engine_cancel_run(base_url: str, run_id: int) -> None:
     if res.status_code != 202:
         _raise_engine_response_error("cancel", res)
 
+
+
+async def engine_chat(
+    base_url: str, project_id: int, action: str = "", body: dict[str, Any] | None = None
+) -> tuple[int, dict[str, Any]]:
+    """Forward one chat request to the engine; returns (status, JSON body).
+
+    ``action`` is "" (GET history / POST message), "abort" or "confirm".
+    """
+    url = f"{base_url}/chat/{project_id}" + (f"/{action}" if action else "")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await (client.get(url) if body is None and not action else client.post(url, json=body or {}))
+    except httpx.HTTPError as exc:
+        raise EngineUnavailableError(f"engine chat failed: {exc}") from exc
+    try:
+        payload = res.json()
+    except ValueError:
+        payload = {}
+    return res.status_code, payload if isinstance(payload, dict) else {}

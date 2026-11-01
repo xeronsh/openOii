@@ -543,6 +543,9 @@ export function applyWsEvent(
 
 		// The consistency report UI was removed; the backend may still emit this.
 		case "consistency_eval_completed":
+		// Chat assistant events belong to the chat panel, not the workflow store.
+		case "chat_message":
+		case "chat_status":
 		case "pong":
 		case "echo":
 			break;

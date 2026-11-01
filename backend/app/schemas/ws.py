@@ -49,6 +49,8 @@ WsEventType = Literal[
     "audio_generated",
     "export_completed",
     "consistency_eval_completed",
+    "chat_message",
+    "chat_status",
 ]
 
 

@@ -439,18 +439,32 @@ export function createEngineApp(dbPath: string) {
       return;
     }
 
-    const chatMatch = /^\/chat\/(\d+)(\/abort)?$/.exec(url.pathname);
+    const chatMatch = /^\/chat\/(\d+)(\/abort|\/confirm)?$/.exec(url.pathname);
     if (chatMatch) {
       const projectId = Number(chatMatch[1]);
-      if (req.method === "GET" && !chatMatch[2]) {
-        send(200, { messages: chat.history(projectId), busy: chat.busy(projectId) });
+      const action = chatMatch[2];
+      if (req.method === "GET" && !action) {
+        send(200, { messages: chat.history(projectId), ...chat.status(projectId) });
         return;
       }
-      if (req.method === "POST" && chatMatch[2]) {
+      if (req.method === "POST" && action === "/abort") {
         send(200, { aborted: chat.abort(projectId) });
         return;
       }
-      if (req.method === "POST") {
+      if (req.method === "POST" && action === "/confirm") {
+        const body = await readJson(req);
+        if (typeof body.tool_call_id !== "string" || typeof body.approved !== "boolean") {
+          send(422, { error: { code: "CHAT_CONFIRM_INVALID", message: "需要 tool_call_id 和 approved" } });
+          return;
+        }
+        if (!chat.confirm(projectId, body.tool_call_id, body.approved)) {
+          send(404, { error: { code: "CHAT_CONFIRM_NOT_FOUND", message: "这个确认已经失效" } });
+          return;
+        }
+        send(200, { ok: true });
+        return;
+      }
+      if (req.method === "POST" && !action) {
         const content = (await readJson(req)).content;
         if (typeof content !== "string" || !content.trim()) {
           send(422, { error: { code: "CHAT_CONTENT_REQUIRED", message: "消息不能为空" } });

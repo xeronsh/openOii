@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
 
+from app.schemas.chat import ChatMessageEventData, ChatStatusEventData
 from app.schemas.export import ExportCompletedEventData
 from app.schemas.ws import (
     AgentThinkingEventData,
@@ -73,6 +74,8 @@ _EVENT_DATA_MODELS: dict[str, type[Any]] = {
     "project_restored": ProjectRestoredEventData,
     "export_completed": ExportCompletedEventData,
     "consistency_eval_completed": ConsistencyEvalCompletedEventData,
+    "chat_message": ChatMessageEventData,
+    "chat_status": ChatStatusEventData,
 }
 
 

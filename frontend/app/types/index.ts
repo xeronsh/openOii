@@ -553,7 +553,9 @@ export type WsEventType =
 	| "project_restored"
 	| "audio_generated"
 	| "export_completed"
-	| "consistency_eval_completed";
+	| "consistency_eval_completed"
+	| "chat_message"
+	| "chat_status";
 
 export interface LlmStreamEventData {
 	stream_id: string;

@@ -111,17 +111,27 @@ export class EngineDatabase {
   }
 
   /** The project's saved chat (pi-agent-core messages, oldest first). */
-  chatMessages(projectId: number): unknown[] {
+  chatMessages(projectId: number): Array<{ id: number; message: unknown }> {
     const rows = this.db
-      .prepare("SELECT message FROM chat_message WHERE project_id = ? ORDER BY id")
-      .all(projectId) as Array<{ message: string }>;
-    return rows.map((row) => JSON.parse(row.message) as unknown);
+      .prepare("SELECT id, message FROM chat_message WHERE project_id = ? ORDER BY id")
+      .all(projectId) as Array<{ id: number; message: string }>;
+    return rows.map((row) => ({ id: row.id, message: JSON.parse(row.message) as unknown }));
   }
 
-  appendChatMessage(projectId: number, message: unknown): void {
-    this.db
+  appendChatMessage(projectId: number, message: unknown): number {
+    const info = this.db
       .prepare("INSERT INTO chat_message (project_id, message) VALUES (?, ?)")
       .run(projectId, JSON.stringify(message));
+    return Number(info.lastInsertRowid);
+  }
+
+  /** `chat_status` frames are snapshots: keep only the project's newest one. */
+  compactChatStatus(projectId: number, keepSeq: number): void {
+    this.db
+      .prepare(
+        "DELETE FROM engine_run_events WHERE run_id = 0 AND project_id = ? AND type = 'chat_status' AND seq < ?",
+      )
+      .run(projectId, keepSeq);
   }
 
   /** `llm_stream` frames are snapshots: keep the newest, plus error frames. */

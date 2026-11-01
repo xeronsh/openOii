@@ -39,17 +39,43 @@ function summarise(tool: string, raw: string): string {
   return raw.slice(0, 200);
 }
 
+/** "重画第 2 镜" / "第2镜重新生成一下" → 2 */
+const redrawOrder = (input: string): number | null => {
+  if (!/重画|重新生成|重做/.test(input)) return null;
+  const match = /第\s*(\d+)\s*[镜个]/.exec(input);
+  return match ? Number(match[1]) : null;
+};
+
+const toolCall = (name: string, args: Parameters<typeof fauxToolCall>[1]) =>
+  fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
+
 export function fakeChatReply(context: TranscriptContext): AssistantMessage {
   const last = context.messages[context.messages.length - 1];
+  const lastUser = [...context.messages].reverse().find((message) => message.role === "user");
+  const order = redrawOrder(lastUser ? text(lastUser.content) : "");
   if (last?.role === "toolResult") {
-    return fauxAssistantMessage(fauxText(summarise(last.toolName, text(last.content))));
+    const raw = text(last.content);
+    if (last.toolName === "regenerate_shot") {
+      return fauxAssistantMessage(
+        fauxText(last.isError ? `好的，没有重画。${raw.includes("没有确认") ? "" : raw.slice(0, 120)}` : `已开始重画第 ${String(order)} 镜，可以在时间线里看进度。`),
+      );
+    }
+    if (last.toolName === "get_project_state" && order !== null && !last.isError) {
+      const shot = ((JSON.parse(raw) as { shots?: Array<{ id: number; order: number }> }).shots ?? []).find(
+        (entry) => entry.order === order,
+      );
+      if (!shot) return fauxAssistantMessage(fauxText(`这个项目没有第 ${order} 镜。`));
+      return toolCall("regenerate_shot", { shot_id: shot.id, type: /视频/.test(text(lastUser!.content)) ? "video" : "image" });
+    }
+    return fauxAssistantMessage(fauxText(summarise(last.toolName, raw)));
   }
   const input = last?.role === "user" ? text(last.content) : "";
+  if (order !== null) return toolCall("get_project_state", {});
   if (/批准|通过|审批/.test(input)) {
     return fauxAssistantMessage(fauxText("审批门需要你本人在审批区点「通过」，我不能替你批准。"));
   }
-  if (/运行|进度|跑到/.test(input)) return fauxAssistantMessage(fauxToolCall("get_run_status", {}), { stopReason: "toolUse" });
-  if (/设置|模型|配置/.test(input)) return fauxAssistantMessage(fauxToolCall("read_settings", {}), { stopReason: "toolUse" });
-  if (/状态|项目|分镜|角色/.test(input)) return fauxAssistantMessage(fauxToolCall("get_project_state", {}), { stopReason: "toolUse" });
-  return fauxAssistantMessage(fauxText("我可以帮你查看项目状态、运行进度和模型设置，直接问我就好。"));
+  if (/运行|进度|跑到/.test(input)) return toolCall("get_run_status", {});
+  if (/设置|模型|配置/.test(input)) return toolCall("read_settings", {});
+  if (/状态|项目|分镜|角色/.test(input)) return toolCall("get_project_state", {});
+  return fauxAssistantMessage(fauxText("我可以帮你查看项目状态和运行进度，也可以重画某一镜，直接告诉我就好。"));
 }

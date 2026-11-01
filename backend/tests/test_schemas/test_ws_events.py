@@ -6,6 +6,7 @@ from typing import get_args
 
 import pytest
 
+from app.schemas.chat import ChatMessageEventData, ChatStatusEventData
 from app.schemas.export import ExportCompletedEventData
 from app.schemas.ws import (
     AgentThinkingEventData,
@@ -158,6 +159,8 @@ class TestWsEventSchemaRegistry:
             ("audio_generated", AudioGeneratedEventData),
             ("export_completed", ExportCompletedEventData),
             ("consistency_eval_completed", ConsistencyEvalCompletedEventData),
+            ("chat_message", ChatMessageEventData),
+            ("chat_status", ChatStatusEventData),
         ],
     )
     def test_event_registry_points_to_expected_schema(self, event_type, model):
