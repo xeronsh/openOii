@@ -182,13 +182,13 @@ cd frontend && pnpm e2e                  # Playwright 端到端测试
 
 ## 架构
 
-openOii 不是多智能体系统，而是一条**确定性的工作流**：
+openOii 的核心是一条**分阶段的确定性工作流**：
 
 - **15 个阶段、6 个审批门**：大纲 → 角色 → 分镜 → 角色形象 → 分镜画面 → 视频片段 → 合成成片，每一步产出后都可以停下来审批、修改或重跑。阶段顺序由引擎里的状态机（`engine/src/pipeline/runner.ts`）决定，不由模型决定。
 - **每个阶段是一个普通函数**：大纲、角色、分镜调用文本模型并按结构化格式解析；角色形象和分镜画面调用图像模型；视频片段调用视频模型，再交给后端用 FFmpeg 拼接、加字幕、配音和背景音乐。
 - **视觉审查（critic）**：图像生成后由视觉模型检查角色一致性和画面问题，不合格的会自动重画。
 - **模型调用基于 [pi](https://github.com/badlogic/pi-mono) 的 `pi-ai`**（统一的多服务商 LLM 接口），负责文本与视觉模型的流式调用、思考强度和用量统计；图像、视频、语音走各服务商自己的接口，见 [docs/providers.md](docs/providers.md)。
-- 代码和界面里的 outline / plan / render / critic / compose 只是阶段分组的名字，不是各自循环、互相对话的独立 agent。引擎在 `engine/src/agent/` 预留了一个有步数上限、可取消的 agent loop 接口，目前没有接入流水线。
+- 代码和界面里的 outline / plan / render / critic / compose 是阶段分组的名字，每组对应工作流里的一段阶段函数。
 
 ## 项目结构
 
