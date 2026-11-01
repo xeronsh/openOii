@@ -1621,7 +1621,9 @@ export class MediaService {
     const root = realpathSync(this.settings.staticDir);
     const path = resolve(root, url.slice("/static/".length));
     if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error("Invalid local video path");
-    const actual = realpathSync(path);
+    // A missing file resolves to its own path so callers can skip or report it
+    // (realpath would throw ENOENT and fail the whole compose step).
+    const actual = existsSync(path) ? realpathSync(path) : path;
     if (actual !== root && !actual.startsWith(`${root}${sep}`)) throw new Error("Invalid local video path");
     return actual;
   }
