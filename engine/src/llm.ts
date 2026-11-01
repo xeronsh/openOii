@@ -563,6 +563,11 @@ export class TextLlmService {
     } catch (error) {
       firstError = error;
     }
+    // A cancelled run can hand back a cut-off answer; repairing it would spend
+    // another call after the user pressed stop.
+    if (req.signal?.aborted || req.operation?.signal?.aborted) {
+      throw new AiOperationError("aborted", req.operation?.operationId ?? "llm", "run cancelled: llm request aborted");
+    }
     const repair = await withAiActivity(req.operation, "修复结构化输出", () =>
       this.generateOnce(
         {

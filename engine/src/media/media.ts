@@ -533,6 +533,17 @@ export function videoTaskPollUrls(baseUrl: string, endpoint: string, taskId: str
   return [...new Set(urls)];
 }
 
+/** A gateway error page or a cut-off body must not surface as a raw JSON.parse message. */
+async function readProviderJson(response: Response, kind: "image" | "video"): Promise<Record<string, unknown>> {
+  try {
+    const body: unknown = await response.json();
+    if (body && typeof body === "object" && !Array.isArray(body)) return body as Record<string, unknown>;
+  } catch {
+    // fall through to the readable error below
+  }
+  throw new Error(`${kind} provider returned invalid JSON (HTTP ${response.status})`);
+}
+
 export class MediaService {
   private idempotencyKey: string | null = null;
   private abortSignal: AbortSignal | null = null;
@@ -662,7 +673,8 @@ export class MediaService {
         if (response) return response;
         throw error;
       }
-      const reason = response ? `HTTP ${response.status}` : "连接失败";
+      const code = String((error as { cause?: { code?: unknown } } | null)?.cause?.code ?? "");
+      const reason = response ? `HTTP ${response.status}` : code.includes("TIMEOUT") ? "响应超时" : "连接失败";
       console.warn(
         `media provider ${response ? `returned ${response.status}` : "request failed"}; retry ${attempt + 1}/${PROVIDER_MAX_RETRIES}`,
       );
@@ -817,7 +829,7 @@ export class MediaService {
       body: JSON.stringify(payload),
     });
     if (!response.ok) throw new Error(`image provider failed: ${response.status}`);
-    let body = (await response.json()) as Record<string, unknown>;
+    let body = await readProviderJson(response, "image");
     if (modelscope && typeof body.task_id === "string" && body.task_id && !Array.isArray(body.data)) {
       body = { data: [{ url: await this.pollModelScopeImage(body.task_id) }] };
     }
@@ -1072,7 +1084,7 @@ export class MediaService {
       body: JSON.stringify(payload),
     });
     if (!response.ok) throw new Error(`video provider failed: ${response.status}`);
-    let body = (await response.json()) as Record<string, unknown>;
+    let body = await readProviderJson(response, "video");
     let url = extractMediaUrl(body);
     const taskId = extractTaskId(body);
     if (!url && taskId && VIDEO_TASK_PENDING.has(String(body.status ?? "").toLowerCase())) {

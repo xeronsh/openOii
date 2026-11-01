@@ -780,8 +780,8 @@ export async function runRenderShots(ctx: StageContext): Promise<void> {
             imageBytes = await worker.characterReference(references);
           } catch (error) {
             if (ctx.signal.aborted) throw error;
-            console.warn(`Character references skipped (shot ${shot.id})`);
-            await ctx.emitter.sendMessage("render", `⚠️ ${shotLabel(shot)} 没拿到角色设定图（${error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120)}），这一镜只按文字描述画角色。`);
+            console.warn(`Character references skipped (shot ${shot.id}): ${error instanceof Error ? error.message : String(error)}`);
+            await ctx.emitter.sendMessage("render", `⚠️ ${shotLabel(shot)} 没拿到角色设定图，这一镜只按文字描述画角色。`);
           }
         }
         if (previousImage) {
