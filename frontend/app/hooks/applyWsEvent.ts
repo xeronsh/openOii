@@ -188,8 +188,6 @@ export function applyWsEvent(
 		case "run_started": {
 			const d = event.data as unknown as RunStartedEventData;
 			setFeedbackReceipt(projectId, null);
-			patchRunState(projectId, { isGenerating: true });
-			patchRunState(projectId, { progress: 0 });
 			appendMessage(projectId, {
 				id: generateMessageId(),
 				agent: "system",
@@ -197,10 +195,16 @@ export function applyWsEvent(
 				content: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
 				timestamp: new Date().toISOString(),
 			});
-			patchRunState(projectId, { currentRunId: d.run_id });
-			patchRunState(projectId, { currentAgent: d.current_agent ?? null });
-			patchRunState(projectId, { awaitingConfirm: false, awaitingAgent: null });
-			patchRunState(projectId, { recoveryGate: null, liveStream: null });
+			patchRunState(projectId, {
+				isGenerating: true,
+				progress: 0,
+				currentRunId: d.run_id,
+				currentAgent: d.current_agent ?? null,
+				awaitingConfirm: false,
+				awaitingAgent: null,
+				recoveryGate: null,
+				liveStream: null,
+			});
 			rememberFailedStream(projectId, null);
 			applyStage(projectId, event.data);
 			if (d.recovery_summary) patchRunState(projectId, { recoverySummary: d.recovery_summary });
@@ -213,8 +217,7 @@ export function applyWsEvent(
 		case "run_progress": {
 			const p = event.data as unknown as RunProgressEventData;
 			if (!readRunState(projectId).isGenerating && p.run_id) {
-				patchRunState(projectId, { isGenerating: true });
-				patchRunState(projectId, { currentRunId: p.run_id });
+				patchRunState(projectId, { isGenerating: true, currentRunId: p.run_id });
 			}
 			patchRunState(projectId, { currentAgent: p.current_agent ?? null });
 			patchRunState(projectId, { progress: p.progress });
@@ -296,13 +299,8 @@ export function applyWsEvent(
 		case "run_awaiting_confirm": {
 			clearLoadingStates(projectId);
 			const gate = event.data as unknown as RunAwaitingConfirmEventData;
-			if (!readRunState(projectId).isGenerating) {
-				patchRunState(projectId, { isGenerating: true });
-				patchRunState(projectId, { currentRunId: gate.run_id });
-			}
 			// A gate means no call is in flight (its done frame may have been compacted away).
-			patchRunState(projectId, { awaitingConfirm: true, awaitingAgent: gate.agent, currentRunId: gate.run_id, liveStream: null });
-			patchRunState(projectId, { recoveryGate: gate });
+			patchRunState(projectId, { isGenerating: true, awaitingConfirm: true, awaitingAgent: gate.agent, currentRunId: gate.run_id, liveStream: null, recoveryGate: gate });
 			patchRunState(projectId, { recoverySummary: gate.recovery_summary });
 			// 同一闸门重做后回来时带着上一轮结果；首次到达没有回执
 			setFeedbackReceipt(projectId, receiptFromGate(gate));
@@ -352,8 +350,7 @@ export function applyWsEvent(
 			setFeedbackReceipt(projectId, null);
 			// 闸门已经过了（别处确认或自动确认）：后台标题不该还挂着【待确认】
 			clearGateTitleBadge();
-			patchRunState(projectId, { awaitingConfirm: false, awaitingAgent: null });
-			patchRunState(projectId, { recoveryGate: null });
+			patchRunState(projectId, { awaitingConfirm: false, awaitingAgent: null, recoveryGate: null });
 			if (confirmed.recovery_summary) patchRunState(projectId, { recoverySummary: confirmed.recovery_summary });
 			applyStage(projectId, event.data);
 			appendMessage(projectId, {

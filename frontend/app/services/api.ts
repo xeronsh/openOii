@@ -107,44 +107,18 @@ async function parseApiResponse<T>(
  */
 export function getStaticUrl(path: string | null | undefined): string | null {
 	if (!path) return null;
-
-	// 安全检查：防止 XSS 和协议注入
 	const trimmedPath = path.trim();
-
-	// 只允许 http/https 协议
-	if (trimmedPath.startsWith("http://") || trimmedPath.startsWith("https://")) {
+	// 绝对地址只认 http(s)，且必须能解析（防 XSS / 协议注入）
+	if (/^https?:\/\//.test(trimmedPath)) {
 		try {
-			const url = new URL(trimmedPath);
-			// 验证协议
-			if (url.protocol !== "http:" && url.protocol !== "https:") {
-				console.warn(`[Security] Invalid protocol in URL: ${url.protocol}`);
-				return null;
-			}
+			new URL(trimmedPath);
 			return trimmedPath;
 		} catch {
-			console.warn(`[Security] Invalid URL format: ${trimmedPath}`);
 			return null;
 		}
 	}
-
-	// 阻止危险协议
-	const dangerousProtocols = [
-		"javascript:",
-		"data:",
-		"vbscript:",
-		"file:",
-		"about:",
-	];
-	if (
-		dangerousProtocols.some((proto) =>
-			trimmedPath.toLowerCase().startsWith(proto),
-		)
-	) {
-		console.warn(`[Security] Dangerous protocol detected: ${trimmedPath}`);
-		return null;
-	}
-
-	// 拼接 API_BASE
+	// 其余按站内路径拼 API_BASE；挡掉 javascript: / data: 等危险协议
+	if (/^(javascript|data|vbscript|file|about):/i.test(trimmedPath)) return null;
 	return `${API_BASE}${trimmedPath}`;
 }
 

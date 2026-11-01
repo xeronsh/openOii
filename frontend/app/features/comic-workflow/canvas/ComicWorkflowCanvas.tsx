@@ -30,6 +30,7 @@ const selectCanvasRun = (state: RunState) => ({
 	currentRunId: state.currentRunId,
 	recoveryGate: state.recoveryGate,
 	currentStep: state.currentStep,
+	target: state.recoveryControl?.active_run,
 });
 
 export function ComicWorkflowCanvas({
@@ -48,7 +49,7 @@ export function ComicWorkflowCanvas({
 		title: string;
 	} | null>(null);
 
-	const { isGenerating, awaitingConfirm, currentRunId, recoveryGate, currentStep } = useRunStateSelect(projectId, selectCanvasRun);
+	const { isGenerating, awaitingConfirm, currentRunId, recoveryGate, currentStep, target } = useRunStateSelect(projectId, selectCanvasRun);
 	const focusSection = awaitingConfirm ? gateSection(recoveryGate) : null;
 
 	const { data: project, isLoading: projectLoading } = useQuery({
@@ -77,8 +78,9 @@ export function ComicWorkflowCanvas({
 			isGenerating,
 			awaitingConfirm,
 			currentStep,
+			target,
 		});
-	}, [project, characters, shots, isGenerating, awaitingConfirm, currentStep]);
+	}, [project, characters, shots, isGenerating, awaitingConfirm, currentStep, target]);
 
 	const layout = useMemo(
 		() => (graph ? layoutComicWorkflow(graph) : null),

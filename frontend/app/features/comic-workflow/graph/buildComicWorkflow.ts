@@ -1,4 +1,4 @@
-import type { BlockingClip, Character, Project, Shot } from "~/types";
+import type { AgentRun, BlockingClip, Character, Project, Shot } from "~/types";
 import type { StageId } from "~/generated/workflowContract";
 import type {
 	ComicWorkflowEdge,
@@ -32,6 +32,8 @@ export interface BuildComicWorkflowInput {
 	awaitingConfirm?: boolean;
 	/** 运行正在做的契约阶段：只有这一步产出的卡片才显示"生成中"；未知时退回旧行为。 */
 	currentStep?: StageId | null;
+	/** 运行的目标（runs/current 的 active_run）：单镜/单角色重做时只有目标卡片在生成。 */
+	target?: Pick<AgentRun, "resource_type" | "resource_id"> | null;
 }
 
 const CHARACTER_STAGES: ReadonlySet<StageId> = new Set<StageId>(["plan_characters", "render_characters", "critique_character_images"]);
@@ -40,7 +42,14 @@ const SHOT_STAGES: ReadonlySet<StageId> = new Set<StageId>(["plan_shots", "rende
 const CRITIQUE_STAGES: ReadonlySet<StageId> = new Set<StageId>(["critique_character_images", "critique_shot_images"]);
 
 /** 当前步骤对这类卡片做什么：产出（生成中）、审查（审查中），或不碰它。 */
-function stepTouches(kind: "character" | "shot", currentStep: StageId | null | undefined): "generating" | "reviewing" | null {
+function stepTouches(
+	kind: "character" | "shot",
+	id: number,
+	currentStep: StageId | null | undefined,
+	target: BuildComicWorkflowInput["target"],
+): "generating" | "reviewing" | null {
+	const type = target?.resource_type;
+	if (type && type !== "project" && (type !== kind || target.resource_id !== id)) return null;
 	if (currentStep == null) return "generating";
 	if (!(kind === "character" ? CHARACTER_STAGES : SHOT_STAGES).has(currentStep)) return null;
 	return CRITIQUE_STAGES.has(currentStep) ? "reviewing" : "generating";
@@ -214,6 +223,7 @@ export function buildComicWorkflow({
 	isGenerating,
 	awaitingConfirm = false,
 	currentStep,
+	target,
 }: BuildComicWorkflowInput): ComicWorkflowGraph {
 	const orderedShots = sortShots(shots);
 	const visibleCharacters = characters.filter(hasCharacterContent);
@@ -250,7 +260,7 @@ export function buildComicWorkflow({
 			section: "elements",
 			title: character.name || `角色 ${character.id}`,
 			subtitle: character.has_embedding ? "可复用角色资产" : "角色设定",
-			status: nodeStatusFromApproval(character.approval_state, isGenerating, awaitingConfirm, stepTouches("character", currentStep)),
+			status: nodeStatusFromApproval(character.approval_state, isGenerating, awaitingConfirm, stepTouches("character", character.id, currentStep, target)),
 			entityId: character.id,
 			character,
 			imageUrl:
@@ -264,7 +274,7 @@ export function buildComicWorkflow({
 			section: "shotline",
 			title: `S${String(shot.order).padStart(2, "0")}`,
 			subtitle: shot.scene || shot.camera || "镜头节点",
-			status: nodeStatusFromApproval(shot.approval_state, isGenerating, awaitingConfirm, stepTouches("shot", currentStep)),
+			status: nodeStatusFromApproval(shot.approval_state, isGenerating, awaitingConfirm, stepTouches("shot", shot.id, currentStep, target)),
 			entityId: shot.id,
 			shot,
 			imageUrl: shot.image_url,

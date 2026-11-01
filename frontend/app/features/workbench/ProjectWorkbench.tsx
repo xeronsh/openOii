@@ -206,58 +206,45 @@ export function ProjectWorkbench({ projectId }: { projectId: number }) {
 
 
 
-	const selectedWorkflowNode = useMemo(() => {
-		if (!project || !selectedNodeId) return null;
-		const graph = buildComicWorkflow({
-			project,
-			characters,
-			shots,
-			blockingClips: project.blocking_clips,
-			isGenerating: runIsGenerating,
-			awaitingConfirm: runAwaitingConfirm,
-			currentStep: runState.currentStep,
-		});
-		return graph.nodes.find((node) => node.id === selectedNodeId) ?? null;
-	}, [project, characters, shots, selectedNodeId, runIsGenerating, runAwaitingConfirm, runState.currentStep]);
-
+	// 一张图供 Inspector、Brief 回落和 PromptBar chip 共用；选中变化不重建
+	const workflowNodes = useMemo(
+		() =>
+			project
+				? buildComicWorkflow({
+						project,
+						characters,
+						shots,
+						blockingClips: project.blocking_clips,
+						isGenerating: runIsGenerating,
+						awaitingConfirm: runAwaitingConfirm,
+						currentStep: runState.currentStep,
+						target: runState.recoveryControl?.active_run,
+					}).nodes
+				: [],
+		[project, characters, shots, runIsGenerating, runAwaitingConfirm, runState.currentStep, runState.recoveryControl],
+	);
+	const selectedWorkflowNode = workflowNodes.find((node) => node.id === selectedNodeId) ?? null;
 	// Brief 不在画布上（见 layoutComicWorkflow）：未选中任何卡片时，
 	// 右栏 Inspector 回落到它，项目级上下文保持可达。
-	const briefNode = useMemo(() => {
-		if (!project) return null;
-		return (
-			buildComicWorkflow({
-				project,
-				characters,
-				shots,
-				blockingClips: project.blocking_clips,
-				isGenerating: runIsGenerating,
-			}).nodes.find((node) => node.kind === "brief") ?? null
-		);
-	}, [project, characters, shots, runIsGenerating]);
+	const briefNode = workflowNodes.find((node) => node.kind === "brief") ?? null;
 	// PromptBar 上下文：每个选中对象一个 chip；处于审批门时多一个审批门 chip
-	const selectionChips = useMemo<PromptChip[]>(() => {
-		if (!project || selectedNodeIds.length === 0) return [];
-		const nodes = buildComicWorkflow({
-			project,
-			characters,
-			shots,
-			blockingClips: project.blocking_clips,
-			isGenerating: runIsGenerating,
-		}).nodes;
-		return selectedNodeIds.flatMap((id) => {
-			const node = nodes.find((n) => n.id === id);
-			if (!node) return [];
-			const label =
-				node.kind === "shot"
-					? `分镜 S${String(node.shot.order).padStart(2, "0")}`
-					: node.kind === "character"
-						? `角色 ${node.title}`
-						: node.kind === "output"
-							? "成片"
-							: "项目";
-			return [{ id, label }];
-		});
-	}, [project, characters, shots, selectedNodeIds, runIsGenerating]);
+	const selectionChips = useMemo<PromptChip[]>(
+		() =>
+			selectedNodeIds.flatMap((id) => {
+				const node = workflowNodes.find((n) => n.id === id);
+				if (!node) return [];
+				const label =
+					node.kind === "shot"
+						? `分镜 S${String(node.shot.order).padStart(2, "0")}`
+						: node.kind === "character"
+							? `角色 ${node.title}`
+							: node.kind === "output"
+								? "成片"
+								: "项目";
+				return [{ id, label }];
+			}),
+		[workflowNodes, selectedNodeIds],
+	);
 	// 和状态胶囊、审批卡同一套步骤名（「分镜画面 · 待确认」）
 	const gateLabel = runAwaitingConfirm
 		? (stepForStage(runState.recoveryGate?.current_stage ?? runState.recoveryGate?.stage ?? runState.currentStep)?.label ??

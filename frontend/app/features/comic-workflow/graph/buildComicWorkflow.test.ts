@@ -272,3 +272,48 @@ describe("node status follows the step the run is on", () => {
 		expect(statusOf(null)).toEqual({ character: "generating", shot: "generating" });
 	});
 });
+
+describe("a targeted run only marks its target as generating (F11)", () => {
+	const statuses = (target: Parameters<typeof buildComicWorkflow>[0]["target"], currentStep: Parameters<typeof buildComicWorkflow>[0]["currentStep"] = "render_shots") =>
+		buildComicWorkflow({
+			project: project(),
+			characters: [character({ id: 7, approval_state: "draft" }), character({ id: 8, approval_state: "draft" })],
+			shots: [shot({ id: 3, order: 1, approval_state: "draft" }), shot({ id: 4, order: 2, approval_state: "draft" })],
+			isGenerating: true,
+			currentStep,
+			target,
+		}).nodes.filter((node) => node.kind === "shot" || node.kind === "character").map((node) => `${node.id}=${node.status}`);
+
+	it("single-shot redraw: only that shot is generating", () => {
+		expect(statuses({ resource_type: "shot", resource_id: 3 })).toEqual([
+			"character:7=unconfirmed",
+			"character:8=unconfirmed",
+			"shot:3=generating",
+			"shot:4=unconfirmed",
+		]);
+	});
+
+	it("single-shot redraw with an unknown step still leaves other cards alone", () => {
+		expect(statuses({ resource_type: "shot", resource_id: 4 }, null)).toEqual([
+			"character:7=unconfirmed",
+			"character:8=unconfirmed",
+			"shot:3=unconfirmed",
+			"shot:4=generating",
+		]);
+	});
+
+	it("single-character redraw: only that character is generating", () => {
+		expect(statuses({ resource_type: "character", resource_id: 8 }, "render_characters")).toEqual([
+			"character:7=unconfirmed",
+			"character:8=generating",
+			"shot:3=unconfirmed",
+			"shot:4=unconfirmed",
+		]);
+	});
+
+	it("a project run (or no target) keeps step-based behaviour", () => {
+		const all = ["character:7=unconfirmed", "character:8=unconfirmed", "shot:3=generating", "shot:4=generating"];
+		expect(statuses({ resource_type: "project", resource_id: 1 })).toEqual(all);
+		expect(statuses(null)).toEqual(all);
+	});
+});
