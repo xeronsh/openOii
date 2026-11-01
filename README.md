@@ -27,14 +27,14 @@
 <table>
   <tr>
     <td align="center" width="58%" valign="top">
-      <a href="https://bloome.im/app?ref=Xeron2000&utm_medium=github&utm_source=Xeron2000-openOii-ivor-202607">
+      <a href="https://bloome.im/app?utm_medium=github&utm_source=Xeron2000-openOii-ivor-202607">
         <img src="./doc/Bloome.png" alt="Bloome — 加速世界向人机协作团队转型" width="100%" />
       </a>
     </td>
     <td width="42%" valign="middle">
       <p>也在研究像 <strong>openOii</strong> 这样的多智能体流水线？</p>
       <p>
-        <a href="https://bloome.im/app?ref=Xeron2000&utm_medium=github&utm_source=Xeron2000-openOii-ivor-202607"><strong>Bloome</strong></a>
+        <a href="https://bloome.im/app?utm_medium=github&utm_source=Xeron2000-openOii-ivor-202607"><strong>Bloome</strong></a>
         让 Claude、ChatGPT、DeepSeek 等多个 AI 在同一对话里协作——互相质疑、交叉核对、一起把结果打磨到位。
       </p>
       <ul>
@@ -42,7 +42,7 @@
         <li>网页与移动端均可使用</li>
         <li>配置好的 Agent 可分享给团队</li>
       </ul>
-      <p><strong>👉 <a href="https://bloome.im/app?ref=Xeron2000&utm_medium=github&utm_source=Xeron2000-openOii-ivor-202607">免费试用 Bloome</a></strong></p>
+      <p><strong>👉 <a href="https://bloome.im/app?utm_medium=github&utm_source=Xeron2000-openOii-ivor-202607">免费试用 Bloome</a></strong></p>
     </td>
   </tr>
 </table>
@@ -83,7 +83,7 @@ openOii 把一句故事想法变成一部带配音、字幕和背景音乐的漫
     <td align="center" colspan="2">
       <img src="./doc/screenshots/workbench.webp" alt="openOii 工作台：活动记录、分镜画布与检查器" />
       <br />
-      <sub><strong>工作台 · 活动记录（含质量审查）、分镜画布与检查器</strong></sub>
+      <sub><strong>工作台 · 活动记录（含质量审查评分）、分镜画布与检查器</strong></sub>
     </td>
   </tr>
   <tr>
