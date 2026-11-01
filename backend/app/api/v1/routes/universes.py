@@ -29,6 +29,14 @@ from app.services.universe_service import UniverseService
 router = APIRouter()
 
 
+async def _active_universe_or_404(session: AsyncSession, universe_id: int) -> Universe:
+    """Deleted universes are soft-deleted: hide them everywhere, not only from the list."""
+    universe = await get_or_404(session, Universe, universe_id)
+    if not universe.is_active:
+        raise HTTPException(status_code=404, detail="Universe not found")
+    return universe
+
+
 def _universe_read(universe: Universe, projects_count: int = 0, shared_characters_count: int = 0) -> dict:
     return UniverseRead(
         id=universe.id,
@@ -122,7 +130,7 @@ async def get_universe(
     universe_id: int,
     session: AsyncSession = SessionDep,
 ):
-    universe = await get_or_404(session, Universe, universe_id)
+    universe = await _active_universe_or_404(session, universe_id)
     svc = UniverseService(session)
 
     chapters = await svc.get_universe_chapters(universe_id)
@@ -169,7 +177,7 @@ async def get_universe_timeline(
     session: AsyncSession = SessionDep,
 ):
     """跨章节时间线：章节状态、摘要、镜头/角色计数，供工作台 continuity 面板。"""
-    universe = await get_or_404(session, Universe, universe_id)
+    universe = await _active_universe_or_404(session, universe_id)
     svc = UniverseService(session)
     chapters = await svc.get_universe_chapters(universe_id)
     shared_chars = await svc.get_universe_shared_characters(universe_id)
@@ -221,7 +229,7 @@ async def update_universe(
     payload: UniverseUpdate,
     session: AsyncSession = SessionDep,
 ):
-    universe = await get_or_404(session, Universe, universe_id)
+    universe = await _active_universe_or_404(session, universe_id)
     svc = UniverseService(session)
 
     update_data = payload.model_dump(exclude_unset=True)
@@ -251,7 +259,7 @@ async def delete_universe(
     session: AsyncSession = SessionDep,
 ):
     """删除 IP 宇宙（软删除，清除关联项目的外键引用）"""
-    universe = await get_or_404(session, Universe, universe_id)
+    universe = await _active_universe_or_404(session, universe_id)
     svc = UniverseService(session)
     await svc.delete_universe(universe)
 
@@ -269,7 +277,7 @@ async def add_project_to_universe(
     payload: UniverseProjectLinkCreate,
     session: AsyncSession = SessionDep,
 ):
-    await get_or_404(session, Universe, universe_id)
+    await _active_universe_or_404(session, universe_id)
     project = await get_or_404(session, Project, payload.project_id)
 
     svc = UniverseService(session)
@@ -302,7 +310,7 @@ async def remove_project_from_universe(
     project_id: int,
     session: AsyncSession = SessionDep,
 ):
-    await get_or_404(session, Universe, universe_id)
+    await _active_universe_or_404(session, universe_id)
     await get_or_404(session, Project, project_id)
 
     svc = UniverseService(session)
@@ -324,7 +332,7 @@ async def promote_character(
     payload: SharedCharacterPromote,
     session: AsyncSession = SessionDep,
 ):
-    await get_or_404(session, Universe, universe_id)
+    await _active_universe_or_404(session, universe_id)
 
     svc = UniverseService(session)
     shared_char = await svc.promote_character_to_shared(
@@ -342,7 +350,7 @@ async def list_shared_characters(
     universe_id: int,
     session: AsyncSession = SessionDep,
 ):
-    await get_or_404(session, Universe, universe_id)
+    await _active_universe_or_404(session, universe_id)
     svc = UniverseService(session)
     shared_chars = await svc.get_universe_shared_characters(universe_id)
     return [_shared_character_read(sc) for sc in shared_chars]
@@ -358,7 +366,7 @@ async def create_shared_character_manual(
     payload: SharedCharacterManualCreate,
     session: AsyncSession = SessionDep,
 ):
-    await get_or_404(session, Universe, universe_id)
+    await _active_universe_or_404(session, universe_id)
 
     sc = SharedCharacter(
         universe_id=universe_id,
